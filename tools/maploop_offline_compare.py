@@ -174,14 +174,17 @@ def metrics(rows):
             obs=[np.asarray(l['points']) for l in r['lanes'] if l['side']==side and not l['reprojected']]
             pred=[l for l in r['lanes'] if l['side']==side and l['reprojected']]
             bnd=[np.asarray(l['points']) for l in r['boundaries'] if l['side']==side]
-            styles=[l['style'] for l in r['lanes'] if l['side']==side]
+            # The overlay labels a side with its longest lane; use the same
+            # lane, so the frame label does not depend on set order.
+            labelled=[l for l in r['lanes'] if l['side']==side]
+            label=max(labelled,key=lambda l:np.ptp(np.asarray(l['points'])[:,0]))['style'] if labelled else 'none'
             item[side]=dict(observed=bool(obs),predicted=bool(pred) and not obs,
                 reach=float(max(p[:,0].max() for p in obs)) if obs else 0.,
                 boundary_reach=float(max(p[:,0].max() for p in bnd)) if bnd else 0.,
                 lateral8=float(np.median([np.interp(8.,p[:,0],p[:,1]) for p in bnd])) if bnd and bnd[0][0,0]<=8.<=bnd[0][-1,0] else None,
                 lateral10=float(np.interp(10.,bnd[0][:,0],bnd[0][:,1])) if bnd and bnd[0][0,0]<=10.<=bnd[0][-1,0] else None,
                 spine_rough=[j for j in (jagged(p) for p in bnd) if j is not None],
-                style=max(set(styles),key=styles.count) if styles else 'none',
+                style=label,
                 jag=[j for j in (jagged(p) for p in obs) if j is not None],
                 strands=sum(p[0,0]<=10.<=p[-1,0] for p in obs))
         per.append(item)

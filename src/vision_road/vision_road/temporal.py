@@ -38,7 +38,7 @@ class TemporalDetector:
         self.registration='none'; self.measured_count=0; self.predicted_count=0
         self.paint_history=[];self.style_binary=None
         self.next_fragment_id=0
-        self.boundaries={};self.boundary_lanes=[];self.boundary_shift={}
+        self.boundaries={};self.boundary_lanes=[]
         self.detector.previous.clear(); self.detector.hits.clear()
         if hasattr(self.detector,'forget'):self.detector.forget()
 
@@ -138,7 +138,7 @@ class TemporalDetector:
         Only current supported chains are displayed. Gaps between paint pieces
         belong to this display fit, never the paint mask or accumulated map.
         """
-        previous=self.boundaries; current={}; self.boundary_lanes=[];self.boundary_shift={}
+        previous=self.boundaries; current={}; self.boundary_lanes=[]
         alpha=self.c.carla_spine_ema_alpha
         for candidate in self.detector.boundary_candidates:
             points=self._visible(candidate.points,valid)
@@ -159,9 +159,7 @@ class TemporalDetector:
                             # Blend at sample positions, not polynomial terms;
                             # a mismatch above resets the memory instead.
                             overlap=(points[:,0]>=lo)&(points[:,0]<=hi)
-                            raw=points[:,1].copy()
                             points[overlap,1]=alpha*points[overlap,1]+(1-alpha)*np.interp(points[overlap,0],prior[:,0],prior[:,1])
-                            self.boundary_shift[candidate.side]=(points[:,0].copy(),points[:,1]-raw)
             current[candidate.side]=(points,hits,float(t))
             if hits>=self.c.carla_chain_confirm_frames:
                 self.boundary_lanes.append(replace(candidate,points=points,hits=hits,source_time=float(t)))
@@ -210,15 +208,7 @@ class TemporalDetector:
                 lane.points=points;clipped.append(lane)
         observed=clipped
         chain_filter=(getattr(self.detector,'fragment_tracks',False) and c.carla_chain_filter_enabled)
-        if chain_filter:
-            self._boundaries(final_valid,matrix,t)
-            # Observed paint follows its smoothed boundary, within 0.10 m of
-            # where it was measured; forward extents and dash gaps are kept.
-            for lane in observed:
-                shift=self.boundary_shift.get(lane.side)
-                if shift is None:continue
-                inside=(lane.points[:,0]>=shift[0][0])&(lane.points[:,0]<=shift[0][-1])
-                lane.points[inside,1]+=np.clip(np.interp(lane.points[inside,0],shift[0],shift[1]),-.10,.10)
+        if chain_filter:self._boundaries(final_valid,matrix,t)
         if getattr(self.detector,'fragment_tracks',False):self._fragment_keys(observed,records)
         style_binary=getattr(self.detector,'style_mask',binary) if paint_mask is None else paint_mask
         style_valid=getattr(self.detector,'style_valid',valid) if paint_mask is None else valid
