@@ -123,7 +123,9 @@ def run(a):
     cv2.setNumThreads(2)
     cfg=settings(a.package_root);proj=projector(a.package_root,cfg)
     meta=json.loads((a.cache/'frames.json').read_text());timeline=Timeline(.25)
-    for t,x,y,yaw in meta['poses']:timeline.add(t,x,y,yaw)
+    # Feed poses as the replay does (up to 0.05 s ahead of each image): the
+    # timeline keeps only its newest 2000 samples.
+    poses=meta['poses'];next_pose=0;posed=0
     valid=cv2.imread(str(a.cache/'valid.png'),cv2.IMREAD_GRAYSCALE)
     my=proj.my;valid[my>=1080*LAUNCH['image_roi_bottom']]=0
     det=TemporalDetector(cfg);det.detector=CarlaDetector(cfg)
@@ -140,8 +142,10 @@ def run(a):
     with gzip.open(a.output/'predictions.jsonl.gz','wt') as out:
         for row in meta['frames']:
             i,t=row['frame'],row['stamp']
+            while next_pose<len(poses) and poses[next_pose][0]<=t+.05:timeline.add(*poses[next_pose]);next_pose+=1
             bev=cv2.imread(str(a.cache/'bev'/f'{i:05d}.png'))
-            lanes,_=det.process(bev,valid,t,timeline.at(t))
+            pose=timeline.at(t);posed+=pose is not None
+            lanes,_=det.process(bev,valid,t,pose)
             display=[replace(l,points=simplify(l.points)) for l in lanes]
             boundaries=[replace(l,points=simplify(l.points)) for l in det.boundary_lanes]
             rec=dict(frame=i,stamp=t,lanes=[lane_record(l) for l in display],boundaries=[lane_record(l) for l in boundaries])
@@ -154,7 +158,8 @@ def run(a):
             if video is not None and held is not None:video.stdin.write(held.tobytes())
             if i%300==0:print('run',i,flush=True)
     if video is not None:video.stdin.close();video.wait()
-    summary=metrics(rows)
+    print(f'frames with a reference pose: {posed}/{len(rows)}',flush=True)
+    summary=metrics(rows);summary['frames_with_pose']=posed
     (a.output/'metrics.json').write_text(json.dumps(summary,indent=1));print(json.dumps(summary['overall'],indent=1))
 
 
