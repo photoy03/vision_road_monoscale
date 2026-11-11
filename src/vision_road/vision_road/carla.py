@@ -44,6 +44,7 @@ class CarlaDetector(Detector):
         self.boundary_candidates=[]
         self.lane_width=3.3  # m; running estimate from frames with both boundaries
         self.last_spines={}  # previous frame boundaries, uncompensated: about 0.3 m of travel at 30 Hz
+        self.strand_gap={};self.frame_index=0  # side -> (double line spacing m, frame), kept 30 frames
 
     def binary(self,bev,valid):
         c=self.c
@@ -172,7 +173,7 @@ class CarlaDetector(Detector):
         center=float(gray[y,x].sum())/count;asymmetry=abs(left-right)
         return asymmetry>=20. and center-max(left,right)<asymmetry/1.5
 
-    def merge_strands(self,nodes,sample,smooth,yellow):
+    def merge_strands(self,nodes,sample,smooth,yellow,side=None):
         """One smooth centerline per marking; a double line is one marking.
 
         Each fragment keeps its observed forward extent and its own measured
@@ -190,6 +191,19 @@ class CarlaDetector(Detector):
             if .10<=gaps[k] and order[-1]-order[0]<=.55 and min(extent(outer),extent(~outer))>=2.:
                 mid=(np.median(offsets[outer])+np.median(offsets[~outer]))/2
                 target[outer]+=mid-np.median(offsets[outer]);target[~outer]+=mid-np.median(offsets[~outer]);double=True
+                gap=float(np.median(offsets[outer])-np.median(offsets[~outer]));old=self.strand_gap.get(side)
+                if old is not None and self.frame_index-old[1]<=30:gap=.7*old[0]+.3*gap
+                self.strand_gap[side]=(gap,self.frame_index)
+        remembered=self.strand_gap.get(side);previous=self.last_spines.get(side)
+        if yellow and not double and remembered is not None and self.frame_index-remembered[1]<=30 and previous is not None:
+            # One strand of a recent double line: move it half the remembered
+            # spacing toward the previous center, on the side it was seen.
+            half=remembered[0]/2
+            for i,a in enumerate(nodes):
+                pts=a['lane'].points
+                if not previous[0][0]<=centers[i]<=previous[0][-1]:continue
+                delta=float(np.mean(pts[:,1]-np.interp(pts[:,0],previous[0],previous[1])))
+                if half/2<=abs(delta)<=1.5*half:target[i]-=math.copysign(half,delta);double=True
         near=np.abs(centers[:,None]-centers[None,:])<=3.
         target=np.nanmedian(np.where(near,target[None,:],np.nan),axis=1)
         groups=[]
@@ -291,7 +305,7 @@ class CarlaDetector(Detector):
 
     def forget(self):
         """Drop frame-to-frame memory after a time jump or reset."""
-        self.last_spines={};self.lane_width=3.3
+        self.last_spines={};self.lane_width=3.3;self.strand_gap={}
 
     def coherent_paths(self,nodes):
         """DAG maximum-support paths; an attached branch cannot pull the fit.
@@ -371,7 +385,7 @@ class CarlaDetector(Detector):
         CARLA's boxes and dash gaps must not be filled with invented markings.
         Local row medians retain curved paint without extrapolation.
         """
-        c=self.c;tile=max(8,round(2./c.mpp));lanes=[];nodes=[];selected=np.zeros_like(mask)
+        c=self.c;tile=max(8,round(2./c.mpp));lanes=[];nodes=[];selected=np.zeros_like(mask);self.frame_index+=1
         self.boundary_candidates=[]
         if c.carla_native_enabled and _native is not None:
             for points,m,b,lo,hi,width,yellow,y,x in _native.extract_fragments(mask,self.yellow,c.mpp,c.forward_max,c.lateral_min):
@@ -478,7 +492,7 @@ class CarlaDetector(Detector):
                 retained=support[side]
                 if not retained:continue
                 for a in retained:a['lane'].side=side
-                offset,merged=self.merge_strands(retained,sample,smooth,yellow_path)
+                offset,merged=self.merge_strands(retained,sample,smooth,yellow_path,side)
                 spine=Lane(side,np.column_stack([sample,smooth+offset]),.8)
                 spine.corridor_m=band;remembered[side]=(sample,smooth+offset)
                 accepted_groups.append(merged);self.boundary_candidates.append(spine)
