@@ -2,6 +2,8 @@
  "overall": {
   "left": {
    "observed": 0.818,
+   "lateral10_step_std_cm": 2.55,
+   "spine_rough_cm": 0.044,
    "predicted_only": 0.002,
    "median_reach_m": 32.86,
    "median_boundary_reach_m": 32.93,
@@ -16,6 +18,8 @@
   },
   "right": {
    "observed": 0.634,
+   "lateral10_step_std_cm": 3.91,
+   "spine_rough_cm": 0.073,
    "predicted_only": 0.003,
    "median_reach_m": 27.65,
    "median_boundary_reach_m": 27.75,
@@ -34,6 +38,8 @@
   "0-5s box junction": {
    "left": {
     "observed": 0.747,
+    "lateral10_step_std_cm": 4.62,
+    "spine_rough_cm": 0.006,
     "predicted_only": 0.013,
     "median_reach_m": 35.0,
     "median_boundary_reach_m": 35.0,
@@ -48,6 +54,8 @@
    },
    "right": {
     "observed": 0.207,
+    "lateral10_step_std_cm": null,
+    "spine_rough_cm": 0.134,
     "predicted_only": 0.007,
     "median_reach_m": 34.58,
     "median_boundary_reach_m": 34.55,
@@ -64,6 +72,8 @@
   "5-20s straight": {
    "left": {
     "observed": 0.927,
+    "lateral10_step_std_cm": 1.44,
+    "spine_rough_cm": 0.01,
     "predicted_only": 0.0,
     "median_reach_m": 35.0,
     "median_boundary_reach_m": 35.0,
@@ -78,6 +88,8 @@
    },
    "right": {
     "observed": 0.853,
+    "lateral10_step_std_cm": 4.18,
+    "spine_rough_cm": 0.045,
     "predicted_only": 0.002,
     "median_reach_m": 31.99,
     "median_boundary_reach_m": 31.99,
@@ -94,6 +106,8 @@
   "20-22s right turn": {
    "left": {
     "observed": 0.183,
+    "lateral10_step_std_cm": null,
+    "spine_rough_cm": 0.075,
     "predicted_only": 0.0,
     "median_reach_m": 35.0,
     "median_boundary_reach_m": 35.0,
@@ -107,6 +121,8 @@
    },
    "right": {
     "observed": 0.0,
+    "lateral10_step_std_cm": null,
+    "spine_rough_cm": null,
     "predicted_only": 0.0,
     "median_reach_m": 0.0,
     "median_boundary_reach_m": 0.0,
@@ -121,6 +137,8 @@
   "22-35s curve": {
    "left": {
     "observed": 0.885,
+    "lateral10_step_std_cm": 3.09,
+    "spine_rough_cm": 0.15,
     "predicted_only": 0.0,
     "median_reach_m": 23.94,
     "median_boundary_reach_m": 23.94,
@@ -135,6 +153,8 @@
    },
    "right": {
     "observed": 0.695,
+    "lateral10_step_std_cm": 4.09,
+    "spine_rough_cm": 0.154,
     "predicted_only": 0.003,
     "median_reach_m": 18.06,
     "median_boundary_reach_m": 18.06,
@@ -151,6 +171,8 @@
   "35-42s straight": {
    "left": {
     "observed": 1.0,
+    "lateral10_step_std_cm": 1.95,
+    "spine_rough_cm": 0.013,
     "predicted_only": 0.0,
     "median_reach_m": 35.0,
     "median_boundary_reach_m": 34.9,
@@ -163,6 +185,8 @@
    },
    "right": {
     "observed": 0.986,
+    "lateral10_step_std_cm": 1.53,
+    "spine_rough_cm": 0.022,
     "predicted_only": 0.0,
     "median_reach_m": 30.03,
     "median_boundary_reach_m": 30.1,
@@ -179,6 +203,8 @@
   "42-48s crosswalk": {
    "left": {
     "observed": 0.439,
+    "lateral10_step_std_cm": 3.4,
+    "spine_rough_cm": 0.05,
     "predicted_only": 0.006,
     "median_reach_m": 13.93,
     "median_boundary_reach_m": 13.93,
@@ -193,6 +219,8 @@
    },
    "right": {
     "observed": 0.306,
+    "lateral10_step_std_cm": 3.31,
+    "spine_rough_cm": 0.031,
     "predicted_only": 0.0,
     "median_reach_m": 19.81,
     "median_boundary_reach_m": 19.81,
@@ -209,6 +237,8 @@
   "48-53s island": {
    "left": {
     "observed": 0.907,
+    "lateral10_step_std_cm": 3.15,
+    "spine_rough_cm": 0.003,
     "predicted_only": 0.0,
     "median_reach_m": 25.23,
     "median_boundary_reach_m": 25.23,
@@ -223,6 +253,8 @@
    },
    "right": {
     "observed": 0.747,
+    "lateral10_step_std_cm": 5.11,
+    "spine_rough_cm": 0.088,
     "predicted_only": 0.0,
     "median_reach_m": 18.76,
     "median_boundary_reach_m": 18.76,
@@ -240,6 +272,8 @@
   "53-61s box junction": {
    "left": {
     "observed": 0.774,
+    "lateral10_step_std_cm": 0.52,
+    "spine_rough_cm": 0.002,
     "predicted_only": 0.005,
     "median_reach_m": 35.0,
     "median_boundary_reach_m": 35.0,
@@ -254,6 +288,8 @@
    },
    "right": {
     "observed": 0.392,
+    "lateral10_step_std_cm": 3.76,
+    "spine_rough_cm": 0.051,
     "predicted_only": 0.009,
     "median_reach_m": 33.88,
     "median_boundary_reach_m": 33.88,

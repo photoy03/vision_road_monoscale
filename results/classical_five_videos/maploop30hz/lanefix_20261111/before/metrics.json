@@ -2,6 +2,8 @@
  "overall": {
   "left": {
    "observed": 0.774,
+   "lateral10_step_std_cm": 9.51,
+   "spine_rough_cm": 0.065,
    "predicted_only": 0.002,
    "median_reach_m": 31.71,
    "median_boundary_reach_m": 31.33,
@@ -10,12 +12,14 @@
    "strands_at_10m": 1.81,
    "styles": {
     "none": 405,
-    "unknown": 268,
-    "solid": 1134
+    "unknown": 266,
+    "solid": 1136
    }
   },
   "right": {
    "observed": 0.584,
+   "lateral10_step_std_cm": 3.75,
+   "spine_rough_cm": 0.086,
    "predicted_only": 0.006,
    "median_reach_m": 26.88,
    "median_boundary_reach_m": 26.88,
@@ -34,6 +38,8 @@
   "0-5s box junction": {
    "left": {
     "observed": 0.72,
+    "lateral10_step_std_cm": 4.0,
+    "spine_rough_cm": 0.028,
     "predicted_only": 0.007,
     "median_reach_m": 35.0,
     "median_boundary_reach_m": 35.0,
@@ -48,6 +54,8 @@
    },
    "right": {
     "observed": 0.147,
+    "lateral10_step_std_cm": null,
+    "spine_rough_cm": 0.056,
     "predicted_only": 0.013,
     "median_reach_m": 34.05,
     "median_boundary_reach_m": 33.98,
@@ -64,6 +72,8 @@
   "5-20s straight": {
    "left": {
     "observed": 0.927,
+    "lateral10_step_std_cm": 6.89,
+    "spine_rough_cm": 0.022,
     "predicted_only": 0.0,
     "median_reach_m": 35.0,
     "median_boundary_reach_m": 35.0,
@@ -71,13 +81,15 @@
     "paint_jag_p90_m": 0.0219,
     "strands_at_10m": 1.92,
     "styles": {
-     "solid": 317,
-     "unknown": 100,
+     "solid": 319,
+     "unknown": 98,
      "none": 33
     }
    },
    "right": {
     "observed": 0.864,
+    "lateral10_step_std_cm": 3.78,
+    "spine_rough_cm": 0.042,
     "predicted_only": 0.0,
     "median_reach_m": 30.94,
     "median_boundary_reach_m": 30.94,
@@ -94,6 +106,8 @@
   "20-22s right turn": {
    "left": {
     "observed": 0.0,
+    "lateral10_step_std_cm": null,
+    "spine_rough_cm": null,
     "predicted_only": 0.0,
     "median_reach_m": 0.0,
     "median_boundary_reach_m": 0.0,
@@ -106,6 +120,8 @@
    },
    "right": {
     "observed": 0.0,
+    "lateral10_step_std_cm": null,
+    "spine_rough_cm": null,
     "predicted_only": 0.0,
     "median_reach_m": 0.0,
     "median_boundary_reach_m": 0.0,
@@ -120,6 +136,8 @@
   "22-35s curve": {
    "left": {
     "observed": 0.833,
+    "lateral10_step_std_cm": 11.59,
+    "spine_rough_cm": 0.16,
     "predicted_only": 0.0,
     "median_reach_m": 18.76,
     "median_boundary_reach_m": 18.76,
@@ -134,6 +152,8 @@
    },
    "right": {
     "observed": 0.485,
+    "lateral10_step_std_cm": 4.27,
+    "spine_rough_cm": 0.201,
     "predicted_only": 0.0,
     "median_reach_m": 12.39,
     "median_boundary_reach_m": 12.39,
@@ -149,6 +169,8 @@
   "35-42s straight": {
    "left": {
     "observed": 1.0,
+    "lateral10_step_std_cm": 11.4,
+    "spine_rough_cm": 0.037,
     "predicted_only": 0.0,
     "median_reach_m": 34.58,
     "median_boundary_reach_m": 34.58,
@@ -161,6 +183,8 @@
    },
    "right": {
     "observed": 0.914,
+    "lateral10_step_std_cm": 1.22,
+    "spine_rough_cm": 0.076,
     "predicted_only": 0.01,
     "median_reach_m": 28.91,
     "median_boundary_reach_m": 28.91,
@@ -177,6 +201,8 @@
   "42-48s crosswalk": {
    "left": {
     "observed": 0.456,
+    "lateral10_step_std_cm": 12.29,
+    "spine_rough_cm": 0.085,
     "predicted_only": 0.006,
     "median_reach_m": 13.51,
     "median_boundary_reach_m": 13.44,
@@ -191,6 +217,8 @@
    },
    "right": {
     "observed": 0.317,
+    "lateral10_step_std_cm": 3.23,
+    "spine_rough_cm": 0.175,
     "predicted_only": 0.0,
     "median_reach_m": 16.52,
     "median_boundary_reach_m": 16.52,
@@ -207,6 +235,8 @@
   "48-53s island": {
    "left": {
     "observed": 0.727,
+    "lateral10_step_std_cm": 3.1,
+    "spine_rough_cm": 0.039,
     "predicted_only": 0.0,
     "median_reach_m": 28.91,
     "median_boundary_reach_m": 28.91,
@@ -221,6 +251,8 @@
    },
    "right": {
     "observed": 0.687,
+    "lateral10_step_std_cm": 5.18,
+    "spine_rough_cm": 0.077,
     "predicted_only": 0.007,
     "median_reach_m": 16.73,
     "median_boundary_reach_m": 16.73,
@@ -237,6 +269,8 @@
   "53-61s box junction": {
    "left": {
     "observed": 0.682,
+    "lateral10_step_std_cm": 0.84,
+    "spine_rough_cm": 0.053,
     "predicted_only": 0.005,
     "median_reach_m": 35.0,
     "median_boundary_reach_m": 35.0,
@@ -251,6 +285,8 @@
    },
    "right": {
     "observed": 0.475,
+    "lateral10_step_std_cm": 3.81,
+    "spine_rough_cm": 0.03,
     "predicted_only": 0.028,
     "median_reach_m": 32.97,
     "median_boundary_reach_m": 32.97,
@@ -8598,7 +8634,7 @@
     "o": true,
     "r": 11.55,
     "y8": 1.5732034208918755,
-    "st": "unknown"
+    "st": "solid"
    },
    "right": {
     "o": true,
@@ -8688,7 +8724,7 @@
     "o": true,
     "r": 9.52,
     "y8": 1.5458285714285716,
-    "st": "unknown"
+    "st": "solid"
    },
    "right": {
     "o": true,

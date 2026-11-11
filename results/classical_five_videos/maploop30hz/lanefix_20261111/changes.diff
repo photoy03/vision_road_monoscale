@@ -1,6 +1,18 @@
 --- backups/before-lanefix-20261111-2200/src/vision_road/vision_road/carla.py	2026-11-11 20:45:10.387244738 +0900
-+++ src/vision_road/vision_road/carla.py	2026-11-11 22:17:40.590878056 +0900
-@@ -46,7 +46,7 @@
++++ src/vision_road/vision_road/carla.py	2026-11-11 22:43:43.136126212 +0900
+@@ -38,15 +38,18 @@
+         if cfg.carla_stage not in (1,2,3) or cfg.carla_ridge_min<=0 or cfg.carla_relative_min<=0:
+             raise ValueError('Invalid CARLA feature parameters')
+         super().__init__(replace(cfg,lane_width_min=-12.,lane_width_max=12.))
+-        if cfg.carla_chain_confirm_frames<1 or cfg.carla_chain_band_m<=0:
++        if cfg.carla_chain_confirm_frames<1 or cfg.carla_chain_band_m<=0 or not 0<=cfg.carla_link_curvature_max<=.2 or not 0<cfg.carla_spine_ema_alpha<=1:
+             raise ValueError('Invalid CARLA chain filter limits')
+         self.diagnostics={}
+         self.boundary_candidates=[]
++        self.lane_width=3.3  # m; running estimate from frames with both boundaries
++        self.last_spines={}  # previous frame boundaries, uncompensated: about 0.3 m of travel at 30 Hz
++        self.strand_gap={};self.frame_index=0  # side -> (double line spacing m, frame), kept 30 frames
+ 
      def binary(self,bev,valid):
          c=self.c
          gray=cv2.cvtColor(bev,cv2.COLOR_BGR2GRAY).astype(np.float32)
@@ -9,7 +21,7 @@
          h,l,s=cv2.split(cv2.cvtColor(bev,cv2.COLOR_BGR2HLS))
          b,g,r=cv2.split(bev.astype(np.float32))
          white=(s<120)&(l>c.carla_white_light_min)
-@@ -153,36 +153,132 @@
+@@ -153,36 +156,227 @@
              if side not in chosen or quality>chosen[side][0]:chosen[side]=(quality,lane)
          return [chosen[s][1] for s in ['left','right'] if s in chosen]
  
@@ -30,7 +42,7 @@
 +        center=float(gray[y,x].sum())/count;asymmetry=abs(left-right)
 +        return asymmetry>=20. and center-max(left,right)<asymmetry/1.5
 +
-+    def merge_strands(self,nodes,sample,smooth,yellow):
++    def merge_strands(self,nodes,sample,smooth,yellow,side=None):
 +        """One smooth centerline per marking; a double line is one marking.
 +
 +        Each fragment keeps its observed forward extent and its own measured
@@ -48,6 +60,19 @@
 +            if .10<=gaps[k] and order[-1]-order[0]<=.55 and min(extent(outer),extent(~outer))>=2.:
 +                mid=(np.median(offsets[outer])+np.median(offsets[~outer]))/2
 +                target[outer]+=mid-np.median(offsets[outer]);target[~outer]+=mid-np.median(offsets[~outer]);double=True
++                gap=float(np.median(offsets[outer])-np.median(offsets[~outer]));old=self.strand_gap.get(side)
++                if old is not None and self.frame_index-old[1]<=30:gap=.7*old[0]+.3*gap
++                self.strand_gap[side]=(gap,self.frame_index)
++        remembered=self.strand_gap.get(side);previous=self.last_spines.get(side)
++        if yellow and not double and remembered is not None and self.frame_index-remembered[1]<=30 and previous is not None:
++            # One strand of a recent double line: move it half the remembered
++            # spacing toward the previous center, on the side it was seen.
++            half=remembered[0]/2
++            for i,a in enumerate(nodes):
++                pts=a['lane'].points
++                if not previous[0][0]<=centers[i]<=previous[0][-1]:continue
++                delta=float(np.mean(pts[:,1]-np.interp(pts[:,0],previous[0],previous[1])))
++                if half/2<=abs(delta)<=1.5*half:target[i]-=math.copysign(half,delta);double=True
 +        near=np.abs(centers[:,None]-centers[None,:])<=3.
 +        target=np.nanmedian(np.where(near,target[None,:],np.nan),axis=1)
 +        groups=[]
@@ -73,6 +98,83 @@
 +            pixels=(np.concatenate([a['pixels'][0] for a,_ in items]),np.concatenate([a['pixels'][1] for a,_ in items]))
 +            merged.append(dict(lane=lane,pixels=pixels))
 +        return float(np.median(target)),merged
++
++    def spine(self,group,forward=None,center=None):
++        """Robust quadratic boundary of one selected chain, with its band."""
++        c=self.c
++        if forward is None:forward,center=grouped_median(np.vstack([a['lane'].points for a in group]))
++        # Fit only the selected chain; nearby branches cannot steer
++        # the boundary or create paint inside real dash gaps.
++        sample=np.linspace(forward[0],forward[-1],max(3,math.ceil((forward[-1]-forward[0])/.20)+1))
++        # A robust quadratic within the selected connected chain avoids
++        # local polynomial oscillations across the actual dash gaps.
++        origin=float(np.mean(forward));x=forward-origin
++        weights=np.ones(len(x))
++        for _ in range(5):
++            fit=np.polyfit(x,center,2,w=weights)
++            residual=np.abs(center-np.polyval(fit,x))
++            weights=np.minimum(1.,.20/np.maximum(residual,.001))
++        yellow_path=sum(a['yellow'] for a in group)>len(group)/2
++        band=c.carla_chain_band_m
++        if c.carla_path_filter_enabled and yellow_path:band=max(band,.45)
++        return sample,np.polyval(fit,sample-origin),band,yellow_path,group
++
++    def parallel_support(self,nodes,spines):
++        """Find a missing or short boundary from the other one shifted by a lane.
++
++        Only fragments of real paint inside the shifted band are collected;
++        nothing is drawn where no paint was measured.
++        """
++        span=lambda value:value[0][-1]-value[0][0] if value is not None else 0.
++        left,right=spines.get('left'),spines.get('right')
++        if left is not None and right is not None:
++            lo=max(5.,left[0][0],right[0][0]);hi=min(10.,left[0][-1],right[0][-1])
++            if hi-lo>=2.:
++                f=np.linspace(lo,hi,11)
++                width=float(np.mean(np.interp(f,left[0],left[1])-np.interp(f,right[0],right[1])))
++                if 2.6<=width<=4.2:self.lane_width=.8*self.lane_width+.2*width
++        for side,other in (('right','left'),('left','right')):
++            reference=spines.get(other)
++            if reference is None or span(reference)<8. or span(spines.get(side))>=6.:continue
++            sample,smooth=reference[0],reference[1]
++            # Offset along the normal of the reference so curves stay parallel.
++            slope=np.gradient(smooth,sample);norm=np.sqrt(1+slope**2)
++            sign=-1. if side=='right' else 1.
++            forward=sample-sign*self.lane_width*slope/norm;lateral=smooth+sign*self.lane_width/norm
++            order=np.argsort(forward);forward=forward[order];lateral=lateral[order]
++            used={id(a) for a in reference[4]}
++            band=[]
++            for a in nodes:
++                pts=a['lane'].points
++                if id(a) in used or pts[0,0]<forward[0]-.15 or pts[-1,0]>forward[-1]+.15:continue
++                if float(np.median(np.abs(pts[:,1]-np.interp(pts[:,0],forward,lateral))))<=.35:band.append(a)
++            if not band:continue
++            extent=lambda flag:sum(float(np.ptp(a['lane'].points[:,0])) for a in band if a['yellow']==flag)
++            color=extent(True)>extent(False);band=[a for a in band if a['yellow']==color]
++            current=spines.get(side)
++            paint=sum(float(np.ptp(a['lane'].points[:,0])) for a in band)
++            if paint<1.2 or (current is not None and paint<=sum(float(np.ptp(a['lane'].points[:,0])) for a in current[4])):continue
++            for a in band:a['lane'].side=side
++            spines[side]=self.spine(band)
++            self.diagnostics['parallel_'+side]=round(paint,2)
++
++    def prior_penalty(self,side,path):
++        """Rank down a jump outward from the last boundary or off the lane width."""
++        points=np.vstack([a['lane'].points for a in path]);points=points[np.argsort(points[:,0])]
++        if not points[0,0]-2.<=8.<=points[-1,0]+4.:return 0.
++        lateral=float(np.interp(8.,points[:,0],points[:,1]));penalty=0.
++        def at8(value):
++            if value is None or not value[0][0]<=8.<=value[0][-1]:return None
++            return float(np.interp(8.,value[0],value[1]))
++        previous=at8(self.last_spines.get(side))
++        if previous is not None and (lateral-previous if side=='left' else previous-lateral)>.5:penalty+=2.
++        opposite=at8(self.last_spines.get('right' if side=='left' else 'left'))
++        if opposite is not None and abs(abs(lateral-opposite)-self.lane_width)>.6:penalty+=1.5
++        return penalty
++
++    def forget(self):
++        """Drop frame-to-frame memory after a time jump or reset."""
++        self.last_spines={};self.lane_width=3.3;self.strand_gap={}
 +
      def coherent_paths(self,nodes):
          """DAG maximum-support paths; an attached branch cannot pull the fit.
@@ -114,7 +216,10 @@
 +        gap=first[None,:]-last[:,None];positive=np.maximum(gap,0.)
 +        middle=(lo[:,None]+hi[None,:])/2;angle=np.abs(tangent[:,None]-tangent[None,:])
 +        error=np.abs(slope[:,None]*middle+intercept[:,None]-(slope[None,:]*middle+intercept[None,:]))*c.mpp
-+        ok=np.triu(np.ones((n,n),bool),1)&(gap>=-.15)&(gap<=8.)&(yellow[:,None]==yellow[None,:])&(angle<=math.radians(22))&(error<=.20+.025*positive)
++        # A straight-line prediction misses a curve by about k*g^2/2 and turns
++        # by k*g across a gap g; allow up to the configured curvature.
++        bend=c.carla_link_curvature_max
++        ok=np.triu(np.ones((n,n),bool),1)&(gap>=-.15)&(gap<=8.)&(yellow[:,None]==yellow[None,:])&(angle<=math.radians(22)+bend*positive)&(error<=.20+.025*positive+.5*bend*positive**2)
 +        weight=length[None,:]+.4-3.*error-1.5*angle-.06*positive
 +        links=[[] for _ in range(n)]
 +        for k,j in zip(*np.nonzero(ok)):links[j].append((int(k),float(weight[k,j])))
@@ -138,16 +243,18 @@
 +            # A lone short fragment keeps only part of its near-start bonus,
 +            # so it cannot outrank a long supported chain just behind it.
 +            adjusted=np.array(scores)-3.*np.maximum(0.,15.-first[origin])*(1-np.minimum(1.,np.array(paint)/3.))
++            valid=[]
 +            for end in np.argsort(-adjusted,kind='stable'):
-+                if adjusted[end]==-math.inf:break
++                if adjusted[end]==-math.inf or len(valid)==5:break
 +                path=[];k=int(end)
 +                while k>=0:path.append(k);k=parent[k]
 +                path=[candidates[k] for k in reversed(path)]
                  span=path[-1]['lane'].points[-1,0]-path[0]['lane'].points[0,0]
                  if (len(path)>=2 and span>=2.5) or (len(path)==1 and span>=1.2 and path[0]['lane'].points[0,0]<=14.):
 -                    chosen[side]=path;break
-+                    return float(adjusted[end]),path
-+            return None
++                    valid.append((float(adjusted[end])-self.prior_penalty(side,path),path))
++            # Penalties only reorder supported candidates; none is removed.
++            return max(valid,key=lambda v:v[0]) if valid else None
 +        for side in ('left','right'):
 +            result=best_path(side,set())
 +            if result is not None:scored[side]=result
@@ -164,7 +271,13 @@
          return chosen
  
      def paint_fragments(self,mask):
-@@ -196,8 +292,9 @@
+@@ -191,13 +385,14 @@
+         CARLA's boxes and dash gaps must not be filled with invented markings.
+         Local row medians retain curved paint without extrapolation.
+         """
+-        c=self.c;tile=max(8,round(2./c.mpp));lanes=[];nodes=[];selected=np.zeros_like(mask)
++        c=self.c;tile=max(8,round(2./c.mpp));lanes=[];nodes=[];selected=np.zeros_like(mask);self.frame_index+=1
+         self.boundary_candidates=[]
          if c.carla_native_enabled and _native is not None:
              for points,m,b,lo,hi,width,yellow,y,x in _native.extract_fragments(mask,self.yellow,c.mpp,c.forward_max,c.lateral_min):
                  anchor=c.lateral_min+(m*((c.forward_max-3.)/c.mpp)+b)*c.mpp
@@ -176,7 +289,7 @@
          else:
              for start in range(0,len(mask),tile):
                  part=mask[start:start+tile]
-@@ -217,7 +314,7 @@
+@@ -217,7 +412,7 @@
                      if axis_y2<.35**2 or normal_width>.10 or vy<=0:continue
                      slope=cov/vy;line=(slope,mx-slope*my)
                      anchor=c.lateral_min+(line[0]*((c.forward_max-3.)/c.mpp)+line[1])*c.mpp
@@ -185,7 +298,7 @@
                      rows=np.unique(y);cols=np.bincount(y,weights=x)[rows]/np.bincount(y)[rows]
                      residual=np.sort(np.abs(cols-(line[0]*rows+line[1])))
                      position=.9*(len(residual)-1);lower=int(position);fraction=position-lower
-@@ -225,8 +322,10 @@
+@@ -225,8 +420,10 @@
                      if q*c.mpp>.15:continue
                      points=np.column_stack([c.forward_max-rows*c.mpp,-(c.lateral_min+cols*c.mpp)])[::-1]
                      confidence=float(np.clip(.9-normal_width*2.,.55,.95))
@@ -197,24 +310,29 @@
          if c.carla_path_filter_enabled and c.carla_chain_filter_enabled:
              groups=self.coherent_paths(nodes)
          else:
-@@ -270,6 +369,7 @@
+@@ -270,35 +467,36 @@
                  ranked[side]=(score,group,forward,center)
          if c.carla_chain_filter_enabled:
              rejected_groups=max(0,len(groups)-len(ranked))
 +            spines={}
              for side,(_,group,forward,center) in ranked.items():
-                 # Fit only the selected chain; nearby branches cannot steer
-                 # the boundary or create paint inside real dash gaps.
-@@ -282,23 +382,34 @@
-                     fit=np.polyfit(x,center,2,w=weights)
-                     residual=np.abs(center-np.polyval(fit,x))
-                     weights=np.minimum(1.,.20/np.maximum(residual,.001))
+-                # Fit only the selected chain; nearby branches cannot steer
+-                # the boundary or create paint inside real dash gaps.
+-                sample=np.linspace(forward[0],forward[-1],max(3,math.ceil((forward[-1]-forward[0])/.20)+1))
+-                # A robust quadratic within the selected connected chain avoids
+-                # local polynomial oscillations across the actual dash gaps.
+-                origin=float(np.mean(forward));x=forward-origin
+-                weights=np.ones(len(x))
+-                for _ in range(5):
+-                    fit=np.polyfit(x,center,2,w=weights)
+-                    residual=np.abs(center-np.polyval(fit,x))
+-                    weights=np.minimum(1.,.20/np.maximum(residual,.001))
 -                smooth=np.polyval(fit,sample-origin)
 -                spine=Lane(side,np.column_stack([sample,smooth]),.8)
 -                retained=[]
 -                support=group
-                 yellow_path=sum(a['yellow'] for a in group)>len(group)/2
-                 band=c.carla_chain_band_m
+-                yellow_path=sum(a['yellow'] for a in group)>len(group)/2
+-                band=c.carla_chain_band_m
 -                if c.carla_path_filter_enabled:
 -                    support=[a for a in nodes if a['lane'].side==side and a['yellow']==yellow_path
 -                             and a['lane'].points[0,0]>=sample[0]-.15 and a['lane'].points[-1,0]<=sample[-1]+.15]
@@ -226,8 +344,8 @@
 -                if retained:
 -                    accepted_groups.append(retained);self.boundary_candidates.append(spine)
 -                    spine.corridor_m=band
-+                if c.carla_path_filter_enabled and yellow_path:band=max(band,.45)
-+                spines[side]=(sample,np.polyval(fit,sample-origin),band,yellow_path,group)
++                spines[side]=self.spine(group,forward,center)
++            if c.carla_path_filter_enabled:self.parallel_support(nodes,spines)
 +            # Each fragment supports at most one boundary, whatever side its
 +            # own straight extrapolation suggested.
 +            support={side:[] for side in spines}
@@ -244,19 +362,92 @@
 +                    error=float(np.median(np.abs(pts[:,1]-np.interp(pts[:,0],sample,smooth))))
 +                    if error<=band and (best is None or error<best[0]):best=(error,side)
 +                if best is not None:support[best[1]].append(a)
++            remembered={}
 +            for side,(sample,smooth,band,yellow_path,group) in spines.items():
 +                retained=support[side]
 +                if not retained:continue
 +                for a in retained:a['lane'].side=side
-+                offset,merged=self.merge_strands(retained,sample,smooth,yellow_path)
++                offset,merged=self.merge_strands(retained,sample,smooth,yellow_path,side)
 +                spine=Lane(side,np.column_stack([sample,smooth+offset]),.8)
-+                spine.corridor_m=band
++                spine.corridor_m=band;remembered[side]=(sample,smooth+offset)
 +                accepted_groups.append(merged);self.boundary_candidates.append(spine)
++            self.last_spines=remembered
          for group in accepted_groups:
              lanes.extend(a['lane'] for a in group)
              for a in group:selected[a['pixels']]=255
+--- backups/before-lanefix-20261111-2200/src/vision_road/vision_road/temporal.py	2026-11-11 20:45:10.387244738 +0900
++++ src/vision_road/vision_road/temporal.py	2026-11-11 22:39:45.418859555 +0900
+@@ -38,8 +38,9 @@
+         self.registration='none'; self.measured_count=0; self.predicted_count=0
+         self.paint_history=[];self.style_binary=None
+         self.next_fragment_id=0
+-        self.boundaries={};self.boundary_lanes=[]
++        self.boundaries={};self.boundary_lanes=[];self.boundary_shift={}
+         self.detector.previous.clear(); self.detector.hits.clear()
++        if hasattr(self.detector,'forget'):self.detector.forget()
+ 
+     def pixel(self, points):
+         c=self.c
+@@ -137,12 +138,13 @@
+         Only current supported chains are displayed. Gaps between paint pieces
+         belong to this display fit, never the paint mask or accumulated map.
+         """
+-        previous=self.boundaries; current={}; self.boundary_lanes=[]
++        previous=self.boundaries; current={}; self.boundary_lanes=[];self.boundary_shift={}
++        alpha=self.c.carla_spine_ema_alpha
+         for candidate in self.detector.boundary_candidates:
+             points=self._visible(candidate.points,valid)
+             if points is None:continue
+             old=previous.get(candidate.side); hits=1
+-            if old is not None and self.last_time is not None and 0<t-self.last_time<=max(.5,self.c.temporal_max_age_sec):
++            if old is not None and self.last_time is not None and 0<t-self.last_time<=max(.4,self.c.temporal_max_age_sec):
+                 prior,old_hits,observed_time=old
+                 if matrix is not None:
+                     pixels=self.pixel(prior) @ matrix[:,:2].T+matrix[:,2]
+@@ -154,8 +156,12 @@
+                     if error<=(.30 if matrix is not None else .60):
+                         hits=old_hits+1
+                         if matrix is not None:
++                            # Blend at sample positions, not polynomial terms;
++                            # a mismatch above resets the memory instead.
+                             overlap=(points[:,0]>=lo)&(points[:,0]<=hi)
+-                            points[overlap,1]=.75*points[overlap,1]+.25*np.interp(points[overlap,0],prior[:,0],prior[:,1])
++                            raw=points[:,1].copy()
++                            points[overlap,1]=alpha*points[overlap,1]+(1-alpha)*np.interp(points[overlap,0],prior[:,0],prior[:,1])
++                            self.boundary_shift[candidate.side]=(points[:,0].copy(),points[:,1]-raw)
+             current[candidate.side]=(points,hits,float(t))
+             if hits>=self.c.carla_chain_confirm_frames:
+                 self.boundary_lanes.append(replace(candidate,points=points,hits=hits,source_time=float(t)))
+@@ -204,7 +210,15 @@
+                 lane.points=points;clipped.append(lane)
+         observed=clipped
+         chain_filter=(getattr(self.detector,'fragment_tracks',False) and c.carla_chain_filter_enabled)
+-        if chain_filter:self._boundaries(final_valid,matrix,t)
++        if chain_filter:
++            self._boundaries(final_valid,matrix,t)
++            # Observed paint follows its smoothed boundary, within 0.10 m of
++            # where it was measured; forward extents and dash gaps are kept.
++            for lane in observed:
++                shift=self.boundary_shift.get(lane.side)
++                if shift is None:continue
++                inside=(lane.points[:,0]>=shift[0][0])&(lane.points[:,0]<=shift[0][-1])
++                lane.points[inside,1]+=np.clip(np.interp(lane.points[inside,0],shift[0],shift[1]),-.10,.10)
+         if getattr(self.detector,'fragment_tracks',False):self._fragment_keys(observed,records)
+         style_binary=getattr(self.detector,'style_mask',binary) if paint_mask is None else paint_mask
+         style_valid=getattr(self.detector,'style_valid',valid) if paint_mask is None else valid
+--- backups/before-lanefix-20261111-2200/src/vision_road/vision_road/core.py	2026-11-11 20:45:10.386244656 +0900
++++ src/vision_road/vision_road/core.py	2026-11-11 22:39:45.418859555 +0900
+@@ -55,6 +55,8 @@
+     carla_chain_filter_enabled: bool = True
+     carla_chain_confirm_frames: int = 3
+     carla_chain_band_m: float = 0.25
++    carla_spine_ema_alpha: float = 0.5  # weight of the current boundary when it matches the previous one
++    carla_link_curvature_max: float = 0.0  # 1/m; optional curve allowance for chain links (1/40, 1/100 regressed maploop)
+ 
+ 
+ class Projector:
 --- backups/before-lanefix-20261111-2200/src/vision_road/vision_road/native.cpp	2026-11-11 20:45:10.367243105 +0900
-+++ src/vision_road/vision_road/native.cpp	2026-11-11 21:57:28.373494017 +0900
++++ src/vision_road/vision_road/native.cpp	2026-11-11 22:43:15.365601436 +0900
 @@ -29,7 +29,10 @@
     vx/=n-1;vy/=n-1;cov/=n-1;double disc=std::hypot(vx-vy,2*cov),axis=disc?.5*(1-(vx-vy)/disc):1.;double normal=std::sqrt(std::max((vx+vy-disc)*.5,0.))*mpp;
     if(axis<.35*.35||normal>.10||vy<=0)continue;
