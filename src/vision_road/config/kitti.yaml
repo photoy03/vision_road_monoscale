@@ -1,0 +1,22 @@
+vision_road:
+  ros__parameters:
+    detector_backend: paint_evidence
+    candidate_mask_enabled: true
+    candidate_max_width_m: 0.45
+    opencv_threads: 2
+    style_temporal_enabled: true
+    style_history_sec: 0.8
+    style_history_frames: 8
+    style_hold_sec: 2.0
+    lateral_min: -5.0
+    lateral_max: 5.0
+    forward_min: 3.0
+    forward_max: 35.0
+    mpp: 0.05
+    windows: 24
+    margin_m: 0.50
+    min_span_m: 2.0
+    pose_wait_sec: 1.0
+    max_pending_frames: 60
+    image_reliability: reliable
+    image_queue_depth: 30

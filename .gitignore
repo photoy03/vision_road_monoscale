@@ -1,0 +1,26 @@
+build/
+install/
+log/
+__pycache__/
+.pytest_cache/
+*.pyc
+data/
+results/
+kitti_runs/
+
+# 차선 개선 작업용 추가 규칙
+backups/
+artifacts/
+frames/
+*.mp4
+*.webm
+*.png
+*.jpg
+*.db3
+*.mcap
+*.bag
+*.bak
+*.so
+*.o
+src/*/build/
+*.egg-info/

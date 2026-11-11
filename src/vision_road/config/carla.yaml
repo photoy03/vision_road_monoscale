@@ -1,0 +1,35 @@
+vision_road:
+  ros__parameters:
+    detector_backend: carla
+    opencv_threads: 2
+    image_reliability: reliable
+    image_queue_depth: 10
+    image_topic: /carla/ego_vehicle/rgb_front/image
+    odom_topic: /carla/ego_vehicle/odometry
+    world_frame: map
+    base_frame: ego_vehicle
+    image_roi_bottom: 0.86
+    map_enabled: false
+    lateral_min: -6.0
+    lateral_max: 6.0
+    forward_min: 3.0
+    forward_max: 35.0
+    mpp: 0.05
+    min_span_m: 0.40
+    min_pixels: 20
+    windows: 24
+    margin_m: 0.50
+    segment_m: 0.10
+    carla_stage: 3
+    carla_ridge_min: 3.0
+    carla_relative_min: 0.025
+    carla_grid_enabled: true
+    temporal_enabled: true
+    temporal_max_frames: 2
+    temporal_max_age_sec: 0.15
+    temporal_max_distance_m: 3.0
+    temporal_match_m: 0.30
+    style_temporal_enabled: true
+    style_history_sec: 0.8
+    style_history_frames: 8
+    style_hold_sec: 1.0

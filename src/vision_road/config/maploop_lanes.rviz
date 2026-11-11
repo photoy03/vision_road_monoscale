@@ -1,0 +1,50 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Global Options:
+    Fixed Frame: base_link
+    Frame Rate: 20
+    Background Color: 25; 25; 25
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Ground
+      Enabled: true
+      Cell Size: 1
+      Plane Cell Count: 40
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Observed paint
+      Enabled: true
+      Marker Topic:
+        Value: /road/lane_markers
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        Depth: 10
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Boundary fit
+      Enabled: true
+      Marker Topic:
+        Value: /road/lane_boundary_markers
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        Depth: 10
+    - Class: rviz_default_plugins/Image
+      Name: Camera overlay
+      Enabled: true
+      Topic:
+        Value: /road/overlay
+        Reliability Policy: Best Effort
+        Durability Policy: Volatile
+        Depth: 2
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Name: Current View
+      Scale: 20
+      X: 12
+      Y: 0
+      Angle: 0
+Window Geometry:
+  Width: 1400
+  Height: 900

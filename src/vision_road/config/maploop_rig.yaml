@@ -1,0 +1,7 @@
+camera_forward_m: 2.2
+camera_height_m: 1.4000000000000001
+camera_left_m: 0.0
+distortion_model: plumb_bob
+pitch_deg: 0.0
+roll_deg: 0.0
+yaw_deg: 0.0
