@@ -1,0 +1,51 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Global Options:
+    Fixed Frame: base_link
+    Frame Rate: 30
+    Background Color: 24; 28; 34
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Ground - 1 meter cells
+      Enabled: true
+      Alpha: 0.35
+      Cell Size: 1
+      Plane: XY
+      Plane Cell Count: 80
+      Color: 150; 150; 150
+    - Class: rviz_default_plugins/Axes
+      Name: Vehicle origin - rear axle
+      Enabled: true
+      Reference Frame: base_link
+      Length: 2
+      Radius: 0.04
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Observed lane paint
+      Enabled: true
+      Topic:
+        Value: /road/lane_markers
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        Depth: 10
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Estimated lane boundaries
+      Enabled: true
+      Topic:
+        Value: /road/lane_boundary_markers
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        Depth: 10
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Name: Lane coordinates
+      Scale: 24
+      X: 15
+      Y: 0
+      Angle: -1.5707963267948966
+Window Geometry:
+  Width: 1100
+  Height: 1000

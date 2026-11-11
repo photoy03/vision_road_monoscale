@@ -87,7 +87,7 @@ def test_double_yellow_paint_keeps_both_strands_and_boundary_takes_the_center():
 
 
 def test_boundary_ema_resets_on_a_jump_or_a_capture_gap():
-    c=replace(C,carla_chain_confirm_frames=3)
+    c=replace(C,carla_chain_confirm_frames=3,carla_tracking_enabled=False)  # isolate EMA from path switch hysteresis
     def run(frames):
         t=TemporalDetector(c);t.detector=CarlaDetector(c);valid=None;out=[]
         for stamp,y in frames:
@@ -105,3 +105,29 @@ def test_boundary_ema_resets_on_a_jump_or_a_capture_gap():
     # A gap above 0.4 s restarts confirmation even at the same place.
     out=run([(1.+.05*i,1.75) for i in range(4)]+[(1.7,1.75)])
     assert not out[4]
+
+
+def test_tracking_confirms_replacement_without_inventing_old_paint():
+    c=replace(C,carla_chain_confirm_frames=2)
+    d=TemporalDetector(c);d.detector=CarlaDetector(c)
+    im=canvas();paint(im,-1.7,4,30,WHITE);valid=np.full(im.shape[:2],255,np.uint8)
+    for frame in range(5):d.process(im,valid,frame/30,(0.,0.,0.))
+    assert 'right' in d.confirmed_tracking
+    changed=canvas();paint(changed,-2.7,4,30,WHITE)
+    for frame in range(5,12):
+        lanes,_=d.process(changed,valid,frame/30,(0.,0.,0.))
+        measured=[l for l in lanes if not l.reprojected and l.side=='right']
+        assert all(abs(float(np.median(l.points[:,1]))+2.7)<.1 for l in measured)
+    assert any(b.side=='right' and not b.reprojected and abs(float(np.median(b.points[:,1]))+2.7)<.1 for b in d.boundary_lanes)
+    for frame in range(12,25):d.process(canvas(),valid,frame/30,(0.,0.,0.))
+    assert not d.confirmed_tracking
+    assert not d.boundary_lanes
+
+
+def test_tracking_prior_without_eight_metre_overlap_does_not_crash():
+    d=CarlaDetector(C)
+    p=np.column_stack([np.linspace(12,20,30),np.full(30,-1.7)])
+    from vision_road.core import Lane
+    d.tracking_priors={'right':(p,1.)}
+    candidate=np.column_stack([np.linspace(4,20,40),np.full(40,-1.7)])
+    assert np.isfinite(d.prior_penalty('right',[dict(lane=Lane('right',candidate,.9))]))

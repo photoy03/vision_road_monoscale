@@ -1,0 +1,90 @@
+{
+  "requested_frames": 1807,
+  "input_frames": 1807,
+  "input_hz": 29.99995179575852,
+  "output_hz": 30.013505598898817,
+  "received": {
+    "local": 1807,
+    "styles": 1807,
+    "paint_markers": 1807,
+    "boundary_markers": 1807,
+    "overlay": 301,
+    "binary": 302,
+    "bev": 302
+  },
+  "missing": {
+    "local": 0,
+    "styles": 0,
+    "paint_markers": 0,
+    "boundary_markers": 0,
+    "overlay": 1506,
+    "binary": 1505,
+    "bev": 1505
+  },
+  "pose_valid": 1807,
+  "nonempty": 1529,
+  "callback_ms": {
+    "median": 25.348698,
+    "p95": 37.598912399999996,
+    "p99": 41.897618500000014,
+    "max": 57.545306
+  },
+  "callback_over_33ms": 287,
+  "latency_ms": {
+    "local": {
+      "median": 31.053575,
+      "p95": 150.09041399999995,
+      "p99": 212.82012692,
+      "max": 229.839252
+    },
+    "styles": {
+      "median": 31.454104,
+      "p95": 150.50569159999995,
+      "p99": 213.20064000000002,
+      "max": 230.295402
+    },
+    "paint_markers": {
+      "median": 34.036607,
+      "p95": 155.7511377,
+      "p99": 218.54628834000002,
+      "max": 236.35045
+    },
+    "boundary_markers": {
+      "median": 34.647948,
+      "p95": 156.5201192,
+      "p99": 219.36131310000002,
+      "max": 238.058413
+    },
+    "overlay": {
+      "median": 39.351632,
+      "p95": 155.426398,
+      "p99": 219.823706,
+      "max": 230.46666
+    },
+    "binary": {
+      "median": 41.967110000000005,
+      "p95": 156.1382674,
+      "p99": 220.83561162,
+      "max": 231.200161
+    },
+    "bev": {
+      "median": 42.710488999999995,
+      "p95": 156.81893875,
+      "p99": 221.24818173,
+      "max": 231.508382
+    }
+  },
+  "source_lateness_ms": {
+    "median": 0.492121,
+    "p95": 0.6255743999999999,
+    "p99": 0.73452894,
+    "max": 1.382553
+  },
+  "throughput_pass": false,
+  "all_callbacks_under_33ms": false,
+  "display_error_m": 0.025,
+  "mpp": 0.07,
+  "debug_hz": 5.0,
+  "expected_debug_frames": 302,
+  "note": "CPU ROS pipeline, native 1920x1080 bag images, debug images enabled and subscribed at the configured diagnostic rate; structured outputs are not throttled. Throughput criterion: source 29.7-30.3Hz, no missing structured lane messages, local p95<100ms/max<250ms. Hard 33.3ms deadline reported separately. CARLA recorded reference poses; not estimated odometry."
+}

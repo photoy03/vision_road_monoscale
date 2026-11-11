@@ -8,6 +8,7 @@ import statistics
 import cv2
 import numpy as np
 from .core import Detector, Lane
+from .path_tracking import PathTracking,continuity_error,path_points
 try:
     from . import _native
 except ImportError:
@@ -41,6 +42,9 @@ class CarlaDetector(Detector):
         super().__init__(replace(cfg,lane_width_min=-12.,lane_width_max=12.))
         if cfg.carla_chain_confirm_frames<1 or cfg.carla_chain_band_m<=0 or not 0<=cfg.carla_link_curvature_max<=.2 or not 0<cfg.carla_spine_ema_alpha<=1:
             raise ValueError('Invalid CARLA chain filter limits')
+        if cfg.carla_tracking_match_m<=0 or cfg.carla_tracking_memory_sec<=0 or cfg.carla_tracking_switch_frames<1 or min(cfg.carla_tracking_keep_bonus,cfg.carla_tracking_switch_margin)<0:
+            raise ValueError('Invalid path tracking settings')
+        self.path_tracking=PathTracking(cfg);self.tracking_priors={}
         self.diagnostics={}
         self.boundary_candidates=[]
         self.lane_width=3.3  # m; running estimate from frames with both boundaries
@@ -296,19 +300,30 @@ class CarlaDetector(Detector):
             paint=sum(float(np.ptp(a['lane'].points[:,0])) for a in band)
             if paint<1.2 or (current is not None and paint<=sum(float(np.ptp(a['lane'].points[:,0])) for a in current[4])):continue
             for a in band:a['lane'].side=side
-            spines[side]=self.spine(band)
+            replacement=self.spine(band)
+            prior=self.tracking_priors.get(side)
+            if self.c.carla_tracking_enabled and prior is not None:
+                candidate=np.column_stack([replacement[0],replacement[1]])
+                reference=prior[0]
+                if self.path_tracking.decisions.get(side,{}).get('action')=='switch' and current is not None:
+                    reference=np.column_stack([current[0],current[1]])
+                error=continuity_error(candidate,reference)
+                if math.isfinite(error) and error>self.c.carla_tracking_match_m:continue
+            spines[side]=replacement
             self.diagnostics['parallel_'+side]=round(paint,2)
 
-    def prior_penalty(self,side,path):
+    def prior_penalty(self,side,path,points=None):
         """Rank down a jump outward from the last boundary or off the lane width."""
-        points=np.vstack([a['lane'].points for a in path]);points=points[np.argsort(points[:,0])]
+        if points is None:points=path_points(path)
         if not points[0,0]-2.<=8.<=points[-1,0]+4.:return 0.
         lateral=float(np.interp(8.,points[:,0],points[:,1]));penalty=0.
         def at8(value):
             if value is None or not value[0][0]<=8.<=value[0][-1]:return None
             return float(np.interp(8.,value[0],value[1]))
-        previous=at8(self.last_spines.get(side))
-        if previous is not None and (lateral-previous if side=='left' else previous-lateral)>.5:penalty+=2.
+        tracked=self.tracking_priors.get(side) if self.c.carla_tracking_enabled else None
+        previous=at8((tracked[0][:,0],tracked[0][:,1])) if tracked is not None else at8(self.last_spines.get(side))
+        jump=0. if previous is None else abs(lateral-previous) if tracked is not None else (lateral-previous if side=='left' else previous-lateral)
+        if previous is not None and jump>.5:penalty+=2.
         opposite=at8(self.last_spines.get('right' if side=='left' else 'left'))
         if opposite is not None and abs(abs(lateral-opposite)-self.lane_width)>.6:penalty+=1.5
         return penalty
@@ -316,6 +331,7 @@ class CarlaDetector(Detector):
     def forget(self):
         """Drop frame-to-frame memory after a time jump or reset."""
         self.last_spines={};self.lane_width=3.3;self.strand_gap={}
+        self.tracking_priors={};self.path_tracking.reset()
 
     def coherent_paths(self,nodes):
         """DAG maximum-support paths; an attached branch cannot pull the fit.
@@ -365,15 +381,16 @@ class CarlaDetector(Detector):
             adjusted=np.array(scores)-3.*np.maximum(0.,15.-first[origin])*(1-np.minimum(1.,np.array(paint)/3.))
             valid=[]
             for end in np.argsort(-adjusted,kind='stable'):
-                if adjusted[end]==-math.inf or len(valid)==5:break
+                if adjusted[end]==-math.inf or len(valid)==(8 if side in self.tracking_priors and c.carla_tracking_enabled else 5):break
                 path=[];k=int(end)
                 while k>=0:path.append(k);k=parent[k]
                 path=[candidates[k] for k in reversed(path)]
                 span=path[-1]['lane'].points[-1,0]-path[0]['lane'].points[0,0]
                 if (len(path)>=2 and span>=2.5) or (len(path)==1 and span>=1.2 and path[0]['lane'].points[0,0]<=14.):
-                    valid.append((float(adjusted[end])-self.prior_penalty(side,path),path))
+                    points=path_points(path)
+                    valid.append((float(adjusted[end])-self.prior_penalty(side,path,points),path,points))
             # Penalties only reorder supported candidates; none is removed.
-            return max(valid,key=lambda v:v[0]) if valid else None
+            return self.path_tracking.select(side,valid,self.tracking_priors.get(side),self.frame_index)
         for side in ('left','right'):
             result=best_path(side,set())
             if result is not None:scored[side]=result
@@ -512,6 +529,7 @@ class CarlaDetector(Detector):
             for a in group:selected[a['pixels']]=255
         self.diagnostics['rejected_branch_groups']=rejected_groups
         self.diagnostics['selected_chains']=len(accepted_groups)
+        self.diagnostics['tracking']=dict(self.path_tracking.decisions)
         mask[:]=selected;self.style_mask=selected.copy()
         self.diagnostics['retained_pixels']=int(np.count_nonzero(selected))
         self.diagnostics['fragments']=len(lanes)

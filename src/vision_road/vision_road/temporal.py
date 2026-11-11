@@ -38,7 +38,7 @@ class TemporalDetector:
         self.registration='none'; self.measured_count=0; self.predicted_count=0
         self.paint_history=[];self.style_binary=None
         self.next_fragment_id=0
-        self.boundaries={};self.boundary_lanes=[]
+        self.boundaries={};self.boundary_lanes=[];self.confirmed_tracking={}
         self.detector.previous.clear(); self.detector.hits.clear()
         if hasattr(self.detector,'forget'):self.detector.forget()
 
@@ -194,6 +194,19 @@ class TemporalDetector:
                 prior=replace(track.lane,points=points,reprojected=False,source_time=track.last_observed)
                 priors[side]=prior
                 records[side]=Track(prior,track.last_observed,track.misses,track.travel+travel,track.style_candidate,track.style_streak,track.style_time)
+        if hasattr(self.detector,'path_tracking'):
+            moved={};context={}
+            if c.carla_tracking_enabled and matrix is not None:
+                for side,(points,observed) in self.confirmed_tracking.items():
+                    age=t-observed
+                    if not 0<=age<=c.carla_tracking_memory_sec:continue
+                    pixels=self.pixel(points)@matrix[:,:2].T+matrix[:,2]
+                    visible=self._visible(self.metric(pixels),valid)
+                    if visible is None:continue
+                    moved[side]=(visible,observed);context[side]=(visible,max(0.,1.-age/c.carla_tracking_memory_sec))
+            self.confirmed_tracking=moved
+            self.detector.tracking_priors=context
+            self.detector.path_tracking.warp(matrix if c.carla_tracking_enabled else None)
         self.detector.previous.clear(); self.detector.hits.clear()
         binary=self.detector.binary(bev,valid) if paint_mask is None else paint_mask
         observed=self.detector.detect(binary if observation_mask is None else observation_mask,priors=priors)
@@ -208,7 +221,11 @@ class TemporalDetector:
                 lane.points=points;clipped.append(lane)
         observed=clipped
         chain_filter=(getattr(self.detector,'fragment_tracks',False) and c.carla_chain_filter_enabled)
-        if chain_filter:self._boundaries(final_valid,matrix,t)
+        if chain_filter:
+            self._boundaries(final_valid,matrix,t)
+            if c.carla_tracking_enabled:
+                for lane in self.boundary_lanes:
+                    if not lane.reprojected:self.confirmed_tracking[lane.side]=(lane.points.copy(),float(t))
         if getattr(self.detector,'fragment_tracks',False):self._fragment_keys(observed,records)
         style_binary=getattr(self.detector,'style_mask',binary) if paint_mask is None else paint_mask
         style_valid=getattr(self.detector,'style_valid',valid) if paint_mask is None else valid

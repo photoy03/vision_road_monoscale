@@ -1,3 +1,50 @@
+# vision_road_monoscale
+
+ROS 2 Humble 기반 도로 차선 인식 워크스페이스입니다. 현재 검증 경로는 **CARLA maploop 카메라 → BEV 도색 후보 → 조각 연결 → 이동 보정 추적**입니다. OpenCV·기하 처리만 사용하며 학습 모델이나 중심 주행 경로를 포함하지 않습니다.
+
+## 현재 버전 — 2026-11-12
+
+추적 중인 차선과 일치하는 후보에 유지 가점을 주고, 다른 차선으로 바꿀 때는 점수 차이와 3프레임 연속 관측을 확인합니다. 점선의 실제 도색 조각과 표시용 경계선을 별도로 발행합니다. 기존 ROS 토픽 형식은 유지합니다.
+
+같은 maploop 1,807프레임에서 오른쪽 실측 검출 프레임은 1,221→1,317개였습니다. 이는 정답 대비 인식 정확도가 아니라 출력 지속성 비교입니다. 최종 ROS 재생은 모든 구조화된 출력 1,807개를 평균 약 30Hz로 수신했지만, 수신 지연 p95는 150.1ms로 100ms 목표를 넘었습니다. **이 버전은 이전 문서의 지연 기준 통과 버전과 구분해야 합니다.** [최신 변경·검증 보고서](docs/tracking_bonus_20261112.md)를 참조하세요.
+
+CARLA maploop 테스트에서는 녹화된 기준 자세를 사용합니다. 포함된 MonoScale 패키지의 추정 오도메트리 성능이 검증됐다는 의미는 아닙니다. 원본 영상·로스백·다운로드 데이터·빌드 산출물은 저장소에 포함하지 않습니다.
+
+## 시작하기
+
+```bash
+git clone https://github.com/photoy03/vision_road_monoscale.git
+cd vision_road_monoscale
+source /opt/ros/humble/setup.bash
+# 의존성 설치에는 인터넷과 관리자 권한이 필요합니다.
+rosdep install --from-paths src --ignore-src -r -y
+colcon build --base-paths src --symlink-install --parallel-workers 2
+source install/setup.bash
+```
+
+네이티브 도색 처리 확장을 사용하려면 OpenCV 개발 패키지와 pybind11 개발 헤더가 필요합니다. 전체 빌드 및 개별 의존성은 [빌드 안내](BUILD_AND_TEST.md)를 확인하세요. maploop 원본 데이터 경로와 카메라 설정은 [maploop 안내](MAPLOOP_README_KO.md)를 따릅니다. 데이터 경로는 사용자 환경에 맞게 변경해야 합니다.
+
+```bash
+# 별도 좌표계에서 차선 보기: 노드·RViz·로스백 한 번 재생
+./view_lane_coordinates.sh
+
+# 카메라 위 차선 표시: 터미널을 각각 사용
+./run_maploop.sh
+./replay_maploop.sh --rate 1
+# ROS 환경을 불러온 다른 터미널에서
+rviz2 -d src/vision_road/config/maploop_lanes.rviz
+```
+
+- `/parking/cpp/marking_segments`: 관측 도색 선분 및 예측 여부
+- `/road/lane_styles`: 실선·점선·미확정 분류
+- `/road/lane_markers`: 관측 조각 표시
+- `/road/lane_boundary_markers`: 표시용 경계선
+- `/road/overlay`: 카메라 위 차선 표시, 기본 최대 5Hz
+
+아래 내용은 개발 이력과 다른 입력/오도메트리 구성 안내입니다. 현재 maploop 설정 및 성능은 위 안내를 우선합니다.
+
+---
+
 ## CARLA 전용 실행 — 2026-11-11
 
 현재 주행 카메라는 CARLA 전용 `carla` 백엔드와 `carla.launch.py`를 사용합니다. 학습 없이 도색 조각을 검출하며, 중심 경로는 만들지 않습니다.

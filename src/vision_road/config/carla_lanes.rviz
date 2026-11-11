@@ -16,7 +16,7 @@ Visualization Manager:
     - Class: rviz_default_plugins/MarkerArray
       Name: Observed paint
       Enabled: true
-      Marker Topic:
+      Topic:
         Value: /road/lane_markers
         Reliability Policy: Reliable
         Durability Policy: Volatile
@@ -24,7 +24,7 @@ Visualization Manager:
     - Class: rviz_default_plugins/MarkerArray
       Name: Boundary fit
       Enabled: true
-      Marker Topic:
+      Topic:
         Value: /road/lane_boundary_markers
         Reliability Policy: Reliable
         Durability Policy: Volatile

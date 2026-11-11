@@ -1,0 +1,114 @@
+{
+  "all": {
+    "left": {
+      "observed": 1490,
+      "total": 1807,
+      "max_gap": 74,
+      "jumps_035": 0,
+      "jumps_05": 0,
+      "p95": 0.01926775140959867
+    },
+    "right": {
+      "observed": 1317,
+      "total": 1807,
+      "max_gap": 76,
+      "jumps_035": 0,
+      "jumps_05": 0,
+      "p95": 0.03348113264434051
+    }
+  },
+  "curve": {
+    "left": {
+      "observed": 344,
+      "total": 390,
+      "max_gap": 40,
+      "jumps_035": 0,
+      "jumps_05": 0,
+      "p95": 0.028474459149309718
+    },
+    "right": {
+      "observed": 302,
+      "total": 390,
+      "max_gap": 50,
+      "jumps_035": 0,
+      "jumps_05": 0,
+      "p95": 0.033403558098919144
+    }
+  },
+  "straight1": {
+    "left": {
+      "observed": 422,
+      "total": 450,
+      "max_gap": 11,
+      "jumps_035": 0,
+      "jumps_05": 0,
+      "p95": 0.0055773536280255415
+    },
+    "right": {
+      "observed": 425,
+      "total": 450,
+      "max_gap": 15,
+      "jumps_035": 0,
+      "jumps_05": 0,
+      "p95": 0.03632989777203385
+    }
+  },
+  "straight2": {
+    "left": {
+      "observed": 210,
+      "total": 210,
+      "max_gap": 0,
+      "jumps_035": 0,
+      "jumps_05": 0,
+      "p95": 0.02296892750967209
+    },
+    "right": {
+      "observed": 210,
+      "total": 210,
+      "max_gap": 0,
+      "jumps_035": 0,
+      "jumps_05": 0,
+      "p95": 0.018649472724868752
+    }
+  },
+  "crosswalk": {
+    "left": {
+      "observed": 83,
+      "total": 180,
+      "max_gap": 74,
+      "jumps_035": 0,
+      "jumps_05": 0,
+      "p95": 0.016917938179621117
+    },
+    "right": {
+      "observed": 69,
+      "total": 180,
+      "max_gap": 76,
+      "jumps_035": 0,
+      "jumps_05": 0,
+      "p95": 0.033196497966538126
+    }
+  },
+  "island": {
+    "left": {
+      "observed": 140,
+      "total": 150,
+      "max_gap": 10,
+      "jumps_035": 0,
+      "jumps_05": 0,
+      "p95": 0.011756176304183817
+    },
+    "right": {
+      "observed": 128,
+      "total": 150,
+      "max_gap": 8,
+      "jumps_035": 0,
+      "jumps_05": 0,
+      "p95": 0.041125687774960194
+    }
+  },
+  "timing": {
+    "p50": 17.868868002551608,
+    "p95": 23.85323999915272
+  }
+}

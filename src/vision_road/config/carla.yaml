@@ -33,3 +33,11 @@ vision_road:
     style_history_sec: 0.8
     style_history_frames: 8
     style_hold_sec: 1.0
+
+    # Motion-compensated preference for the confirmed lane; raw paint stays observed.
+    carla_tracking_enabled: true
+    carla_tracking_keep_bonus: 2.0
+    carla_tracking_match_m: 0.35
+    carla_tracking_switch_margin: 1.5
+    carla_tracking_switch_frames: 3
+    carla_tracking_memory_sec: 0.25
