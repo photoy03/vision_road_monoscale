@@ -21,6 +21,7 @@ def settings(package):
     from vision_road.core import Settings
     params=yaml.safe_load((package/'config/carla.yaml').read_text())['vision_road']['ros__parameters']
     params.update(mpp=LAUNCH['mpp'])
+    if LAUNCH.get('lateral'):params.update(lateral_min=-LAUNCH['lateral'],lateral_max=LAUNCH['lateral'])
     return Settings(**{k:v for k,v in params.items() if k in Settings.__dataclass_fields__})
 
 
@@ -212,7 +213,9 @@ def main():
     v=sub.add_parser('render');v.add_argument('--cache',type=Path,required=True);v.add_argument('--runs',type=Path,nargs='+',required=True)
     v.add_argument('--names',nargs='+',required=True);v.add_argument('--frames',type=int,nargs='+',required=True)
     v.add_argument('--output',type=Path,required=True);v.add_argument('--scale',type=float,default=.5)
+    for parser in (c,r,v):parser.add_argument('--lateral',type=float,default=0.,help='BEV half width override in m (default: carla.yaml)')
     a=ap.parse_args()
+    if getattr(a,'lateral',0.):LAUNCH['lateral']=a.lateral
     if a.cmd=='render':render(a);return
     if a.cmd=='metrics':
         rows=[json.loads(line) for line in gzip.open(a.output/'predictions.jsonl.gz','rt')]

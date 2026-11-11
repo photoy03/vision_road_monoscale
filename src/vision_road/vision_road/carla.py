@@ -38,10 +38,11 @@ class CarlaDetector(Detector):
         if cfg.carla_stage not in (1,2,3) or cfg.carla_ridge_min<=0 or cfg.carla_relative_min<=0:
             raise ValueError('Invalid CARLA feature parameters')
         super().__init__(replace(cfg,lane_width_min=-12.,lane_width_max=12.))
-        if cfg.carla_chain_confirm_frames<1 or cfg.carla_chain_band_m<=0:
+        if cfg.carla_chain_confirm_frames<1 or cfg.carla_chain_band_m<=0 or not 0<=cfg.carla_link_curvature_max<=.2:
             raise ValueError('Invalid CARLA chain filter limits')
         self.diagnostics={}
         self.boundary_candidates=[]
+        self.lane_width=3.3  # m; running estimate from frames with both boundaries
 
     def binary(self,bev,valid):
         c=self.c
@@ -214,6 +215,65 @@ class CarlaDetector(Detector):
             merged.append(dict(lane=lane,pixels=pixels))
         return float(np.median(target)),merged
 
+    def spine(self,group,forward=None,center=None):
+        """Robust quadratic boundary of one selected chain, with its band."""
+        c=self.c
+        if forward is None:forward,center=grouped_median(np.vstack([a['lane'].points for a in group]))
+        # Fit only the selected chain; nearby branches cannot steer
+        # the boundary or create paint inside real dash gaps.
+        sample=np.linspace(forward[0],forward[-1],max(3,math.ceil((forward[-1]-forward[0])/.20)+1))
+        # A robust quadratic within the selected connected chain avoids
+        # local polynomial oscillations across the actual dash gaps.
+        origin=float(np.mean(forward));x=forward-origin
+        weights=np.ones(len(x))
+        for _ in range(5):
+            fit=np.polyfit(x,center,2,w=weights)
+            residual=np.abs(center-np.polyval(fit,x))
+            weights=np.minimum(1.,.20/np.maximum(residual,.001))
+        yellow_path=sum(a['yellow'] for a in group)>len(group)/2
+        band=c.carla_chain_band_m
+        if c.carla_path_filter_enabled and yellow_path:band=max(band,.45)
+        return sample,np.polyval(fit,sample-origin),band,yellow_path,group
+
+    def parallel_support(self,nodes,spines):
+        """Find a missing or short boundary from the other one shifted by a lane.
+
+        Only fragments of real paint inside the shifted band are collected;
+        nothing is drawn where no paint was measured.
+        """
+        span=lambda value:value[0][-1]-value[0][0] if value is not None else 0.
+        left,right=spines.get('left'),spines.get('right')
+        if left is not None and right is not None:
+            lo=max(5.,left[0][0],right[0][0]);hi=min(10.,left[0][-1],right[0][-1])
+            if hi-lo>=2.:
+                f=np.linspace(lo,hi,11)
+                width=float(np.mean(np.interp(f,left[0],left[1])-np.interp(f,right[0],right[1])))
+                if 2.6<=width<=4.2:self.lane_width=.8*self.lane_width+.2*width
+        for side,other in (('right','left'),('left','right')):
+            reference=spines.get(other)
+            if reference is None or span(reference)<8. or span(spines.get(side))>=6.:continue
+            sample,smooth=reference[0],reference[1]
+            # Offset along the normal of the reference so curves stay parallel.
+            slope=np.gradient(smooth,sample);norm=np.sqrt(1+slope**2)
+            sign=-1. if side=='right' else 1.
+            forward=sample-sign*self.lane_width*slope/norm;lateral=smooth+sign*self.lane_width/norm
+            order=np.argsort(forward);forward=forward[order];lateral=lateral[order]
+            used={id(a) for a in reference[4]}
+            band=[]
+            for a in nodes:
+                pts=a['lane'].points
+                if id(a) in used or pts[0,0]<forward[0]-.15 or pts[-1,0]>forward[-1]+.15:continue
+                if float(np.median(np.abs(pts[:,1]-np.interp(pts[:,0],forward,lateral))))<=.35:band.append(a)
+            if not band:continue
+            extent=lambda flag:sum(float(np.ptp(a['lane'].points[:,0])) for a in band if a['yellow']==flag)
+            color=extent(True)>extent(False);band=[a for a in band if a['yellow']==color]
+            current=spines.get(side)
+            paint=sum(float(np.ptp(a['lane'].points[:,0])) for a in band)
+            if paint<1.2 or (current is not None and paint<=sum(float(np.ptp(a['lane'].points[:,0])) for a in current[4])):continue
+            for a in band:a['lane'].side=side
+            spines[side]=self.spine(band)
+            self.diagnostics['parallel_'+side]=round(paint,2)
+
     def coherent_paths(self,nodes):
         """DAG maximum-support paths; an attached branch cannot pull the fit.
 
@@ -374,21 +434,8 @@ class CarlaDetector(Detector):
             rejected_groups=max(0,len(groups)-len(ranked))
             spines={}
             for side,(_,group,forward,center) in ranked.items():
-                # Fit only the selected chain; nearby branches cannot steer
-                # the boundary or create paint inside real dash gaps.
-                sample=np.linspace(forward[0],forward[-1],max(3,math.ceil((forward[-1]-forward[0])/.20)+1))
-                # A robust quadratic within the selected connected chain avoids
-                # local polynomial oscillations across the actual dash gaps.
-                origin=float(np.mean(forward));x=forward-origin
-                weights=np.ones(len(x))
-                for _ in range(5):
-                    fit=np.polyfit(x,center,2,w=weights)
-                    residual=np.abs(center-np.polyval(fit,x))
-                    weights=np.minimum(1.,.20/np.maximum(residual,.001))
-                yellow_path=sum(a['yellow'] for a in group)>len(group)/2
-                band=c.carla_chain_band_m
-                if c.carla_path_filter_enabled and yellow_path:band=max(band,.45)
-                spines[side]=(sample,np.polyval(fit,sample-origin),band,yellow_path,group)
+                spines[side]=self.spine(group,forward,center)
+            if c.carla_path_filter_enabled:self.parallel_support(nodes,spines)
             # Each fragment supports at most one boundary, whatever side its
             # own straight extrapolation suggested.
             support={side:[] for side in spines}
