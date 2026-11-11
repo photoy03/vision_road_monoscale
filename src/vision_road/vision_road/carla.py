@@ -43,6 +43,7 @@ class CarlaDetector(Detector):
         self.diagnostics={}
         self.boundary_candidates=[]
         self.lane_width=3.3  # m; running estimate from frames with both boundaries
+        self.last_spines={}  # previous frame boundaries, uncompensated: about 0.3 m of travel at 30 Hz
 
     def binary(self,bev,valid):
         c=self.c
@@ -274,6 +275,24 @@ class CarlaDetector(Detector):
             spines[side]=self.spine(band)
             self.diagnostics['parallel_'+side]=round(paint,2)
 
+    def prior_penalty(self,side,path):
+        """Rank down a jump outward from the last boundary or off the lane width."""
+        points=np.vstack([a['lane'].points for a in path]);points=points[np.argsort(points[:,0])]
+        if not points[0,0]-2.<=8.<=points[-1,0]+4.:return 0.
+        lateral=float(np.interp(8.,points[:,0],points[:,1]));penalty=0.
+        def at8(value):
+            if value is None or not value[0][0]<=8.<=value[0][-1]:return None
+            return float(np.interp(8.,value[0],value[1]))
+        previous=at8(self.last_spines.get(side))
+        if previous is not None and (lateral-previous if side=='left' else previous-lateral)>.5:penalty+=2.
+        opposite=at8(self.last_spines.get('right' if side=='left' else 'left'))
+        if opposite is not None and abs(abs(lateral-opposite)-self.lane_width)>.6:penalty+=1.5
+        return penalty
+
+    def forget(self):
+        """Drop frame-to-frame memory after a time jump or reset."""
+        self.last_spines={};self.lane_width=3.3
+
     def coherent_paths(self,nodes):
         """DAG maximum-support paths; an attached branch cannot pull the fit.
 
@@ -320,15 +339,17 @@ class CarlaDetector(Detector):
             # A lone short fragment keeps only part of its near-start bonus,
             # so it cannot outrank a long supported chain just behind it.
             adjusted=np.array(scores)-3.*np.maximum(0.,15.-first[origin])*(1-np.minimum(1.,np.array(paint)/3.))
+            valid=[]
             for end in np.argsort(-adjusted,kind='stable'):
-                if adjusted[end]==-math.inf:break
+                if adjusted[end]==-math.inf or len(valid)==5:break
                 path=[];k=int(end)
                 while k>=0:path.append(k);k=parent[k]
                 path=[candidates[k] for k in reversed(path)]
                 span=path[-1]['lane'].points[-1,0]-path[0]['lane'].points[0,0]
                 if (len(path)>=2 and span>=2.5) or (len(path)==1 and span>=1.2 and path[0]['lane'].points[0,0]<=14.):
-                    return float(adjusted[end]),path
-            return None
+                    valid.append((float(adjusted[end])-self.prior_penalty(side,path),path))
+            # Penalties only reorder supported candidates; none is removed.
+            return max(valid,key=lambda v:v[0]) if valid else None
         for side in ('left','right'):
             result=best_path(side,set())
             if result is not None:scored[side]=result
@@ -452,14 +473,16 @@ class CarlaDetector(Detector):
                     error=float(np.median(np.abs(pts[:,1]-np.interp(pts[:,0],sample,smooth))))
                     if error<=band and (best is None or error<best[0]):best=(error,side)
                 if best is not None:support[best[1]].append(a)
+            remembered={}
             for side,(sample,smooth,band,yellow_path,group) in spines.items():
                 retained=support[side]
                 if not retained:continue
                 for a in retained:a['lane'].side=side
                 offset,merged=self.merge_strands(retained,sample,smooth,yellow_path)
                 spine=Lane(side,np.column_stack([sample,smooth+offset]),.8)
-                spine.corridor_m=band
+                spine.corridor_m=band;remembered[side]=(sample,smooth+offset)
                 accepted_groups.append(merged);self.boundary_candidates.append(spine)
+            self.last_spines=remembered
         for group in accepted_groups:
             lanes.extend(a['lane'] for a in group)
             for a in group:selected[a['pixels']]=255

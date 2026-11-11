@@ -40,6 +40,7 @@ class TemporalDetector:
         self.next_fragment_id=0
         self.boundaries={};self.boundary_lanes=[]
         self.detector.previous.clear(); self.detector.hits.clear()
+        if hasattr(self.detector,'forget'):self.detector.forget()
 
     def pixel(self, points):
         c=self.c
