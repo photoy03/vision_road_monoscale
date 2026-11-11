@@ -179,6 +179,8 @@ def metrics(rows):
                 reach=float(max(p[:,0].max() for p in obs)) if obs else 0.,
                 boundary_reach=float(max(p[:,0].max() for p in bnd)) if bnd else 0.,
                 lateral8=float(np.median([np.interp(8.,p[:,0],p[:,1]) for p in bnd])) if bnd and bnd[0][0,0]<=8.<=bnd[0][-1,0] else None,
+                lateral10=float(np.interp(10.,bnd[0][:,0],bnd[0][:,1])) if bnd and bnd[0][0,0]<=10.<=bnd[0][-1,0] else None,
+                spine_rough=[j for j in (jagged(p) for p in bnd) if j is not None],
                 style=max(set(styles),key=styles.count) if styles else 'none',
                 jag=[j for j in (jagged(p) for p in obs) if j is not None],
                 strands=sum(p[0,0]<=10.<=p[-1,0] for p in obs))
@@ -190,7 +192,11 @@ def metrics(rows):
             jag=[j for x in s for j in x['jag']]
             styles={}
             for x in s:styles[x['style']]=styles.get(x['style'],0)+1
-            out[side]=dict(observed=round(sum(x['observed'] for x in s)/n,3),predicted_only=round(sum(x['predicted'] for x in s)/n,3),
+            y10=[x['lateral10'] for x in s];steps=[b-a for a,b in zip(y10[:-1],y10[1:]) if a is not None and b is not None]
+            rough=[j for x in s for j in x['spine_rough']]
+            out[side]=dict(observed=round(sum(x['observed'] for x in s)/n,3),
+                lateral10_step_std_cm=round(float(np.std(steps))*100,2) if len(steps)>2 else None,
+                spine_rough_cm=round(float(np.mean(rough))*100,3) if rough else None,predicted_only=round(sum(x['predicted'] for x in s)/n,3),
                 median_reach_m=round(float(np.median([x['reach'] for x in s if x['observed']])),2) if any(x['observed'] for x in s) else 0.,
                 median_boundary_reach_m=round(float(np.median([x['boundary_reach'] for x in s if x['boundary_reach']])),2) if any(x['boundary_reach'] for x in s) else 0.,
                 paint_jag_m=round(float(np.mean(jag)),4) if jag else None,paint_jag_p90_m=round(float(np.percentile(jag,90)),4) if jag else None,

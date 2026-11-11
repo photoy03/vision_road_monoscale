@@ -38,7 +38,7 @@ class CarlaDetector(Detector):
         if cfg.carla_stage not in (1,2,3) or cfg.carla_ridge_min<=0 or cfg.carla_relative_min<=0:
             raise ValueError('Invalid CARLA feature parameters')
         super().__init__(replace(cfg,lane_width_min=-12.,lane_width_max=12.))
-        if cfg.carla_chain_confirm_frames<1 or cfg.carla_chain_band_m<=0 or not 0<=cfg.carla_link_curvature_max<=.2:
+        if cfg.carla_chain_confirm_frames<1 or cfg.carla_chain_band_m<=0 or not 0<=cfg.carla_link_curvature_max<=.2 or not 0<cfg.carla_spine_ema_alpha<=1:
             raise ValueError('Invalid CARLA chain filter limits')
         self.diagnostics={}
         self.boundary_candidates=[]

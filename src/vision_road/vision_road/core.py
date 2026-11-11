@@ -55,6 +55,7 @@ class Settings:
     carla_chain_filter_enabled: bool = True
     carla_chain_confirm_frames: int = 3
     carla_chain_band_m: float = 0.25
+    carla_spine_ema_alpha: float = 0.5  # weight of the current boundary when it matches the previous one
     carla_link_curvature_max: float = 0.0  # 1/m; optional curve allowance for chain links (1/40, 1/100 regressed maploop)
 
 
