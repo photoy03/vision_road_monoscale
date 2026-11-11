@@ -59,17 +59,31 @@ def test_parallel_support_only_collects_measured_paint_in_the_band():
     assert 'right' not in {b.side for b in d.boundary_candidates}
 
 
-def test_double_yellow_is_one_centerline_and_spacing_memory_expires():
+def boundary(detector,side,forward=10.):
+    spine=[b for b in detector.boundary_candidates if b.side==side][0]
+    return float(np.interp(forward,spine.points[:,0],spine.points[:,1]))
+
+
+def strands(lanes,side):
+    return sorted({round(float(np.median(l.points[:,1])),2) for l in lanes if l.side==side})
+
+
+def test_double_yellow_paint_keeps_both_strands_and_boundary_takes_the_center():
     double=canvas();paint(double,1.6,4,30,YELLOW);paint(double,1.9,4,30,YELLOW)
     d,lanes=detect(double)
-    assert abs(lateral(lanes,'left')-1.75)<.05
-    spine=[b for b in d.boundary_candidates if b.side=='left'][0]
-    assert abs(float(np.interp(10.,spine.points[:,0],spine.points[:,1]))-1.75)<.05
+    # Paint topics carry what was measured: two strands, nothing in between.
+    found=strands(lanes,'left')
+    assert any(abs(y-1.6)<.05 for y in found) and any(abs(y-1.9)<.05 for y in found)
+    assert not any(abs(y-1.75)<.08 for y in found)
+    assert abs(boundary(d,'left')-1.75)<.05
+    # One strand seen: paint stays on it, the boundary keeps the remembered center.
     single=canvas();paint(single,1.6,4,30,YELLOW)
     _,lanes=detect(single.copy(),d)
-    assert abs(lateral(lanes,'left')-1.75)<.05
-    for _ in range(31):_,lanes=detect(single.copy(),d)
-    assert abs(lateral(lanes,'left')-1.6)<.05
+    assert all(abs(y-1.6)<.05 for y in strands(lanes,'left'))
+    assert abs(boundary(d,'left')-1.75)<.05
+    # The spacing memory expires after 30 frames without a double line.
+    for _ in range(31):detect(single.copy(),d)
+    assert abs(boundary(d,'left')-1.6)<.05
 
 
 def test_boundary_ema_resets_on_a_jump_or_a_capture_gap():

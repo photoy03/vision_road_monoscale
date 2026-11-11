@@ -263,6 +263,18 @@ class TemporalDetector:
             if points is None:continue
             lane.points=points
             tracks[key]=Track(lane,float(t),style_candidate=evidence.kind,style_streak=streak,style_time=style_time); result.append(lane)
+        if getattr(self.detector,'fragment_tracks',False):
+            # Style evidence is per side here, so a fragment seen for the first
+            # time takes the style its side already has (confirmed or held),
+            # unless this frame's evidence for the side says otherwise.
+            for track in tracks.values():
+                lane=track.lane
+                if lane.style!='unknown':continue
+                peers=[l for l in result if l.side==lane.side and l.style!='unknown' and track.style_candidate in (l.style,'unknown')]
+                if peers:
+                    peer=max(peers,key=lambda l:l.style_source_time)
+                    lane.style=peer.style;lane.style_confidence=peer.style_confidence
+                    lane.style_source_time=track.style_time=peer.style_source_time
         for side,old in records.items():
             if side in tracks: continue
             age=t-old.last_observed; misses=old.misses+1

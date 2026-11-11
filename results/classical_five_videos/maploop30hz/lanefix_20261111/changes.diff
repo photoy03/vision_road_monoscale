@@ -1,6 +1,14 @@
 --- ../../../../backups/before-lanefix-20261111-2200/src/vision_road/vision_road/carla.py	2026-11-11 20:45:10.387244738 +0900
-+++ ../../../../src/vision_road/vision_road/carla.py	2026-11-11 23:26:38.424795041 +0900
-@@ -38,15 +38,18 @@
++++ ../../../../src/vision_road/vision_road/carla.py	2026-11-12 00:18:41.724079567 +0900
+@@ -4,6 +4,7 @@
+ """
+ from dataclasses import replace
+ import math
++import statistics
+ import cv2
+ import numpy as np
+ from .core import Detector, Lane
+@@ -38,15 +39,18 @@
          if cfg.carla_stage not in (1,2,3) or cfg.carla_ridge_min<=0 or cfg.carla_relative_min<=0:
              raise ValueError('Invalid CARLA feature parameters')
          super().__init__(replace(cfg,lane_width_min=-12.,lane_width_max=12.))
@@ -21,7 +29,7 @@
          h,l,s=cv2.split(cv2.cvtColor(bev,cv2.COLOR_BGR2HLS))
          b,g,r=cv2.split(bev.astype(np.float32))
          white=(s<120)&(l>c.carla_white_light_min)
-@@ -153,36 +156,227 @@
+@@ -153,36 +157,236 @@
              if side not in chosen or quality>chosen[side][0]:chosen[side]=(quality,lane)
          return [chosen[s][1] for s in ['left','right'] if s in chosen]
  
@@ -43,23 +51,25 @@
 +        return asymmetry>=20. and center-max(left,right)<asymmetry/1.5
 +
 +    def merge_strands(self,nodes,sample,smooth,yellow,side=None):
-+        """One smooth centerline per marking; a double line is one marking.
++        """Observed strands for the paint topics, a marking center for the boundary.
 +
-+        Each fragment keeps its observed forward extent and its own measured
-+        offset from the chain fit, so dash gaps stay open. Row-median jitter
-+        and strand switching between 2 m tiles are removed.
++        Paint keeps each strand where it was measured, smoothed only along that
++        strand, so row-median jitter goes but a double line stays two lines.
++        The returned boundary offset puts the spine on the marking center: the
++        middle of a double line, also when only one strand is seen this frame.
++        Dash gaps stay open in both.
 +        """
 +        nodes=sorted(nodes,key=lambda a:a['lane'].points[0,0])
 +        centers=np.array([np.mean(a['lane'].points[:,0]) for a in nodes])
 +        offsets=np.array([float(np.mean(a['lane'].points[:,1]-np.interp(a['lane'].points[:,0],sample,smooth))) for a in nodes])
-+        target=offsets.copy();double=False
++        target=offsets.copy();double=False;strand=np.zeros(len(nodes),bool)
 +        if yellow and len(nodes)>=2:
 +            order=np.sort(offsets);gaps=np.diff(order);k=int(np.argmax(gaps))
 +            split=(order[k]+order[k+1])/2;outer=offsets>=split
 +            extent=lambda flag:sum(np.ptp(a['lane'].points[:,0]) for a,f in zip(nodes,flag) if f)
 +            if .10<=gaps[k] and order[-1]-order[0]<=.55 and min(extent(outer),extent(~outer))>=2.:
 +                mid=(np.median(offsets[outer])+np.median(offsets[~outer]))/2
-+                target[outer]+=mid-np.median(offsets[outer]);target[~outer]+=mid-np.median(offsets[~outer]);double=True
++                target[outer]+=mid-np.median(offsets[outer]);target[~outer]+=mid-np.median(offsets[~outer]);double=True;strand=outer
 +                gap=float(np.median(offsets[outer])-np.median(offsets[~outer]));old=self.strand_gap.get(side)
 +                if old is not None and self.frame_index-old[1]<=30:gap=.7*old[0]+.3*gap
 +                self.strand_gap[side]=(gap,self.frame_index)
@@ -73,31 +83,38 @@
 +                if not previous[0][0]<=centers[i]<=previous[0][-1]:continue
 +                delta=float(np.mean(pts[:,1]-np.interp(pts[:,0],previous[0],previous[1])))
 +                if half/2<=abs(delta)<=1.5*half:target[i]-=math.copysign(half,delta);double=True
-+        near=np.abs(centers[:,None]-centers[None,:])<=3.
-+        target=np.nanmedian(np.where(near,target[None,:],np.nan),axis=1)
-+        groups=[]
-+        for a,value in zip(nodes,target):
-+            lo,hi=a['lane'].points[0,0],a['lane'].points[-1,0]
-+            if groups and lo<=groups[-1]['hi']+.05:
-+                g=groups[-1];g['hi']=max(g['hi'],hi);g['items'].append((a,value))
-+            else:groups.append(dict(lo=lo,hi=hi,items=[(a,value)]))
++        # Neighbour medians within 3 m; n is a few dozen, so plain Python
++        # beats a masked n x n NumPy median here.
++        positions=centers.tolist();flags=strand.tolist();targets=target.tolist();measured=offsets.tolist()
++        near=[[j for j,g in enumerate(positions) if abs(g-f)<=3.] for f in positions]
++        center=[statistics.median(targets[j] for j in row) for row in near]
++        observed=[statistics.median(measured[j] for j in row if flags[j]==flags[i]) for i,row in enumerate(near)]
 +        merged=[]
-+        for g in groups:
-+            items=g['items'];forward=np.unique(np.concatenate([a['lane'].points[:,0] for a,_ in items]))
-+            if len(items)==1:offset=np.full(len(forward),items[0][1])
-+            else:
-+                mids=np.array([np.mean(a['lane'].points[:,0]) for a,_ in items]);values=np.array([v for _,v in items]);order=np.argsort(mids)
-+                offset=np.interp(forward,mids[order],values[order])
-+            lateral=np.interp(forward,sample,smooth)+offset
-+            if not double:
-+                # A single line stays within half a BEV pixel of its measured paint.
-+                _,measured=grouped_median(np.vstack([a['lane'].points for a,_ in items]))
-+                lateral=np.clip(lateral,measured-.45*self.c.mpp,measured+.45*self.c.mpp)
-+            lane=replace(items[0][0]['lane'],points=np.column_stack([forward,lateral]),
-+                         confidence=max(a['lane'].confidence for a,_ in items))
-+            pixels=(np.concatenate([a['pixels'][0] for a,_ in items]),np.concatenate([a['pixels'][1] for a,_ in items]))
-+            merged.append(dict(lane=lane,pixels=pixels))
-+        return float(np.median(target)),merged
++        for flag in (False,True):
++            groups=[]
++            for a,value,s in zip(nodes,observed,strand):
++                if s!=flag:continue
++                lo,hi=a['lane'].points[0,0],a['lane'].points[-1,0]
++                if groups and lo<=groups[-1]['hi']+.05:
++                    g=groups[-1];g['hi']=max(g['hi'],hi);g['items'].append((a,value))
++                else:groups.append(dict(lo=lo,hi=hi,items=[(a,value)]))
++            for g in groups:
++                items=g['items']
++                if len(items)==1:
++                    # One fragment already has one point per BEV row.
++                    points=items[0][0]['lane'].points;forward=points[:,0];measured=points[:,1];offset=items[0][1]
++                else:
++                    forward,measured=grouped_median(np.vstack([a['lane'].points for a,_ in items]))
++                    mids=np.array([np.mean(a['lane'].points[:,0]) for a,_ in items]);values=np.array([v for _,v in items]);order=np.argsort(mids)
++                    offset=np.interp(forward,mids[order],values[order])
++                # Each strand stays within half a BEV pixel of its measured paint.
++                lateral=np.clip(np.interp(forward,sample,smooth)+offset,measured-.45*self.c.mpp,measured+.45*self.c.mpp)
++                lane=replace(items[0][0]['lane'],points=np.column_stack([forward,lateral]),
++                             confidence=max(a['lane'].confidence for a,_ in items))
++                pixels=(np.concatenate([a['pixels'][0] for a,_ in items]),np.concatenate([a['pixels'][1] for a,_ in items]))
++                merged.append(dict(lane=lane,pixels=pixels))
++        merged.sort(key=lambda a:a['lane'].points[0,0])
++        return float(np.median(center)),merged
 +
 +    def spine(self,group,forward=None,center=None):
 +        """Robust quadratic boundary of one selected chain, with its band."""
@@ -271,7 +288,7 @@
          return chosen
  
      def paint_fragments(self,mask):
-@@ -191,13 +385,14 @@
+@@ -191,13 +395,14 @@
          CARLA's boxes and dash gaps must not be filled with invented markings.
          Local row medians retain curved paint without extrapolation.
          """
@@ -289,7 +306,7 @@
          else:
              for start in range(0,len(mask),tile):
                  part=mask[start:start+tile]
-@@ -217,7 +412,7 @@
+@@ -217,7 +422,7 @@
                      if axis_y2<.35**2 or normal_width>.10 or vy<=0:continue
                      slope=cov/vy;line=(slope,mx-slope*my)
                      anchor=c.lateral_min+(line[0]*((c.forward_max-3.)/c.mpp)+line[1])*c.mpp
@@ -298,7 +315,7 @@
                      rows=np.unique(y);cols=np.bincount(y,weights=x)[rows]/np.bincount(y)[rows]
                      residual=np.sort(np.abs(cols-(line[0]*rows+line[1])))
                      position=.9*(len(residual)-1);lower=int(position);fraction=position-lower
-@@ -225,8 +420,10 @@
+@@ -225,8 +430,10 @@
                      if q*c.mpp>.15:continue
                      points=np.column_stack([c.forward_max-rows*c.mpp,-(c.lateral_min+cols*c.mpp)])[::-1]
                      confidence=float(np.clip(.9-normal_width*2.,.55,.95))
@@ -310,7 +327,7 @@
          if c.carla_path_filter_enabled and c.carla_chain_filter_enabled:
              groups=self.coherent_paths(nodes)
          else:
-@@ -270,35 +467,36 @@
+@@ -270,35 +477,36 @@
                  ranked[side]=(score,group,forward,center)
          if c.carla_chain_filter_enabled:
              rejected_groups=max(0,len(groups)-len(ranked))
@@ -376,7 +393,7 @@
              lanes.extend(a['lane'] for a in group)
              for a in group:selected[a['pixels']]=255
 --- ../../../../backups/before-lanefix-20261111-2200/src/vision_road/vision_road/temporal.py	2026-11-11 20:45:10.387244738 +0900
-+++ ../../../../src/vision_road/vision_road/temporal.py	2026-11-11 22:55:08.433126673 +0900
++++ ../../../../src/vision_road/vision_road/temporal.py	2026-11-12 00:10:19.965369897 +0900
 @@ -40,6 +40,7 @@
          self.next_fragment_id=0
          self.boundaries={};self.boundary_lanes=[]
@@ -411,6 +428,25 @@
              current[candidate.side]=(points,hits,float(t))
              if hits>=self.c.carla_chain_confirm_frames:
                  self.boundary_lanes.append(replace(candidate,points=points,hits=hits,source_time=float(t)))
+@@ -259,6 +263,18 @@
+             if points is None:continue
+             lane.points=points
+             tracks[key]=Track(lane,float(t),style_candidate=evidence.kind,style_streak=streak,style_time=style_time); result.append(lane)
++        if getattr(self.detector,'fragment_tracks',False):
++            # Style evidence is per side here, so a fragment seen for the first
++            # time takes the style its side already has (confirmed or held),
++            # unless this frame's evidence for the side says otherwise.
++            for track in tracks.values():
++                lane=track.lane
++                if lane.style!='unknown':continue
++                peers=[l for l in result if l.side==lane.side and l.style!='unknown' and track.style_candidate in (l.style,'unknown')]
++                if peers:
++                    peer=max(peers,key=lambda l:l.style_source_time)
++                    lane.style=peer.style;lane.style_confidence=peer.style_confidence
++                    lane.style_source_time=track.style_time=peer.style_source_time
+         for side,old in records.items():
+             if side in tracks: continue
+             age=t-old.last_observed; misses=old.misses+1
 --- ../../../../backups/before-lanefix-20261111-2200/src/vision_road/vision_road/core.py	2026-11-11 20:45:10.386244656 +0900
 +++ ../../../../src/vision_road/vision_road/core.py	2026-11-11 22:39:45.418859555 +0900
 @@ -55,6 +55,8 @@

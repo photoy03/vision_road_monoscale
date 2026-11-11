@@ -4,6 +4,7 @@ No fitted classifier, model weights or simulator map labels are used.
 """
 from dataclasses import replace
 import math
+import statistics
 import cv2
 import numpy as np
 from .core import Detector, Lane
@@ -174,23 +175,25 @@ class CarlaDetector(Detector):
         return asymmetry>=20. and center-max(left,right)<asymmetry/1.5
 
     def merge_strands(self,nodes,sample,smooth,yellow,side=None):
-        """One smooth centerline per marking; a double line is one marking.
+        """Observed strands for the paint topics, a marking center for the boundary.
 
-        Each fragment keeps its observed forward extent and its own measured
-        offset from the chain fit, so dash gaps stay open. Row-median jitter
-        and strand switching between 2 m tiles are removed.
+        Paint keeps each strand where it was measured, smoothed only along that
+        strand, so row-median jitter goes but a double line stays two lines.
+        The returned boundary offset puts the spine on the marking center: the
+        middle of a double line, also when only one strand is seen this frame.
+        Dash gaps stay open in both.
         """
         nodes=sorted(nodes,key=lambda a:a['lane'].points[0,0])
         centers=np.array([np.mean(a['lane'].points[:,0]) for a in nodes])
         offsets=np.array([float(np.mean(a['lane'].points[:,1]-np.interp(a['lane'].points[:,0],sample,smooth))) for a in nodes])
-        target=offsets.copy();double=False
+        target=offsets.copy();double=False;strand=np.zeros(len(nodes),bool)
         if yellow and len(nodes)>=2:
             order=np.sort(offsets);gaps=np.diff(order);k=int(np.argmax(gaps))
             split=(order[k]+order[k+1])/2;outer=offsets>=split
             extent=lambda flag:sum(np.ptp(a['lane'].points[:,0]) for a,f in zip(nodes,flag) if f)
             if .10<=gaps[k] and order[-1]-order[0]<=.55 and min(extent(outer),extent(~outer))>=2.:
                 mid=(np.median(offsets[outer])+np.median(offsets[~outer]))/2
-                target[outer]+=mid-np.median(offsets[outer]);target[~outer]+=mid-np.median(offsets[~outer]);double=True
+                target[outer]+=mid-np.median(offsets[outer]);target[~outer]+=mid-np.median(offsets[~outer]);double=True;strand=outer
                 gap=float(np.median(offsets[outer])-np.median(offsets[~outer]));old=self.strand_gap.get(side)
                 if old is not None and self.frame_index-old[1]<=30:gap=.7*old[0]+.3*gap
                 self.strand_gap[side]=(gap,self.frame_index)
@@ -204,31 +207,38 @@ class CarlaDetector(Detector):
                 if not previous[0][0]<=centers[i]<=previous[0][-1]:continue
                 delta=float(np.mean(pts[:,1]-np.interp(pts[:,0],previous[0],previous[1])))
                 if half/2<=abs(delta)<=1.5*half:target[i]-=math.copysign(half,delta);double=True
-        near=np.abs(centers[:,None]-centers[None,:])<=3.
-        target=np.nanmedian(np.where(near,target[None,:],np.nan),axis=1)
-        groups=[]
-        for a,value in zip(nodes,target):
-            lo,hi=a['lane'].points[0,0],a['lane'].points[-1,0]
-            if groups and lo<=groups[-1]['hi']+.05:
-                g=groups[-1];g['hi']=max(g['hi'],hi);g['items'].append((a,value))
-            else:groups.append(dict(lo=lo,hi=hi,items=[(a,value)]))
+        # Neighbour medians within 3 m; n is a few dozen, so plain Python
+        # beats a masked n x n NumPy median here.
+        positions=centers.tolist();flags=strand.tolist();targets=target.tolist();measured=offsets.tolist()
+        near=[[j for j,g in enumerate(positions) if abs(g-f)<=3.] for f in positions]
+        center=[statistics.median(targets[j] for j in row) for row in near]
+        observed=[statistics.median(measured[j] for j in row if flags[j]==flags[i]) for i,row in enumerate(near)]
         merged=[]
-        for g in groups:
-            items=g['items'];forward=np.unique(np.concatenate([a['lane'].points[:,0] for a,_ in items]))
-            if len(items)==1:offset=np.full(len(forward),items[0][1])
-            else:
-                mids=np.array([np.mean(a['lane'].points[:,0]) for a,_ in items]);values=np.array([v for _,v in items]);order=np.argsort(mids)
-                offset=np.interp(forward,mids[order],values[order])
-            lateral=np.interp(forward,sample,smooth)+offset
-            if not double:
-                # A single line stays within half a BEV pixel of its measured paint.
-                _,measured=grouped_median(np.vstack([a['lane'].points for a,_ in items]))
-                lateral=np.clip(lateral,measured-.45*self.c.mpp,measured+.45*self.c.mpp)
-            lane=replace(items[0][0]['lane'],points=np.column_stack([forward,lateral]),
-                         confidence=max(a['lane'].confidence for a,_ in items))
-            pixels=(np.concatenate([a['pixels'][0] for a,_ in items]),np.concatenate([a['pixels'][1] for a,_ in items]))
-            merged.append(dict(lane=lane,pixels=pixels))
-        return float(np.median(target)),merged
+        for flag in (False,True):
+            groups=[]
+            for a,value,s in zip(nodes,observed,strand):
+                if s!=flag:continue
+                lo,hi=a['lane'].points[0,0],a['lane'].points[-1,0]
+                if groups and lo<=groups[-1]['hi']+.05:
+                    g=groups[-1];g['hi']=max(g['hi'],hi);g['items'].append((a,value))
+                else:groups.append(dict(lo=lo,hi=hi,items=[(a,value)]))
+            for g in groups:
+                items=g['items']
+                if len(items)==1:
+                    # One fragment already has one point per BEV row.
+                    points=items[0][0]['lane'].points;forward=points[:,0];measured=points[:,1];offset=items[0][1]
+                else:
+                    forward,measured=grouped_median(np.vstack([a['lane'].points for a,_ in items]))
+                    mids=np.array([np.mean(a['lane'].points[:,0]) for a,_ in items]);values=np.array([v for _,v in items]);order=np.argsort(mids)
+                    offset=np.interp(forward,mids[order],values[order])
+                # Each strand stays within half a BEV pixel of its measured paint.
+                lateral=np.clip(np.interp(forward,sample,smooth)+offset,measured-.45*self.c.mpp,measured+.45*self.c.mpp)
+                lane=replace(items[0][0]['lane'],points=np.column_stack([forward,lateral]),
+                             confidence=max(a['lane'].confidence for a,_ in items))
+                pixels=(np.concatenate([a['pixels'][0] for a,_ in items]),np.concatenate([a['pixels'][1] for a,_ in items]))
+                merged.append(dict(lane=lane,pixels=pixels))
+        merged.sort(key=lambda a:a['lane'].points[0,0])
+        return float(np.median(center)),merged
 
     def spine(self,group,forward=None,center=None):
         """Robust quadratic boundary of one selected chain, with its band."""

@@ -1,0 +1,1819 @@
+{
+  "source_frames": 1807,
+  "lane_messages": 1807,
+  "recorded_overlay_images": 300,
+  "input_hz": 30.000035879444905,
+  "duration_seconds": 60.233333333333334,
+  "encoded_frames": 1807,
+  "encoded_fps": 30,
+  "diagnostic_update_hz": 5,
+  "resolution": [
+    960,
+    540
+  ],
+  "actual_ros_topic": "/road/overlay",
+  "held_frames": true,
+  "frames": [
+    {
+      "stamp": 2.7683334,
+      "file": "00000.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 2.968333405,
+      "file": "00001.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 3.16833341,
+      "file": "00002.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 3.368333414,
+      "file": "00003.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 3.568333419,
+      "file": "00004.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 3.768333424,
+      "file": "00005.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 3.9683334290000003,
+      "file": "00006.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 4.168333434,
+      "file": "00007.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 4.368333439,
+      "file": "00008.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 4.568333443,
+      "file": "00009.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 4.768333448,
+      "file": "00010.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 4.968333453,
+      "file": "00011.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 5.168333458,
+      "file": "00012.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 5.368333463,
+      "file": "00013.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 5.5683334680000005,
+      "file": "00014.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 5.768333473,
+      "file": "00015.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 5.968333477,
+      "file": "00016.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 6.168333482,
+      "file": "00017.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 6.368333487,
+      "file": "00018.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 6.568333492,
+      "file": "00019.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 6.768333497,
+      "file": "00020.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 6.968333502,
+      "file": "00021.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 7.168333506,
+      "file": "00022.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 7.368333511,
+      "file": "00023.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 7.568333516,
+      "file": "00024.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 7.768333521,
+      "file": "00025.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 7.968333526,
+      "file": "00026.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 8.168333531,
+      "file": "00027.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 8.368333535,
+      "file": "00028.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 8.56833354,
+      "file": "00029.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 8.768333545,
+      "file": "00030.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 8.96833355,
+      "file": "00031.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 9.168333555,
+      "file": "00032.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 9.36833356,
+      "file": "00033.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 9.568333565,
+      "file": "00034.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 9.768333569,
+      "file": "00035.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 9.968333574,
+      "file": "00036.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 10.168333579,
+      "file": "00037.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 10.368333584,
+      "file": "00038.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 10.568333589,
+      "file": "00039.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 10.768333594,
+      "file": "00040.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 10.968333598000001,
+      "file": "00041.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 11.168333603,
+      "file": "00042.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 11.368333608,
+      "file": "00043.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 11.568333613,
+      "file": "00044.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 11.768333618,
+      "file": "00045.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 11.968333623,
+      "file": "00046.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 12.168333627,
+      "file": "00047.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 12.368333632,
+      "file": "00048.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 12.568333637,
+      "file": "00049.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 12.768333642,
+      "file": "00050.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 12.968333647,
+      "file": "00051.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 13.168333652,
+      "file": "00052.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 13.368333657,
+      "file": "00053.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 13.568333661,
+      "file": "00054.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 13.768333666,
+      "file": "00055.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 13.968333671,
+      "file": "00056.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 14.168333676,
+      "file": "00057.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 14.368333681,
+      "file": "00058.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 14.568333686,
+      "file": "00059.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 14.76833369,
+      "file": "00060.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 14.968333695,
+      "file": "00061.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 15.1683337,
+      "file": "00062.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 15.368333705,
+      "file": "00063.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 15.56833371,
+      "file": "00064.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 15.768333715,
+      "file": "00065.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 15.96833372,
+      "file": "00066.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 16.168333724,
+      "file": "00067.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 16.368333729,
+      "file": "00068.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 16.568333734,
+      "file": "00069.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 16.768333739,
+      "file": "00070.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 16.968333744,
+      "file": "00071.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 17.168333749,
+      "file": "00072.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 17.368333753,
+      "file": "00073.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 17.568333758,
+      "file": "00074.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 17.768333763,
+      "file": "00075.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 17.968333768,
+      "file": "00076.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 18.168333773,
+      "file": "00077.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 18.368333778,
+      "file": "00078.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 18.568333782,
+      "file": "00079.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 18.768333787,
+      "file": "00080.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 18.968333792,
+      "file": "00081.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 19.168333797,
+      "file": "00082.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 19.368333802,
+      "file": "00083.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 19.568333807,
+      "file": "00084.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 19.768333812,
+      "file": "00085.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 19.968333816,
+      "file": "00086.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 20.168333821,
+      "file": "00087.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 20.368333826,
+      "file": "00088.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 20.568333831,
+      "file": "00089.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 20.768333836,
+      "file": "00090.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 20.968333841,
+      "file": "00091.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 21.168333845,
+      "file": "00092.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 21.36833385,
+      "file": "00093.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 21.568333855,
+      "file": "00094.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 21.76833386,
+      "file": "00095.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 21.968333865,
+      "file": "00096.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 22.16833387,
+      "file": "00097.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 22.368333874,
+      "file": "00098.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 22.568333879,
+      "file": "00099.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 22.768333884,
+      "file": "00100.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 22.968333889,
+      "file": "00101.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 23.168333894,
+      "file": "00102.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 23.368333899,
+      "file": "00103.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 23.568333904,
+      "file": "00104.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 23.768333908,
+      "file": "00105.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 23.968333913,
+      "file": "00106.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 24.168333918,
+      "file": "00107.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 24.368333923,
+      "file": "00108.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 24.568333928,
+      "file": "00109.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 24.768333933,
+      "file": "00110.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 24.968333937,
+      "file": "00111.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 25.168333942,
+      "file": "00112.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 25.368333947,
+      "file": "00113.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 25.568333952,
+      "file": "00114.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 25.768333957,
+      "file": "00115.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 25.968333962,
+      "file": "00116.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 26.168333966,
+      "file": "00117.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 26.368333971,
+      "file": "00118.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 26.568333976,
+      "file": "00119.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 26.768333981,
+      "file": "00120.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 26.968333986,
+      "file": "00121.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 27.168333991,
+      "file": "00122.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 27.368333996,
+      "file": "00123.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 27.568334,
+      "file": "00124.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 27.768334005,
+      "file": "00125.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 27.96833401,
+      "file": "00126.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 28.168334015,
+      "file": "00127.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 28.36833402,
+      "file": "00128.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 28.568334025,
+      "file": "00129.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 28.768334029000002,
+      "file": "00130.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 28.968334034,
+      "file": "00131.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 29.168334039,
+      "file": "00132.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 29.368334044,
+      "file": "00133.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 29.568334049,
+      "file": "00134.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 29.768334054,
+      "file": "00135.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 29.968334059,
+      "file": "00136.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 30.168334063,
+      "file": "00137.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 30.368334068,
+      "file": "00138.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 30.568334073,
+      "file": "00139.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 30.768334078,
+      "file": "00140.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 30.968334083,
+      "file": "00141.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 31.168334088,
+      "file": "00142.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 31.368334092,
+      "file": "00143.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 31.568334097,
+      "file": "00144.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 31.768334102,
+      "file": "00145.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 31.968334107,
+      "file": "00146.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 32.168334112,
+      "file": "00147.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 32.368334117,
+      "file": "00148.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 32.568334121,
+      "file": "00149.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 32.768334126,
+      "file": "00150.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 32.968334131,
+      "file": "00151.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 33.168334136,
+      "file": "00152.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 33.368334141,
+      "file": "00153.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 33.568334146,
+      "file": "00154.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 33.768334151,
+      "file": "00155.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 33.968334155,
+      "file": "00156.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 34.16833416,
+      "file": "00157.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 34.368334165,
+      "file": "00158.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 34.56833417,
+      "file": "00159.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 34.768334175,
+      "file": "00160.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 34.96833418,
+      "file": "00161.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 35.168334184,
+      "file": "00162.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 35.368334189,
+      "file": "00163.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 35.568334194,
+      "file": "00164.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 35.768334199,
+      "file": "00165.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 35.968334204,
+      "file": "00166.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 36.168334209,
+      "file": "00167.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 36.368334213,
+      "file": "00168.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 36.568334218,
+      "file": "00169.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 36.768334223,
+      "file": "00170.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 36.968334228,
+      "file": "00171.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 37.168334233,
+      "file": "00172.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 37.368334238,
+      "file": "00173.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 37.568334243,
+      "file": "00174.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 37.768334247,
+      "file": "00175.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 37.968334252,
+      "file": "00176.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 38.168334257,
+      "file": "00177.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 38.368334262,
+      "file": "00178.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 38.568334267,
+      "file": "00179.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 38.768334272,
+      "file": "00180.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 38.968334276,
+      "file": "00181.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 39.168334281,
+      "file": "00182.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 39.368334286,
+      "file": "00183.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 39.568334291,
+      "file": "00184.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 39.768334296,
+      "file": "00185.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 39.968334301,
+      "file": "00186.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 40.168334305,
+      "file": "00187.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 40.36833431,
+      "file": "00188.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 40.568334315,
+      "file": "00189.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 40.76833432,
+      "file": "00190.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 40.968334325,
+      "file": "00191.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 41.16833433,
+      "file": "00192.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 41.368334335,
+      "file": "00193.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 41.568334339,
+      "file": "00194.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 41.768334344,
+      "file": "00195.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 41.968334349,
+      "file": "00196.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 42.168334354,
+      "file": "00197.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 42.368334359,
+      "file": "00198.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 42.568334364,
+      "file": "00199.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 42.768334368,
+      "file": "00200.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 42.968334373,
+      "file": "00201.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 43.168334378,
+      "file": "00202.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 43.368334383,
+      "file": "00203.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 43.568334388,
+      "file": "00204.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 43.768334393,
+      "file": "00205.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 43.968334398,
+      "file": "00206.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 44.168334402,
+      "file": "00207.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 44.368334407,
+      "file": "00208.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 44.568334412,
+      "file": "00209.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 44.768334417,
+      "file": "00210.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 44.968334422,
+      "file": "00211.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 45.168334427,
+      "file": "00212.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 45.368334431,
+      "file": "00213.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 45.568334436,
+      "file": "00214.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 45.768334441,
+      "file": "00215.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 45.968334446,
+      "file": "00216.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 46.168334451,
+      "file": "00217.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 46.368334456,
+      "file": "00218.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 46.56833446,
+      "file": "00219.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 46.768334465,
+      "file": "00220.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 46.96833447,
+      "file": "00221.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 47.168334475,
+      "file": "00222.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 47.36833448,
+      "file": "00223.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 47.568334485,
+      "file": "00224.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 47.76833449,
+      "file": "00225.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 47.968334494,
+      "file": "00226.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 48.168334499,
+      "file": "00227.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 48.368334504,
+      "file": "00228.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 48.568334509,
+      "file": "00229.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 48.768334514,
+      "file": "00230.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 48.968334519,
+      "file": "00231.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 49.168334523,
+      "file": "00232.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 49.368334528,
+      "file": "00233.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 49.568334533,
+      "file": "00234.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 49.768334538,
+      "file": "00235.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 49.968334543,
+      "file": "00236.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 50.168334548,
+      "file": "00237.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 50.368334552,
+      "file": "00238.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 50.568334557,
+      "file": "00239.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 50.768334562,
+      "file": "00240.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 50.968334567,
+      "file": "00241.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 51.168334572,
+      "file": "00242.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 51.368334577,
+      "file": "00243.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 51.568334582,
+      "file": "00244.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 51.768334586,
+      "file": "00245.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 51.968334591,
+      "file": "00246.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 52.168334596,
+      "file": "00247.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 52.368334601,
+      "file": "00248.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 52.568334606,
+      "file": "00249.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 52.768334611,
+      "file": "00250.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 52.968334615,
+      "file": "00251.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 53.16833462,
+      "file": "00252.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 53.368334625,
+      "file": "00253.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 53.768334635,
+      "file": "00254.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 53.96833464,
+      "file": "00255.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 54.168334644,
+      "file": "00256.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 54.368334649,
+      "file": "00257.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 54.568334654,
+      "file": "00258.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 54.768334659,
+      "file": "00259.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 54.968334664,
+      "file": "00260.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 55.168334669,
+      "file": "00261.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 55.368334674,
+      "file": "00262.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 55.568334678,
+      "file": "00263.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 55.768334683,
+      "file": "00264.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 55.968334688,
+      "file": "00265.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 56.168334693,
+      "file": "00266.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 56.368334698,
+      "file": "00267.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 56.568334703,
+      "file": "00268.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 56.768334707,
+      "file": "00269.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 56.968334712,
+      "file": "00270.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 57.168334717,
+      "file": "00271.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 57.368334722,
+      "file": "00272.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 57.568334727,
+      "file": "00273.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 57.768334732,
+      "file": "00274.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 57.968334737,
+      "file": "00275.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 58.168334741,
+      "file": "00276.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 58.368334746,
+      "file": "00277.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 58.568334751,
+      "file": "00278.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 58.768334756,
+      "file": "00279.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 58.968334761,
+      "file": "00280.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 59.168334766,
+      "file": "00281.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 59.36833477,
+      "file": "00282.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 59.568334775,
+      "file": "00283.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 59.76833478,
+      "file": "00284.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 59.968334785,
+      "file": "00285.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 60.16833479,
+      "file": "00286.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 60.368334795,
+      "file": "00287.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 60.568334799,
+      "file": "00288.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 60.768334804,
+      "file": "00289.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 60.968334809,
+      "file": "00290.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 61.168334814,
+      "file": "00291.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 61.368334819,
+      "file": "00292.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 61.568334824,
+      "file": "00293.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 61.768334829,
+      "file": "00294.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 61.968334833,
+      "file": "00295.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 62.168334838,
+      "file": "00296.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 62.368334843,
+      "file": "00297.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 62.568334848,
+      "file": "00298.png",
+      "width": 960,
+      "height": 540
+    },
+    {
+      "stamp": 62.768334853,
+      "file": "00299.png",
+      "width": 960,
+      "height": 540
+    }
+  ],
+  "note": "Actual live node overlay, not an offline redraw. The diagnostic topic is 5Hz; the MP4 holds observations in a 30fps container. CARLA recorded reference poses, not estimated odometry."
+}
