@@ -1,0 +1,271 @@
+--- backups/before-lanefix-20261111-2200/src/vision_road/vision_road/carla.py	2026-11-11 20:45:10.387244738 +0900
++++ src/vision_road/vision_road/carla.py	2026-11-11 22:17:40.590878056 +0900
+@@ -46,7 +46,7 @@
+     def binary(self,bev,valid):
+         c=self.c
+         gray=cv2.cvtColor(bev,cv2.COLOR_BGR2GRAY).astype(np.float32)
+-        gray=cv2.GaussianBlur(gray,(3,3),.55)
++        gray=cv2.GaussianBlur(gray,(3,3),.55);self.gray=gray
+         h,l,s=cv2.split(cv2.cvtColor(bev,cv2.COLOR_BGR2HLS))
+         b,g,r=cv2.split(bev.astype(np.float32))
+         white=(s<120)&(l>c.carla_white_light_min)
+@@ -153,36 +153,132 @@
+             if side not in chosen or quality>chosen[side][0]:chosen[side]=(quality,lane)
+         return [chosen[s][1] for s in ['left','right'] if s in chosen]
+ 
++    def edge_like(self,y,x):
++        """A curb or island border is a brightness step, not a ridge on asphalt.
++
++        Painted lines have similar road on both flanks; a curb lip has island
++        or sidewalk on one flank and is barely brighter than that flank. Only
++        white candidates are tested: yellow paint often runs beside a curb.
++        """
++        gray=self.gray;offset=max(2,round(.35/self.c.mpp))
++        keep=(x-offset-1>=0)&(x+offset+1<gray.shape[1])
++        count=int(np.count_nonzero(keep))
++        if count<3:return False
++        y=y[keep];x=x[keep]
++        left=float(gray[y,x-offset].sum()+gray[y,x-offset-1].sum())/(2*count)
++        right=float(gray[y,x+offset].sum()+gray[y,x+offset+1].sum())/(2*count)
++        center=float(gray[y,x].sum())/count;asymmetry=abs(left-right)
++        return asymmetry>=20. and center-max(left,right)<asymmetry/1.5
++
++    def merge_strands(self,nodes,sample,smooth,yellow):
++        """One smooth centerline per marking; a double line is one marking.
++
++        Each fragment keeps its observed forward extent and its own measured
++        offset from the chain fit, so dash gaps stay open. Row-median jitter
++        and strand switching between 2 m tiles are removed.
++        """
++        nodes=sorted(nodes,key=lambda a:a['lane'].points[0,0])
++        centers=np.array([np.mean(a['lane'].points[:,0]) for a in nodes])
++        offsets=np.array([float(np.mean(a['lane'].points[:,1]-np.interp(a['lane'].points[:,0],sample,smooth))) for a in nodes])
++        target=offsets.copy();double=False
++        if yellow and len(nodes)>=2:
++            order=np.sort(offsets);gaps=np.diff(order);k=int(np.argmax(gaps))
++            split=(order[k]+order[k+1])/2;outer=offsets>=split
++            extent=lambda flag:sum(np.ptp(a['lane'].points[:,0]) for a,f in zip(nodes,flag) if f)
++            if .10<=gaps[k] and order[-1]-order[0]<=.55 and min(extent(outer),extent(~outer))>=2.:
++                mid=(np.median(offsets[outer])+np.median(offsets[~outer]))/2
++                target[outer]+=mid-np.median(offsets[outer]);target[~outer]+=mid-np.median(offsets[~outer]);double=True
++        near=np.abs(centers[:,None]-centers[None,:])<=3.
++        target=np.nanmedian(np.where(near,target[None,:],np.nan),axis=1)
++        groups=[]
++        for a,value in zip(nodes,target):
++            lo,hi=a['lane'].points[0,0],a['lane'].points[-1,0]
++            if groups and lo<=groups[-1]['hi']+.05:
++                g=groups[-1];g['hi']=max(g['hi'],hi);g['items'].append((a,value))
++            else:groups.append(dict(lo=lo,hi=hi,items=[(a,value)]))
++        merged=[]
++        for g in groups:
++            items=g['items'];forward=np.unique(np.concatenate([a['lane'].points[:,0] for a,_ in items]))
++            if len(items)==1:offset=np.full(len(forward),items[0][1])
++            else:
++                mids=np.array([np.mean(a['lane'].points[:,0]) for a,_ in items]);values=np.array([v for _,v in items]);order=np.argsort(mids)
++                offset=np.interp(forward,mids[order],values[order])
++            lateral=np.interp(forward,sample,smooth)+offset
++            if not double:
++                # A single line stays within half a BEV pixel of its measured paint.
++                _,measured=grouped_median(np.vstack([a['lane'].points for a,_ in items]))
++                lateral=np.clip(lateral,measured-.45*self.c.mpp,measured+.45*self.c.mpp)
++            lane=replace(items[0][0]['lane'],points=np.column_stack([forward,lateral]),
++                         confidence=max(a['lane'].confidence for a,_ in items))
++            pixels=(np.concatenate([a['pixels'][0] for a,_ in items]),np.concatenate([a['pixels'][1] for a,_ in items]))
++            merged.append(dict(lane=lane,pixels=pixels))
++        return float(np.median(target)),merged
++
+     def coherent_paths(self,nodes):
+         """DAG maximum-support paths; an attached branch cannot pull the fit.
+ 
+         A paint fragment is a node. Edges cross real dash gaps, never rasterize
+         them, and must agree in color, tangent and lateral prediction.
+         """
+-        c=self.c;chosen={}
+-        for side in ('left','right'):
+-            candidates=sorted([a for a in nodes if a['lane'].side==side],key=lambda a:a['lane'].points[0,0])
+-            scores=[];paths=[]
+-            for j,b in enumerate(candidates):
+-                bp=b['lane'].points;length=float(np.ptp(bp[:,0]))
+-                best=length+.4+3.*max(0.,15.-bp[0,0]);path=[j]
+-                for k,a in enumerate(candidates[:j]):
+-                    ap=a['lane'].points;gap=bp[0,0]-ap[-1,0]
+-                    if not -.15<=gap<=8. or a['yellow']!=b['yellow']:continue
+-                    angle=abs(math.atan(a['fit'][0])-math.atan(b['fit'][0]))
+-                    middle=(a['lo']+b['hi'])/2
+-                    error=abs((a['fit'][0]*middle+a['fit'][1])-(b['fit'][0]*middle+b['fit'][1]))*c.mpp
+-                    if angle>math.radians(22) or error>.20+.025*max(gap,0):continue
+-                    score=scores[k]+length+.4-3.*error-1.5*angle-.06*max(gap,0)
+-                    if score>best:best=score;path=paths[k]+[j]
+-                scores.append(best);paths.append(path)
+-            if not paths:continue
+-            order=np.argsort(scores)[::-1]
+-            for end in order:
+-                path=[candidates[k] for k in paths[end]]
++        c=self.c;chosen={};scored={}
++        candidates=sorted(nodes,key=lambda a:a['lane'].points[0,0]);n=len(candidates)
++        if not n:return chosen
++        first=np.array([a['lane'].points[0,0] for a in candidates]);last=np.array([a['lane'].points[-1,0] for a in candidates])
++        length=np.array([float(np.ptp(a['lane'].points[:,0])) for a in candidates])
++        slope=np.array([a['fit'][0] for a in candidates]);intercept=np.array([a['fit'][1] for a in candidates])
++        tangent=np.arctan(slope);lo=np.array([a['lo'] for a in candidates]);hi=np.array([a['hi'] for a in candidates])
++        yellow=np.array([a['yellow'] for a in candidates]);anchor=np.abs([a['anchor'] for a in candidates])
++        # Links k -> j are side independent: same color, tangent and lateral
++        # prediction across a real gap of at most 8 m. Computed once.
++        gap=first[None,:]-last[:,None];positive=np.maximum(gap,0.)
++        middle=(lo[:,None]+hi[None,:])/2;angle=np.abs(tangent[:,None]-tangent[None,:])
++        error=np.abs(slope[:,None]*middle+intercept[:,None]-(slope[None,:]*middle+intercept[None,:]))*c.mpp
++        ok=np.triu(np.ones((n,n),bool),1)&(gap>=-.15)&(gap<=8.)&(yellow[:,None]==yellow[None,:])&(angle<=math.radians(22))&(error<=.20+.025*positive)
++        weight=length[None,:]+.4-3.*error-1.5*angle-.06*positive
++        links=[[] for _ in range(n)]
++        for k,j in zip(*np.nonzero(ok)):links[j].append((int(k),float(weight[k,j])))
++        base=length+.4+3.*np.maximum(0.,15.-first)
++        # The root fixes the side. A far fragment of a curved line may
++        # extrapolate to the other side, so off-corridor ones join by chain
++        # only. Beyond 15 m a straight extrapolation is trusted only for a
++        # root nearly parallel to the heading.
++        rootable=(anchor>=.65)&(anchor<=4.2)&((first<=15.)|(np.abs(slope)<=.08))
++        def best_path(side,excluded):
++            scores=[-math.inf]*n;parent=[-1]*n;origin=list(range(n));paint=list(length)
++            for j in range(n):
++                if j in excluded:continue
++                best=float(base[j]) if rootable[j] and candidates[j]['lane'].side==side else -math.inf;choice=-1
++                for k,w in links[j]:
++                    if scores[k]==-math.inf:continue
++                    value=scores[k]+w
++                    if value>best:best=value;choice=k
++                scores[j]=best
++                if choice>=0:parent[j]=choice;origin[j]=origin[choice];paint[j]=paint[choice]+length[j]
++            # A lone short fragment keeps only part of its near-start bonus,
++            # so it cannot outrank a long supported chain just behind it.
++            adjusted=np.array(scores)-3.*np.maximum(0.,15.-first[origin])*(1-np.minimum(1.,np.array(paint)/3.))
++            for end in np.argsort(-adjusted,kind='stable'):
++                if adjusted[end]==-math.inf:break
++                path=[];k=int(end)
++                while k>=0:path.append(k);k=parent[k]
++                path=[candidates[k] for k in reversed(path)]
+                 span=path[-1]['lane'].points[-1,0]-path[0]['lane'].points[0,0]
+                 if (len(path)>=2 and span>=2.5) or (len(path)==1 and span>=1.2 and path[0]['lane'].points[0,0]<=14.):
+-                    chosen[side]=path;break
++                    return float(adjusted[end]),path
++            return None
++        for side in ('left','right'):
++            result=best_path(side,set())
++            if result is not None:scored[side]=result
++        if len(scored)==2:
++            winner,second=sorted(scored,key=lambda s:-scored[s][0])
++            used={id(a) for a in scored[winner][1]}
++            if used & {id(a) for a in scored[second][1]}:
++                result=best_path(second,{j for j,a in enumerate(candidates) if id(a) in used})
++                if result is None:del scored[second]
++                else:scored[second]=result
++        for side,(_,path) in scored.items():
++            for a in path:a['lane'].side=side
++            chosen[side]=path
+         return chosen
+ 
+     def paint_fragments(self,mask):
+@@ -196,8 +292,9 @@
+         if c.carla_native_enabled and _native is not None:
+             for points,m,b,lo,hi,width,yellow,y,x in _native.extract_fragments(mask,self.yellow,c.mpp,c.forward_max,c.lateral_min):
+                 anchor=c.lateral_min+(m*((c.forward_max-3.)/c.mpp)+b)*c.mpp
+-                lane=Lane('left' if anchor<0 else 'right',points,float(np.clip(.9-width*2.,.55,.95)))
+-                nodes.append(dict(lane=lane,fit=(m,b),lo=lo,hi=hi,yellow=yellow,pixels=(y,x),parent=len(nodes)))
++                if not yellow and self.edge_like(y,x):continue
++                lane=Lane('left' if anchor<0 else 'right',points,min(.95,max(.55,.9-width*2.)))
++                nodes.append(dict(lane=lane,fit=(m,b),lo=lo,hi=hi,yellow=yellow,pixels=(y,x),parent=len(nodes),anchor=anchor))
+         else:
+             for start in range(0,len(mask),tile):
+                 part=mask[start:start+tile]
+@@ -217,7 +314,7 @@
+                     if axis_y2<.35**2 or normal_width>.10 or vy<=0:continue
+                     slope=cov/vy;line=(slope,mx-slope*my)
+                     anchor=c.lateral_min+(line[0]*((c.forward_max-3.)/c.mpp)+line[1])*c.mpp
+-                    if not .65<=abs(anchor)<=4.2:continue
++                    if c.forward_max-y.max()*c.mpp<=8. and not .65<=abs(anchor)<=4.2:continue
+                     rows=np.unique(y);cols=np.bincount(y,weights=x)[rows]/np.bincount(y)[rows]
+                     residual=np.sort(np.abs(cols-(line[0]*rows+line[1])))
+                     position=.9*(len(residual)-1);lower=int(position);fraction=position-lower
+@@ -225,8 +322,10 @@
+                     if q*c.mpp>.15:continue
+                     points=np.column_stack([c.forward_max-rows*c.mpp,-(c.lateral_min+cols*c.mpp)])[::-1]
+                     confidence=float(np.clip(.9-normal_width*2.,.55,.95))
++                    yellow=float(np.mean(self.yellow[y,x]))>.12
++                    if not yellow and self.edge_like(y,x):continue
+                     lane=Lane('left' if anchor<0 else 'right',points,confidence)
+-                    nodes.append(dict(lane=lane,fit=line,lo=float(y.min()),hi=float(y.max()),yellow=float(np.mean(self.yellow[y,x]))>.12,pixels=(y,x),parent=len(nodes)))
++                    nodes.append(dict(lane=lane,fit=line,lo=float(y.min()),hi=float(y.max()),yellow=yellow,pixels=(y,x),parent=len(nodes),anchor=anchor))
+         if c.carla_path_filter_enabled and c.carla_chain_filter_enabled:
+             groups=self.coherent_paths(nodes)
+         else:
+@@ -270,6 +369,7 @@
+                 ranked[side]=(score,group,forward,center)
+         if c.carla_chain_filter_enabled:
+             rejected_groups=max(0,len(groups)-len(ranked))
++            spines={}
+             for side,(_,group,forward,center) in ranked.items():
+                 # Fit only the selected chain; nearby branches cannot steer
+                 # the boundary or create paint inside real dash gaps.
+@@ -282,23 +382,34 @@
+                     fit=np.polyfit(x,center,2,w=weights)
+                     residual=np.abs(center-np.polyval(fit,x))
+                     weights=np.minimum(1.,.20/np.maximum(residual,.001))
+-                smooth=np.polyval(fit,sample-origin)
+-                spine=Lane(side,np.column_stack([sample,smooth]),.8)
+-                retained=[]
+-                support=group
+                 yellow_path=sum(a['yellow'] for a in group)>len(group)/2
+                 band=c.carla_chain_band_m
+-                if c.carla_path_filter_enabled:
+-                    support=[a for a in nodes if a['lane'].side==side and a['yellow']==yellow_path
+-                             and a['lane'].points[0,0]>=sample[0]-.15 and a['lane'].points[-1,0]<=sample[-1]+.15]
+-                    if yellow_path:band=max(band,.45)
+-                for a in support:
+-                    pts=a['lane'].points
+-                    error=np.median(np.abs(pts[:,1]-np.interp(pts[:,0],sample,smooth)))
+-                    if error<=band:retained.append(a)
+-                if retained:
+-                    accepted_groups.append(retained);self.boundary_candidates.append(spine)
+-                    spine.corridor_m=band
++                if c.carla_path_filter_enabled and yellow_path:band=max(band,.45)
++                spines[side]=(sample,np.polyval(fit,sample-origin),band,yellow_path,group)
++            # Each fragment supports at most one boundary, whatever side its
++            # own straight extrapolation suggested.
++            support={side:[] for side in spines}
++            members={id(a):side for side,value in spines.items() for a in value[4]}
++            for a in nodes:
++                pts=a['lane'].points;best=None;middle=len(pts)//2
++                for side,(sample,smooth,band,yellow_path,group) in spines.items():
++                    if id(a) in members and members[id(a)]!=side:continue
++                    if c.carla_path_filter_enabled:
++                        if a['yellow']!=yellow_path or pts[0,0]<sample[0]-.15 or pts[-1,0]>sample[-1]+.15:continue
++                    elif id(a) not in members:continue
++                    # Cheap rejection before the robust median test.
++                    if abs(pts[middle,1]-np.interp(pts[middle,0],sample,smooth))>band+.30:continue
++                    error=float(np.median(np.abs(pts[:,1]-np.interp(pts[:,0],sample,smooth))))
++                    if error<=band and (best is None or error<best[0]):best=(error,side)
++                if best is not None:support[best[1]].append(a)
++            for side,(sample,smooth,band,yellow_path,group) in spines.items():
++                retained=support[side]
++                if not retained:continue
++                for a in retained:a['lane'].side=side
++                offset,merged=self.merge_strands(retained,sample,smooth,yellow_path)
++                spine=Lane(side,np.column_stack([sample,smooth+offset]),.8)
++                spine.corridor_m=band
++                accepted_groups.append(merged);self.boundary_candidates.append(spine)
+         for group in accepted_groups:
+             lanes.extend(a['lane'] for a in group)
+             for a in group:selected[a['pixels']]=255
+--- backups/before-lanefix-20261111-2200/src/vision_road/vision_road/native.cpp	2026-11-11 20:45:10.367243105 +0900
++++ src/vision_road/vision_road/native.cpp	2026-11-11 21:57:28.373494017 +0900
+@@ -29,7 +29,10 @@
+    vx/=n-1;vy/=n-1;cov/=n-1;double disc=std::hypot(vx-vy,2*cov),axis=disc?.5*(1-(vx-vy)/disc):1.;double normal=std::sqrt(std::max((vx+vy-disc)*.5,0.))*mpp;
+    if(axis<.35*.35||normal>.10||vy<=0)continue;
+    double m=cov/vy,b=mx-m*my,anchor=lateral+(m*((forward-3.)/mpp)+b)*mpp;
+-   if(std::abs(anchor)<.65||std::abs(anchor)>4.2)continue;
++   // A straight extrapolation is only meaningful near the car; far curved
++   // fragments get their side from the chain they join.
++   bool near=forward-y.back()*mpp<=8.;
++   if(near&&(std::abs(anchor)<.65||std::abs(anchor)>4.2))continue;
+    int lo=y.front(),hi=y.back();std::vector<double>sums(hi-lo+1,0.);std::vector<int>nums(hi-lo+1,0);
+    for(int k=0;k<n;++k){sums[y[k]-lo]+=x[k];nums[y[k]-lo]++;}
+    std::vector<double> residual,pts;

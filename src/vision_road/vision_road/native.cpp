@@ -29,7 +29,10 @@ py::list extract(Bytes mask,Bytes yellow,double mpp,double forward,double latera
    vx/=n-1;vy/=n-1;cov/=n-1;double disc=std::hypot(vx-vy,2*cov),axis=disc?.5*(1-(vx-vy)/disc):1.;double normal=std::sqrt(std::max((vx+vy-disc)*.5,0.))*mpp;
    if(axis<.35*.35||normal>.10||vy<=0)continue;
    double m=cov/vy,b=mx-m*my,anchor=lateral+(m*((forward-3.)/mpp)+b)*mpp;
-   if(std::abs(anchor)<.65||std::abs(anchor)>4.2)continue;
+   // A straight extrapolation is only meaningful near the car; far curved
+   // fragments get their side from the chain they join.
+   bool near=forward-y.back()*mpp<=8.;
+   if(near&&(std::abs(anchor)<.65||std::abs(anchor)>4.2))continue;
    int lo=y.front(),hi=y.back();std::vector<double>sums(hi-lo+1,0.);std::vector<int>nums(hi-lo+1,0);
    for(int k=0;k<n;++k){sums[y[k]-lo]+=x[k];nums[y[k]-lo]++;}
    std::vector<double> residual,pts;
