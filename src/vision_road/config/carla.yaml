@@ -46,3 +46,6 @@ vision_road:
     # Curve: a short boundary takes the long side's shape (normal offset), up to 6 m past its own paint.
     carla_shared_shape: true
     carla_shared_extend_m: 6.0
+    # Left double line: one pair of rails; centres of seen pairs kept 25 m of travel label a single near strand.
+    carla_strand_pair: true
+    carla_strand_memory_m: 25.0

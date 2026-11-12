@@ -251,6 +251,7 @@ class TemporalDetector:
         if pose is not None and self.odom_pose is not None and t>self.odom_pose[0]:
             self.odometer+=math.hypot(pose[0]-self.odom_pose[1],pose[1]-self.odom_pose[2])
         self.odom_pose=(t,)+tuple(pose) if pose is not None else None
+        self.detector.pose=(self.odometer,)+tuple(pose) if pose is not None else None  # odometer, x, y, yaw
         binary=self.detector.binary(bev,valid) if paint_mask is None else paint_mask
         observed=self.detector.detect(binary if observation_mask is None else observation_mask,priors=priors)
         # Leave a full BEV pixel margin for subpixel projected endpoints.

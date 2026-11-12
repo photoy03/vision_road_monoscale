@@ -69,6 +69,9 @@ class Settings:
     carla_shared_long_m: float = 12.0  # the long side spans at least this
     carla_shared_short_m: float = 8.0  # the short side has less paint than this
     carla_shared_extend_m: float = 6.0  # the short side extends past its own paint by up to this along the long side's shape
+    carla_strand_pair: bool = False  # a double line is one pair of rails: each fragment votes for the pair's centre
+    carla_strand_gap_m: float = .27  # double line spacing before one is measured; then a slow average of measured gaps
+    carla_strand_memory_m: float = 0.0  # >0: centres of seen pairs kept in odometry coordinates this far of travel label single strands
     # Optional learned lane mask gate (learned_mask.py); without a mask nothing changes.
     carla_learned_gate: str = 'off'  # off | remove (drop paint outside the mask) | penalize (lower its chain score)
     #                                   | replace (the mask's centre lines are the paint; style still from paint)

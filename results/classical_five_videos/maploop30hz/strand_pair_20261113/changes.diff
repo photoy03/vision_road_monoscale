@@ -1,0 +1,233 @@
+--- backups/before-strand-pair-20261113/carla.py	2026-11-13 06:08:57.530002572 +0900
++++ src/vision_road/vision_road/carla.py	2026-11-13 06:49:02.282305577 +0900
+@@ -61,6 +61,9 @@
+         self.lane_width=3.3  # m; running estimate from frames with both boundaries
+         self.last_spines={}  # previous frame boundaries, uncompensated: about 0.3 m of travel at 30 Hz
+         self.strand_gap={};self.frame_index=0  # side -> (double line spacing m, frame), kept 30 frames
++        self.strand_memory={}  # side -> [(odometer, world centre points)] of seen pairs
++        self.shared={}  # short side -> (long side, paint start, paint end) when share_shape gave it the long side's shape
++        self.pose=None  # (odometer m, x, y, yaw) of this frame, set by TemporalDetector when odometry is available
+         self.learned=None  # BEV learned lane mask for the current frame, set by the caller (optional)
+         self.learned_outside=None;self.replaced_paint=None
+ 
+@@ -233,7 +236,10 @@
+         centers=np.array([np.mean(a['lane'].points[:,0]) for a in nodes])
+         offsets=np.array([float(np.mean(a['lane'].points[:,1]-np.interp(a['lane'].points[:,0],sample,smooth))) for a in nodes])
+         target=offsets.copy();double=False;strand=np.zeros(len(nodes),bool)
+-        if yellow and len(nodes)>=2:
++        voted=self.pair_vote(nodes,sample,smooth,side) if yellow and self.c.carla_strand_pair else None
++        if voted is not None:
++            target,strand=voted;double=True
++        elif yellow and len(nodes)>=2:
+             order=np.sort(offsets);gaps=np.diff(order);k=int(np.argmax(gaps))
+             split=(order[k]+order[k+1])/2;outer=offsets>=split
+             extent=lambda flag:sum(np.ptp(a['lane'].points[:,0]) for a,f in zip(nodes,flag) if f)
+@@ -244,7 +250,8 @@
+                 if old is not None and self.frame_index-old[1]<=30:gap=.7*old[0]+.3*gap
+                 self.strand_gap[side]=(gap,self.frame_index)
+         remembered=self.strand_gap.get(side);previous=self.last_spines.get(side)
+-        if yellow and not double and remembered is not None and self.frame_index-remembered[1]<=30 and previous is not None:
++        # The pair vote replaces this previous-output rule: a wrong previous centre would carry on.
++        if yellow and not double and not self.c.carla_strand_pair and remembered is not None and self.frame_index-remembered[1]<=30 and previous is not None:
+             # One strand of a recent double line: move it half the remembered
+             # spacing toward the previous center, on the side it was seen.
+             half=remembered[0]/2
+@@ -284,8 +291,116 @@
+                 pixels=(np.concatenate([a['pixels'][0] for a,_ in items]),np.concatenate([a['pixels'][1] for a,_ in items]))
+                 merged.append(dict(lane=lane,pixels=pixels))
+         merged.sort(key=lambda a:a['lane'].points[0,0])
++        if voted is not None:
++            # Section by section: the 3 m neighbour medians, interpolated along the spine.
++            order=np.argsort(centers)
++            return np.interp(sample,centers[order],np.asarray(center)[order]),merged
+         return float(np.median(center)),merged
+ 
++    def pair_vote(self,nodes,sample,smooth,side):
++        """Centre offsets of a double line seen as one pair of rails a fixed gap apart.
++
++        Each fragment is the outer strand (centre half a gap inward), the inner
++        strand (half a gap outward) or, when about two strands wide, both strands
++        (centre on it).  Fragments with a partner a gap away are labelled by that
++        pair; a weighted line through their centres then labels the single strands,
++        so far pairs decide which strand the near paint is.  Returns per-fragment
++        centre offsets from the spine and the outer-strand flags, or None when no
++        fragment is labelled (the caller falls back to its previous-frame rule)."""
++        c=self.c;mpp=c.mpp
++        remembered=self.strand_gap.get(side);gap=remembered[0] if remembered is not None else c.carla_strand_gap_m;half=gap/2
++        residual=[a['lane'].points[:,1]-np.interp(a['lane'].points[:,0],sample,smooth) for a in nodes]
++        forward=[a['lane'].points[:,0] for a in nodes]
++        label=[None]*len(nodes);votes=[[] for _ in nodes];gaps=[];lines=[];overlap=0.
++        for i,a in enumerate(nodes):
++            pts=a['lane'].points;run=float(pts[-1,0]-pts[0,0])
++            slope=float(pts[-1,1]-pts[0,1])/run if run>0 else 0.;lines.append((slope,float(pts[0,1])-slope*float(pts[0,0])))
++            y,x=a['pixels']
++            # Paint pixels per BEV row, across the strand: one strand ~0.13 m, two touching ~0.4 m.
++            if len(y) and len(y)/len(forward[i])*mpp/math.sqrt(1+slope*slope)>=half+.13:label[i]=0.
++        for i in range(len(nodes)):
++            for j in range(i+1,len(nodes)):
++                if label[i]==0. or label[j]==0.:continue
++                lo=max(forward[i][0],forward[j][0]);hi=min(forward[i][-1],forward[j][-1])
++                if hi-lo<1.:continue
++                middle=(lo+hi)/2
++                if abs(abs((lines[i][0]-lines[j][0])*middle+lines[i][1]-lines[j][1])-gap)>.15:continue
++                common=(forward[i]>=lo)&(forward[i]<=hi)
++                d=float(np.median(nodes[i]['lane'].points[common,1]-np.interp(forward[i][common],forward[j],nodes[j]['lane'].points[:,1])))
++                if abs(abs(d)-gap)>.08:continue
++                votes[i].append(1. if d>0 else -1.);votes[j].append(-1. if d>0 else 1.);gaps.append(abs(d));overlap+=hi-lo
++        # One short side by side pair or one wide blob is no double line (a curb, a chevron
++        # edge): 2 m of pairs and two-strand-wide paint at least.
++        if overlap+sum(float(forward[i][-1]-forward[i][0]) for i,l in enumerate(label) if l==0.)<2.:
++            votes=[[] for _ in nodes];gaps=[];label=[None]*len(nodes)
++        for i,v in enumerate(votes):
++            if v and label[i] is None and abs(sum(v))==len(v):label[i]=v[0]
++        if gaps:
++            measured=float(np.median(gaps))
++            self.strand_gap[side]=(measured if remembered is None else .9*remembered[0]+.1*measured,self.frame_index)
++        memory=c.carla_strand_memory_m>0
++        fixed=self.recall_pairs(nodes,label,votes,half,side) if memory else set()
++        if memory:self.store_pairs(nodes,label,votes,half,side)
++        if all(l is None for l in label):return None
++        for _ in range(3):
++            known=[i for i,l in enumerate(label) if l is not None]
++            xs=np.concatenate([forward[i] for i in known]);cs=np.concatenate([residual[i]-label[i]*half for i in known])
++            degree=1 if np.ptp(xs)>=4. else 0
++            weights=np.ones(len(xs))
++            for _ in range(3):
++                fit=np.polyfit(xs,cs,degree,w=weights)
++                weights=np.minimum(1.,.05/np.maximum(np.abs(cs-np.polyval(fit,xs)),.001))
++            changed=False
++            for i in range(len(nodes)):
++                if label[i] is not None and (votes[i] or label[i]==0. or i in fixed):continue
++                model=np.polyval(fit,forward[i])
++                best=min((-1.,1.),key=lambda s:float(np.mean(np.abs(residual[i]-s*half-model))))
++                if label[i]!=best:label[i]=best;changed=True
++            if not changed:break
++        target=np.array([float(np.mean(residual[i]))-label[i]*half for i in range(len(nodes))])
++        self.diagnostics['strand_labels_'+side]=label
++        return target,np.array([l==1. for l in label])
++
++    def recall_pairs(self,nodes,label,votes,half,side):
++        """Label single strands by where a pair's centre was seen on the road.
++
++        Paint 6 m ahead was 10-15 m ahead a second ago, where both strands are
++        far more often visible.  Centres of fragments labelled by a partner are
++        kept in odometry coordinates for carla_strand_memory_m of travel; a single
++        strand lying half a gap from a remembered centre takes that side.  Only
++        observations are stored, never the output.  No odometry: nothing is used.
++        Returns the fragments it labelled."""
++        pose=self.pose;fixed=set()
++        if pose is None:self.strand_memory.pop(side,None);return fixed
++        odometer,px,py,yaw=pose;co,si=math.cos(yaw),math.sin(yaw)
++        memory=[m for m in self.strand_memory.get(side,[]) if odometer-m[0]<=self.c.carla_strand_memory_m]
++        if memory:
++            world=np.vstack([m[1] for m in memory]);dx=world[:,0]-px;dy=world[:,1]-py
++            ahead=dx*co+dy*si;lateral=-dx*si+dy*co
++            # Mean remembered centre per 0.2 m of distance ahead.
++            cell=np.floor(ahead/.2).astype(int);keep=(cell>=0)&(cell<round(self.c.forward_max/.2)+1)
++            count=np.bincount(cell[keep],minlength=round(self.c.forward_max/.2)+1);total=np.bincount(cell[keep],lateral[keep],minlength=len(count))
++            for i,a in enumerate(nodes):
++                if votes[i] or label[i]==0.:continue
++                pts=a['lane'].points;cells=np.clip(np.floor(pts[:,0]/.2).astype(int),0,len(count)-1);seen=count[cells]>0
++                if seen.sum()<3:continue
++                # Remembered centre minus paint; the outer strand lies half a gap outside the centre.
++                d=float(np.median(total[cells[seen]]/count[cells[seen]]-pts[seen,1]))
++                if abs(abs(d)-half)<=half*.6:label[i]=-1. if d>0 else 1.;fixed.add(i)
++        return fixed
++
++    def store_pairs(self,nodes,label,votes,half,side):
++        """Keep this frame's pair centres (partner or two-strand-wide fragments) in odometry coordinates."""
++        pose=self.pose
++        if pose is None:return
++        odometer,px,py,yaw=pose;co,si=math.cos(yaw),math.sin(yaw)
++        memory=[m for m in self.strand_memory.get(side,[]) if odometer-m[0]<=self.c.carla_strand_memory_m]
++        seen=[a['lane'].points[::3]-[0.,label[i]*half] for i,a in enumerate(nodes) if label[i] is not None and (votes[i] or label[i]==0.)]
++        if seen:
++            pts=np.vstack(seen)
++            memory.append((odometer,np.column_stack([px+pts[:,0]*co-pts[:,1]*si,py+pts[:,0]*si+pts[:,1]*co])))
++        self.strand_memory[side]=memory
++
+     def spine(self,group,forward=None,center=None):
+         """Robust quadratic boundary of one selected chain, with its band."""
+         c=self.c
+@@ -381,6 +496,7 @@
+             order=np.argsort(forward[keep])
+             spines[short]=(forward[keep][order],lateral[keep][order],S[2],S[3],S[4])
+             self.diagnostics['shared_'+short]=round(d,2)
++            self.shared[short]=(long,float(pts[:,0].min()),float(pts[:,0].max()))
+ 
+     def prior_penalty(self,side,path,points=None):
+         """Rank down a jump outward from the last boundary or off the lane width."""
+@@ -402,7 +518,7 @@
+ 
+     def forget(self):
+         """Drop frame-to-frame memory after a time jump or reset."""
+-        self.last_spines={};self.lane_width=3.3;self.strand_gap={}
++        self.last_spines={};self.lane_width=3.3;self.strand_gap={};self.strand_memory={}
+         self.tracking_priors={};self.path_tracking.reset()
+ 
+     def coherent_paths(self,nodes):
+@@ -574,6 +690,7 @@
+             for side,(_,group,forward,center) in ranked.items():
+                 spines[side]=self.spine(group,forward,center)
+             if c.carla_path_filter_enabled:self.parallel_support(nodes,spines)
++            self.shared={}
+             if c.carla_shared_shape:self.share_shape(spines)
+             # Each fragment supports at most one boundary, whatever side its
+             # own straight extrapolation suggested.
+@@ -591,12 +708,21 @@
+                     error=float(np.median(np.abs(pts[:,1]-np.interp(pts[:,0],sample,smooth))))
+                     if error<=band and (best is None or error<best[0]):best=(error,side)
+                 if best is not None:support[best[1]].append(a)
+-            remembered={}
++            remembered={};offsets={}
+             for side,(sample,smooth,band,yellow_path,group) in spines.items():
+                 retained=support[side]
+                 if not retained:continue
+                 for a in retained:a['lane'].side=side
+-                offset,merged=self.merge_strands(retained,sample,smooth,yellow_path,side)
++                offsets[side]=self.merge_strands(retained,sample,smooth,yellow_path,side)
++            for side,(offset,merged) in offsets.items():
++                sample,smooth,band=spines[side][:3]
++                if side in self.shared and self.shared[side][0] in offsets:
++                    # A shared shape follows the long side's strand correction along the
++                    # road; its own paint already set its position, so only the change counts.
++                    long,lo,hi=self.shared[side];source=spines[long][0]
++                    shift=np.interp(sample,source,np.broadcast_to(offsets[long][0],source.shape))
++                    own=(sample>=lo)&(sample<=hi)
++                    offset=offset+shift-(float(np.median(shift[own])) if own.any() else 0.)
+                 spine=Lane(side,np.column_stack([sample,smooth+offset]),.8)
+                 spine.corridor_m=band;remembered[side]=(sample,smooth+offset)
+                 accepted_groups.append(merged);self.boundary_candidates.append(spine)
+--- backups/before-strand-pair-20261113/core.py	2026-11-13 06:08:57.530002572 +0900
++++ src/vision_road/vision_road/core.py	2026-11-13 06:21:40.223791390 +0900
+@@ -69,6 +69,9 @@
+     carla_shared_long_m: float = 12.0  # the long side spans at least this
+     carla_shared_short_m: float = 8.0  # the short side has less paint than this
+     carla_shared_extend_m: float = 6.0  # the short side extends past its own paint by up to this along the long side's shape
++    carla_strand_pair: bool = False  # a double line is one pair of rails: each fragment votes for the pair's centre
++    carla_strand_gap_m: float = .27  # double line spacing before one is measured; then a slow average of measured gaps
++    carla_strand_memory_m: float = 0.0  # >0: centres of seen pairs kept in odometry coordinates this far of travel label single strands
+     # Optional learned lane mask gate (learned_mask.py); without a mask nothing changes.
+     carla_learned_gate: str = 'off'  # off | remove (drop paint outside the mask) | penalize (lower its chain score)
+     #                                   | replace (the mask's centre lines are the paint; style still from paint)
+--- backups/before-strand-pair-20261113/carla.yaml	2026-11-13 06:08:57.530002572 +0900
++++ src/vision_road/config/carla.yaml	2026-11-13 06:26:11.683726193 +0900
+@@ -46,3 +46,6 @@
+     # Curve: a short boundary takes the long side's shape (normal offset), up to 6 m past its own paint.
+     carla_shared_shape: true
+     carla_shared_extend_m: 6.0
++    # Left double line: one pair of rails; centres of seen pairs kept 25 m of travel label a single near strand.
++    carla_strand_pair: true
++    carla_strand_memory_m: 25.0
+diff --git a/src/vision_road/vision_road/temporal.py b/src/vision_road/vision_road/temporal.py
+index bd010bc..7e75ecd 100644
+--- a/src/vision_road/vision_road/temporal.py
++++ b/src/vision_road/vision_road/temporal.py
+@@ -251,6 +251,7 @@ class TemporalDetector:
+         if pose is not None and self.odom_pose is not None and t>self.odom_pose[0]:
+             self.odometer+=math.hypot(pose[0]-self.odom_pose[1],pose[1]-self.odom_pose[2])
+         self.odom_pose=(t,)+tuple(pose) if pose is not None else None
++        self.detector.pose=(self.odometer,)+tuple(pose) if pose is not None else None  # odometer, x, y, yaw
+         binary=self.detector.binary(bev,valid) if paint_mask is None else paint_mask
+         observed=self.detector.detect(binary if observation_mask is None else observation_mask,priors=priors)
+         # Leave a full BEV pixel margin for subpixel projected endpoints.
