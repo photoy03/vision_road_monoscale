@@ -1,0 +1,107 @@
+{
+ "settings": null,
+ "curve_window_s": [
+  22.0,
+  35.0
+ ],
+ "sides": {
+  "left": {
+   "jitter_cm": {
+    "raw": {
+     "std": 1.93,
+     "p90_abs": 3.24,
+     "jumps": 0
+    },
+    "filtered": {
+     "std": 1.42,
+     "p90_abs": 1.4,
+     "jumps": 0
+    }
+   },
+   "jitter_straight_cm": {
+    "raw": {
+     "std": 1.74,
+     "p90_abs": 2.0,
+     "jumps": 0
+    },
+    "filtered": {
+     "std": 1.48,
+     "p90_abs": 1.0,
+     "jumps": 0
+    }
+   },
+   "shake_cm": {
+    "raw": 1.14,
+    "filtered": 0.72,
+    "filtered_where_raw": 0.53
+   },
+   "shake_straight_cm": {
+    "raw": 0.82,
+    "filtered": 0.47
+   },
+   "toggles": {
+    "raw": 18,
+    "filtered": 4
+   },
+   "shown_frames": {
+    "raw": 1203,
+    "filtered": 1316
+   },
+   "curve_lag_m": {
+    "mean_abs": 0.039,
+    "p95_abs": 0.085,
+    "frames": 256
+   },
+   "style_switches": 0
+  },
+  "right": {
+   "jitter_cm": {
+    "raw": {
+     "std": 2.72,
+     "p90_abs": 3.62,
+     "jumps": 0
+    },
+    "filtered": {
+     "std": 1.69,
+     "p90_abs": 1.2,
+     "jumps": 2
+    }
+   },
+   "jitter_straight_cm": {
+    "raw": {
+     "std": 2.35,
+     "p90_abs": 2.81,
+     "jumps": 0
+    },
+    "filtered": {
+     "std": 1.44,
+     "p90_abs": 1.1,
+     "jumps": 0
+    }
+   },
+   "shake_cm": {
+    "raw": 2.15,
+    "filtered": 1.74,
+    "filtered_where_raw": 1.03
+   },
+   "shake_straight_cm": {
+    "raw": 1.02,
+    "filtered": 0.36
+   },
+   "toggles": {
+    "raw": 61,
+    "filtered": 4
+   },
+   "shown_frames": {
+    "raw": 972,
+    "filtered": 1249
+   },
+   "curve_lag_m": {
+    "mean_abs": 0.045,
+    "p95_abs": 0.078,
+    "frames": 166
+   },
+   "style_switches": 1
+  }
+ }
+}

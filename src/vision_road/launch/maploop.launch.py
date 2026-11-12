@@ -18,6 +18,7 @@ def generate_launch_description():
         DeclareLaunchArgument('bev_mpp',default_value='0.07'),
         DeclareLaunchArgument('debug_publish_hz',default_value='5.0'),
         DeclareLaunchArgument('display_simplify_error_m',default_value='0.025'),
+        DeclareLaunchArgument('display_filter',default_value='true'),
         Node(package='vision_road',executable='road_node',name='vision_road',output='screen',parameters=[share+'/config/carla.yaml',{
             'use_sim_time':LaunchConfiguration('use_sim_time'),
             'image_topic':'/sensing/camera/dashcam/image_raw','image_reliability':LaunchConfiguration('image_reliability'),'image_queue_depth':10,
@@ -28,6 +29,9 @@ def generate_launch_description():
             'debug_publish_hz':ParameterValue(LaunchConfiguration('debug_publish_hz'),value_type=float),
             'mpp':ParameterValue(LaunchConfiguration('bev_mpp'),value_type=float),
             'display_simplify_error_m':ParameterValue(LaunchConfiguration('display_simplify_error_m'),value_type=float)}]),
+        # HUD-only smoothing of the boundaries; road_node's own topics are unchanged.
+        Node(package='vision_road',executable='lane_display_filter',condition=IfCondition(LaunchConfiguration('display_filter')),
+             parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
         Node(package='vision_road',executable='reference_pose',condition=IfCondition(LaunchConfiguration('reference_pose')),
              parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
         Node(package='tf2_ros',executable='static_transform_publisher',arguments=[

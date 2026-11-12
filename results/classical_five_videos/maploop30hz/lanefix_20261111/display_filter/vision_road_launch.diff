@@ -1,0 +1,28 @@
+--- backups/before-display-filter-20261112/vision_road/setup.py	2026-11-12 16:44:50.694155202 +0900
++++ src/vision_road/setup.py	2026-11-12 16:44:50.719155744 +0900
+@@ -9,4 +9,4 @@
+       install_requires=['setuptools'], zip_safe=True,
+       maintainer='jaehun', maintainer_email='jaehun@example.com',
+       description='Road curve detection and odometry aligned lane accumulation', license='Apache-2.0',
+-      entry_points={'console_scripts': ['road_node = vision_road.node:main', 'reference_pose = vision_road.reference_pose:main', 'kitti_replay = vision_road.kitti_replay:main']})
++      entry_points={'console_scripts': ['road_node = vision_road.node:main', 'reference_pose = vision_road.reference_pose:main', 'kitti_replay = vision_road.kitti_replay:main', 'lane_display_filter = vision_road.display_filter:main']})
+--- backups/before-display-filter-20261112/vision_road/launch/maploop.launch.py	2026-11-12 16:44:50.696155245 +0900
++++ src/vision_road/launch/maploop.launch.py	2026-11-12 16:44:50.719155744 +0900
+@@ -18,6 +18,7 @@
+         DeclareLaunchArgument('bev_mpp',default_value='0.07'),
+         DeclareLaunchArgument('debug_publish_hz',default_value='5.0'),
+         DeclareLaunchArgument('display_simplify_error_m',default_value='0.025'),
++        DeclareLaunchArgument('display_filter',default_value='true'),
+         Node(package='vision_road',executable='road_node',name='vision_road',output='screen',parameters=[share+'/config/carla.yaml',{
+             'use_sim_time':LaunchConfiguration('use_sim_time'),
+             'image_topic':'/sensing/camera/dashcam/image_raw','image_reliability':LaunchConfiguration('image_reliability'),'image_queue_depth':10,
+@@ -28,6 +29,9 @@
+             'debug_publish_hz':ParameterValue(LaunchConfiguration('debug_publish_hz'),value_type=float),
+             'mpp':ParameterValue(LaunchConfiguration('bev_mpp'),value_type=float),
+             'display_simplify_error_m':ParameterValue(LaunchConfiguration('display_simplify_error_m'),value_type=float)}]),
++        # HUD-only smoothing of the boundaries; road_node's own topics are unchanged.
++        Node(package='vision_road',executable='lane_display_filter',condition=IfCondition(LaunchConfiguration('display_filter')),
++             parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
+         Node(package='vision_road',executable='reference_pose',condition=IfCondition(LaunchConfiguration('reference_pose')),
+              parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
+         Node(package='tf2_ros',executable='static_transform_publisher',arguments=[

@@ -1,0 +1,126 @@
+{
+ "settings": {
+  "confirm_window": 8,
+  "confirm_hits": 5,
+  "start_span_m": 6.0,
+  "update_span_m": 3.0,
+  "max_start_m": 12.0,
+  "min_cutoff_hz": 0.3,
+  "beta": 1.0,
+  "d_cutoff_hz": 1.0,
+  "gate_m": 0.3,
+  "gate_frames": 3,
+  "near_m": 3.0,
+  "far_m": 20.0,
+  "step_m": 0.5,
+  "extend_m": 3.0,
+  "hold_s": 1.0,
+  "style_stable_s": 0.5,
+  "dashed_min_confidence": 0.6,
+  "follow_predicted": true
+ },
+ "curve_window_s": [
+  22.0,
+  35.0
+ ],
+ "sides": {
+  "left": {
+   "jitter_cm": {
+    "raw": {
+     "std": 1.88,
+     "p90_abs": 3.16,
+     "jumps": 0
+    },
+    "filtered": {
+     "std": 1.38,
+     "p90_abs": 1.39,
+     "jumps": 0
+    }
+   },
+   "jitter_straight_cm": {
+    "raw": {
+     "std": 1.71,
+     "p90_abs": 1.92,
+     "jumps": 0
+    },
+    "filtered": {
+     "std": 1.48,
+     "p90_abs": 1.02,
+     "jumps": 0
+    }
+   },
+   "shake_cm": {
+    "raw": 1.16,
+    "filtered": 0.65,
+    "filtered_where_raw": 0.55
+   },
+   "shake_straight_cm": {
+    "raw": 0.84,
+    "filtered": 0.47
+   },
+   "toggles": {
+    "raw": 18,
+    "filtered": 4
+   },
+   "shown_frames": {
+    "raw": 1198,
+    "filtered": 1317
+   },
+   "curve_lag_m": {
+    "mean_abs": 0.034,
+    "p95_abs": 0.083,
+    "frames": 259
+   },
+   "style_switches": 3
+  },
+  "right": {
+   "jitter_cm": {
+    "raw": {
+     "std": 2.6,
+     "p90_abs": 3.53,
+     "jumps": 0
+    },
+    "filtered": {
+     "std": 1.42,
+     "p90_abs": 1.14,
+     "jumps": 3
+    }
+   },
+   "jitter_straight_cm": {
+    "raw": {
+     "std": 2.17,
+     "p90_abs": 2.53,
+     "jumps": 0
+    },
+    "filtered": {
+     "std": 1.24,
+     "p90_abs": 1.03,
+     "jumps": 1
+    }
+   },
+   "shake_cm": {
+    "raw": 2.07,
+    "filtered": 1.48,
+    "filtered_where_raw": 1.06
+   },
+   "shake_straight_cm": {
+    "raw": 0.97,
+    "filtered": 0.37
+   },
+   "toggles": {
+    "raw": 67,
+    "filtered": 4
+   },
+   "shown_frames": {
+    "raw": 885,
+    "filtered": 1206
+   },
+   "curve_lag_m": {
+    "mean_abs": 0.05,
+    "p95_abs": 0.114,
+    "frames": 155
+   },
+   "style_switches": 3
+  }
+ }
+}

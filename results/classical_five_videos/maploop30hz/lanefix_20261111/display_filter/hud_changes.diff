@@ -1,0 +1,29 @@
+--- backups/before-display-filter-20261112/hero-hud-main/src/world_item.cpp	2026-11-12 16:44:50.697155267 +0900
++++ /home/jaehun/Desktop/hero-hud-main/src/world_item.cpp	2026-11-12 16:45:11.503597628 +0900
+@@ -924,6 +924,9 @@
+       if (boundary.left) fitted_left = true; else fitted_right = true;
+     }
+   }
++  // 차선 전용 모드는 필터된 경계(/road/lane_display_markers)만 그린다. 원본 도색
++  // 조각을 겹쳐 그리면 한 차선이 2~3가닥으로 갈라져 보이고 프레임마다 바뀐다.
++  if (lane_only) return;
+   for (const auto& line : paint.lines) {
+     if (!paint_fresh || (line.left ? fitted_left : fitted_right) || line.points.size() < 2)
+       continue;
+--- backups/before-display-filter-20261112/hero-hud-main/config/hud.yaml	2026-11-12 16:44:50.698155289 +0900
++++ /home/jaehun/Desktop/hero-hud-main/config/hud.yaml	2026-11-12 16:45:11.503597628 +0900
+@@ -75,10 +75,12 @@
+       base_to_rear_axle_m: 0.0
+ 
+     # vision-road의 도색 조각·경계·점선 종류. 모두 base_link 좌표.
++    # 경계와 선 종류는 vision_road lane_display_filter 가 표시용으로 평활한 토픽을 쓴다
++    # (원본: /road/lane_boundary_markers, /road/lane_styles).
+     road:
+       paint_topic: /road/lane_markers
+-      boundary_topic: /road/lane_boundary_markers
+-      style_topic: /road/lane_styles
++      boundary_topic: /road/lane_display_markers
++      style_topic: /road/lane_display_styles
+ 
+     timeout:
+       # 이 시간을 넘도록 안 오면 저하 단계를 내린다. docs/HUD_전략.md 6절.

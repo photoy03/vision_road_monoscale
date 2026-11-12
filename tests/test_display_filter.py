@@ -1,0 +1,112 @@
+"""HUD display filter: confirmation, smoothing, outlier gate, hold, fixed sampling and style switching."""
+import numpy as np
+from vision_road.display_filter import DisplayFilter, FilterSettings, fit, evaluate
+
+DT=1/30
+
+
+def line(y,start=4.,end=30.,c=0.):
+    x=np.linspace(start,end,6 if c==0 else 27)  # curves come densely sampled, as road_node simplifies to 2.5 cm
+    return np.column_stack([x,y+c*x*x])
+
+
+def feed(f,t,y=None,predicted=False,**kw):
+    f.update(t,[] if y is None else [('left',line(y,**kw),predicted)])
+    return {side:(p,pred,style) for side,p,pred,style in f.output()}
+
+
+def at10(out):return float(np.interp(10.,out['left'][0][:,0],out['left'][0][:,1]))
+
+
+def test_fit_recovers_a_quadratic_from_a_sparse_polyline():
+    x=np.linspace(4,30,5);stations,near,far=fit(np.column_stack([x,1.+.02*x+.001*x*x]))
+    assert near==4 and abs(far-30)<1e-6
+    assert np.allclose(evaluate(stations,np.array([10.])),1.+.2+.1,atol=.01)
+
+
+def test_side_is_shown_only_after_m_of_n_observed_frames():
+    f=DisplayFilter()
+    shown=[bool(feed(f,i*DT,1.75)) for i in range(6)]
+    assert shown==[False]*4+[True,True]
+    # Short or far-only pieces do not count toward confirmation.
+    f=DisplayFilter()
+    assert not any(feed(f,i*DT,1.75,end=8.) for i in range(10))
+    assert not any(feed(f,i*DT,1.75,start=25.) for i in range(10))
+
+
+def test_noise_is_suppressed_on_a_straight_line():
+    rng=np.random.default_rng(0);f=DisplayFilter();out=[]
+    for i in range(300):
+        o=feed(f,i*DT,1.75+rng.normal(0,.03))
+        if o:out.append(at10(o))
+    out=np.array(out[30:])
+    assert np.std(np.diff(out))<.01 and abs(out.mean()-1.75)<.01
+
+
+def test_curve_entry_is_followed_without_large_lag():
+    f=DisplayFilter();lag=[]
+    for i in range(150):
+        c=min(i,60)/60*.004  # curvature ramps in over 2 s, then holds
+        o=feed(f,i*DT,1.75,c=c)
+        if o and i>=10:lag.append(abs(at10(o)-(1.75+c*100)))
+    assert np.mean(lag)<.15 and lag[-1]<.01
+
+
+def test_single_jump_is_ignored_but_a_sustained_one_is_taken():
+    f=DisplayFilter()
+    for i in range(20):feed(f,i*DT,1.75)
+    assert abs(at10(feed(f,20*DT,2.4))-1.75)<.02
+    assert abs(at10(feed(f,21*DT,1.75))-1.75)<.02
+    for i in range(22,24):assert abs(at10(feed(f,i*DT,2.4))-1.75)<.02
+    assert abs(at10(feed(f,24*DT,2.4))-2.4)<.02
+
+
+def test_lost_side_is_held_as_predicted_then_deleted():
+    f=DisplayFilter()
+    for i in range(20):feed(f,i*DT,1.75)
+    t0=19*DT;held=[]
+    for i in range(1,40):
+        o=feed(f,t0+i*DT)
+        held.append(bool(o))
+        if o:assert o['left'][1] and abs(at10(o)-1.75)<.01
+    assert all(held[:29]) and not any(held[31:])
+    # Coming back needs confirmation again.
+    t1=t0+40*DT
+    assert not feed(f,t1,1.75)
+
+
+def test_output_has_fixed_spacing_and_stops_three_metres_past_the_observation():
+    f=DisplayFilter()
+    for i in range(20):o=feed(f,i*DT,1.75,end=12.)
+    x=o['left'][0][:,0]
+    assert x[0]==3. and np.allclose(np.diff(x),.5) and abs(x[-1]-15.)<.01
+    for i in range(20,60):o=feed(f,i*DT,1.75,end=34.)
+    assert abs(o['left'][0][-1,0]-20.)<1e-6
+
+
+def test_style_switches_only_after_it_is_stable():
+    f=DisplayFilter(FilterSettings())
+    for i in range(20):f.update_style(i*DT,'left','solid',1.);feed(f,i*DT,1.75)
+    assert f.output()[0][3]=='solid'
+    t=20*DT
+    # A flicker shorter than 0.5 s, or low-confidence dashed, does not switch.
+    for i in range(10):f.update_style(t+i*DT,'left','dashed',.9)
+    f.update_style(t+10*DT,'left','solid',1.)
+    for i in range(11,40):f.update_style(t+i*DT,'left','dashed',.3)
+    assert f.output()[0][3]=='solid'
+    for i in range(40,56):f.update_style(t+i*DT,'left','dashed',.9)
+    assert f.output()[0][3]=='dashed'
+
+
+def test_style_is_remembered_across_a_short_loss():
+    f=DisplayFilter()
+    for i in range(30):f.update_style(i*DT,'left','dashed',.9);feed(f,i*DT,1.75)
+    t=30*DT
+    for i in range(150):feed(f,t+i*DT)        # 5 s without the line: dropped, style kept
+    t+=150*DT
+    for i in range(10):o=feed(f,t+i*DT,1.75)  # back, with only UNKNOWN style evidence
+    assert o['left'][2]=='dashed'
+    for i in range(10,400):feed(f,t+i*DT)     # gone longer than hold + memory: forgotten
+    t+=400*DT
+    for i in range(10):o=feed(f,t+i*DT,1.75)
+    assert o['left'][2] is None

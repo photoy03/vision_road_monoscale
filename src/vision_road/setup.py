@@ -9,4 +9,4 @@ setup(ext_modules=[Extension('vision_road._native', ['vision_road/native.cpp'], 
       install_requires=['setuptools'], zip_safe=True,
       maintainer='jaehun', maintainer_email='jaehun@example.com',
       description='Road curve detection and odometry aligned lane accumulation', license='Apache-2.0',
-      entry_points={'console_scripts': ['road_node = vision_road.node:main', 'reference_pose = vision_road.reference_pose:main', 'kitti_replay = vision_road.kitti_replay:main']})
+      entry_points={'console_scripts': ['road_node = vision_road.node:main', 'reference_pose = vision_road.reference_pose:main', 'kitti_replay = vision_road.kitti_replay:main', 'lane_display_filter = vision_road.display_filter:main']})
