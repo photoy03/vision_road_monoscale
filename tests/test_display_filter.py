@@ -151,3 +151,27 @@ def test_replay_restart_starts_over():
     out=[feed(f,i*DT,2.5) for i in range(10)]
     assert not out[0] and out[-1] and abs(at10(out[-1])-2.5)<.02
     assert out[-1]['left'][2] is None
+
+
+def test_unstable_candidates_do_not_keep_the_line_past_hold():
+    # Review reproduction: candidates alternating 0.9 m apart for 4 s never settle.
+    for motion,hold in (((0.,0.,0.),1.),(None,.2)):
+        f=DisplayFilter()
+        for i in range(20):feed(f,i*DT,1.75)
+        t0=19*DT;shown=[]
+        for i in range(1,121):
+            t=t0+i*DT
+            o=feed(f,t,2.4 if i%2 else 3.3,motion=motion)
+            assert len(f.sides['left'].pending)<=3
+            shown.append((t-t0,bool(o)))
+        # Shown (as the kept line) until the hold runs out, then gone and not re-confirmed.
+        assert all(s for dt,s in shown if dt<=hold-1e-6)
+        assert not any(s for dt,s in shown if dt>hold+DT)
+
+
+def test_sustained_move_is_taken_within_the_short_hold():
+    # Without odometry the hold is 0.2 s; the two rejected frames before a move is taken fit in it.
+    f=DisplayFilter()
+    for i in range(20):feed(f,i*DT,1.75)
+    out=[feed(f,(20+i)*DT,2.4,motion=None) for i in range(4)]
+    assert all(out) and abs(at10(out[2])-2.4)<.02 and not out[2]['left'][1]

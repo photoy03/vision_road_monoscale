@@ -1,0 +1,123 @@
+{
+ "settings": null,
+ "curve_window_s": [
+  22.0,
+  35.0
+ ],
+ "sides": {
+  "left": {
+   "jitter_cm": {
+    "raw": {
+     "std": 1.94,
+     "p90_abs": 3.27,
+     "jumps": 0
+    },
+    "filtered": {
+     "std": 1.41,
+     "p90_abs": 1.26,
+     "jumps": 0
+    }
+   },
+   "jitter_straight_cm": {
+    "raw": {
+     "std": 1.75,
+     "p90_abs": 1.97,
+     "jumps": 0
+    },
+    "filtered": {
+     "std": 1.53,
+     "p90_abs": 1.0,
+     "jumps": 0
+    }
+   },
+   "shake_cm": {
+    "raw": 1.16,
+    "filtered": 0.6,
+    "filtered_where_raw": 0.41
+   },
+   "shake_straight_cm": {
+    "raw": 0.84,
+    "filtered": 0.62
+   },
+   "toggles": {
+    "raw": 17,
+    "filtered": 4
+   },
+   "shown_frames": {
+    "raw": 1181,
+    "filtered": 1229
+   },
+   "curve_lag_m": {
+    "mean_abs": 0.024,
+    "p95_abs": 0.052,
+    "frames": 251
+   },
+   "observed_mismatch_frames": 0,
+   "reacquire_m": {
+    "mean": null,
+    "max": null,
+    "events": 0,
+    "mean_after_5_frames": null,
+    "events_after_5_frames": 0
+   },
+   "style_switches": 0
+  },
+  "right": {
+   "jitter_cm": {
+    "raw": {
+     "std": 2.84,
+     "p90_abs": 3.66,
+     "jumps": 0
+    },
+    "filtered": {
+     "std": 1.57,
+     "p90_abs": 1.7,
+     "jumps": 1
+    }
+   },
+   "jitter_straight_cm": {
+    "raw": {
+     "std": 2.42,
+     "p90_abs": 2.96,
+     "jumps": 0
+    },
+    "filtered": {
+     "std": 1.42,
+     "p90_abs": 1.04,
+     "jumps": 0
+    }
+   },
+   "shake_cm": {
+    "raw": 2.36,
+    "filtered": 1.3,
+    "filtered_where_raw": 0.9
+   },
+   "shake_straight_cm": {
+    "raw": 1.03,
+    "filtered": 0.3
+   },
+   "toggles": {
+    "raw": 61,
+    "filtered": 4
+   },
+   "shown_frames": {
+    "raw": 952,
+    "filtered": 1212
+   },
+   "curve_lag_m": {
+    "mean_abs": 0.024,
+    "p95_abs": 0.058,
+    "frames": 164
+   },
+   "observed_mismatch_frames": 0,
+   "reacquire_m": {
+    "mean": 0.178,
+    "max": 1.638,
+    "events": 14,
+    "mean_after_5_frames": 0.09,
+    "events_after_5_frames": 2
+   },
+   "style_switches": 1
+  }
+ }
+}

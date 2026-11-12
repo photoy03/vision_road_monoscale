@@ -134,8 +134,9 @@ class SideTrack:
             self.filter.reset(stations,t);return True
         if abs(stations[1]-self.value[1])<=self.s.gate_m:
             self.pending=[];self.filter(stations,t);return True
-        self.pending.append(stations)
-        recent=[p[1] for p in self.pending[-self.s.gate_frames:]]
+        # Only the latest gate_frames candidates can make a sustained change.
+        self.pending=(self.pending+[stations])[-self.s.gate_frames:]
+        recent=[p[1] for p in self.pending]
         if len(recent)>=self.s.gate_frames and max(recent)-min(recent)<=self.s.gate_m:
             # A sustained change (new line, lane change): jump to it rather than slide.
             self.filter.reset(stations,t);self.pending=[];return True
@@ -146,14 +147,18 @@ class SideTrack:
         if observed is not None:
             stations,near,far=fit(observed)
             if far-near>=s.update_span_m and near<=s.max_start_m:obs=(stations,near,far)
-        self.history.append(obs is not None)
         if obs is not None:
             stations,_,far=obs
             accepted=self.take(stations,t)
             if accepted:
                 # The drawn end grows quickly and shrinks slowly, so its length does not flicker.
                 self.far=far if self.far is None else self.far+(.5 if far>self.far else .1)*(far-self.far)
-            self.last_observed=t
+                # Rejected candidates do not extend the hold: an unstable stream must not keep
+                # the last good line on screen past hold_s.
+                self.last_observed=t
+        # Confirmation counts accepted observations only; counting rejected ones let an unstable
+        # stream re-confirm a dropped line within 5 frames, so it blinked about once a second.
+        self.history.append(accepted)
         # Only a measurement taken this frame is drawn as observed; a rejected jump shows the kept line.
         self.predicted=not accepted
         if t-self.last_observed>s.hold_s+s.style_memory_s:self.style=self.candidate=None
