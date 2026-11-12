@@ -43,6 +43,7 @@ class Settings:
     style_history_sec: float = 0.8
     style_history_frames: int = 8
     style_hold_sec: float = 0.0
+    style_accumulate_m: float = 0.0  # >0: also judge dashed from paint accumulated along the road over the last 20 m travelled
     candidate_mask_enabled: bool = True
     candidate_max_width_m: float = 0.45
     carla_stage: int = 3
@@ -63,6 +64,11 @@ class Settings:
     carla_tracking_memory_sec: float = 0.25
     carla_spine_ema_alpha: float = 0.5  # weight of the current boundary when it matches the previous one
     carla_link_curvature_max: float = 0.0  # 1/m; optional curve allowance for chain links (1/40, 1/100 regressed maploop)
+    # Curve stabilisation (each off by default; see docs "커브에서 차선이 흔들리는 이유").
+    carla_shared_shape: bool = False  # a short boundary takes the long one's shape, offset along its normal
+    carla_shared_long_m: float = 12.0  # the long side spans at least this
+    carla_shared_short_m: float = 8.0  # the short side has less paint than this
+    carla_shared_extend_m: float = 6.0  # the short side extends past its own paint by up to this along the long side's shape
     # Optional learned lane mask gate (learned_mask.py); without a mask nothing changes.
     carla_learned_gate: str = 'off'  # off | remove (drop paint outside the mask) | penalize (lower its chain score)
     #                                   | replace (the mask's centre lines are the paint; style still from paint)

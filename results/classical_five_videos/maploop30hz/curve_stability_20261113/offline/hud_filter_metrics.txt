@@ -1,0 +1,9 @@
+base | straight L shake 0.29 y20 0.03 R shake 0.42 y20 0.66 shown 450 tog 0 lag None | curve L shake 0.57 y20 3.40 R shake 1.17 y20 2.97 shown 276 tog 1 lag 0.019
+shared | straight L shake 0.29 y20 0.03 R shake 1.09 y20 0.39 shown 450 tog 0 lag None | curve L shake 0.57 y20 3.40 R shake 1.15 y20 2.53 shown 276 tog 1 lag 0.025
+shared_ext6 | straight L shake 0.29 y20 0.03 R shake 0.80 y20 0.42 shown 450 tog 0 lag None | curve L shake 0.57 y20 3.40 R shake 0.57 y20 1.59 shown 314 tog 1 lag 0.022
+prior | straight L shake 0.27 y20 0.03 R shake 0.42 y20 0.62 shown 450 tog 0 lag None | curve L shake 0.54 y20 3.62 R shake 1.56 y20 2.77 shown 276 tog 1 lag 0.024
+links | straight L shake 0.29 y20 0.03 R shake 0.42 y20 0.66 shown 450 tog 0 lag None | curve L shake 0.58 y20 3.40 R shake 1.13 y20 2.97 shown 276 tog 1 lag 0.019
+all | straight L shake 0.27 y20 0.03 R shake 1.09 y20 0.23 shown 450 tog 0 lag None | curve L shake 0.55 y20 3.62 R shake 1.15 y20 2.58 shown 275 tog 1 lag 0.026
+sh_e3 | straight L shake 0.29 y20 0.03 R shake 0.82 y20 0.41 shown 450 tog 0 lag None | curve L shake 0.57 y20 3.40 R shake 0.59 y20 1.59 shown 297 tog 1 lag 0.023
+sh_e10 | straight L shake 0.29 y20 0.03 R shake 0.80 y20 0.42 shown 450 tog 0 lag None | curve L shake 0.57 y20 3.40 R shake 0.55 y20 1.62 shown 314 tog 1 lag 0.022
+final | straight L shake 0.29 y20 0.03 R shake 0.80 y20 0.42 shown 450 tog 0 lag None | curve L shake 0.57 y20 3.40 R shake 0.57 y20 1.59 shown 314 tog 1 lag 0.022

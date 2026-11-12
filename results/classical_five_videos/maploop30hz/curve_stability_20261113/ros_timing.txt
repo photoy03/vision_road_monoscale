@@ -1,0 +1,2 @@
+ros_final_a frames 1314 mean 28.5 p95 41.4 over33 428 {'projection': 0.25, 'learned_mask': 0.5, 'detector': 21.65, 'segments_styles': 1.35, 'markers': 2.01, 'overlay': 3.91, 'bev_debug': 0.16}
+ros_final_b frames 1752 mean 30.0 p95 44.0 over33 704 {'projection': 0.25, 'learned_mask': 0.42, 'detector': 23.4, 'segments_styles': 1.47, 'markers': 2.27, 'overlay': 3.66, 'bev_debug': 0.12}

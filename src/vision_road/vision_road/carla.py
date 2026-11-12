@@ -354,6 +354,34 @@ class CarlaDetector(Detector):
             spines[side]=replacement
             self.diagnostics['parallel_'+side]=round(paint,2)
 
+    def share_shape(self,spines):
+        """A short boundary (one or two dashes in a curve) takes the long one's shape.
+
+        The long boundary is offset along its normal by the median distance of the
+        short side's own paint, which keeps the curves parallel (R±W, not a shift
+        of the same quadratic).  Only the lateral position comes from the short side."""
+        c=self.c
+        if 'left' not in spines or 'right' not in spines:return
+        span=lambda v:float(v[0][-1]-v[0][0])
+        paint=lambda v:sum(float(np.ptp(a['lane'].points[:,0])) for a in v[4])
+        for short,long in (('right','left'),('left','right')):
+            S,L=spines[short],spines[long]
+            if span(L)<c.carla_shared_long_m or paint(S)>=c.carla_shared_short_m:continue
+            sample,smooth=L[0],L[1];slope=np.gradient(smooth,sample);norm=np.sqrt(1+slope**2)
+            pts=np.vstack([a['lane'].points for a in S[4]])
+            # Signed normal distance of the short paint from the long curve.
+            nx,ny=-slope/norm,1./norm
+            dense=np.column_stack([sample,smooth])
+            j=np.abs(pts[:,0][:,None]-sample[None,:]).argmin(1)
+            d=float(np.median((pts[:,0]-dense[j,0])*nx[j]+(pts[:,1]-dense[j,1])*ny[j]))
+            forward=sample+d*nx;lateral=smooth+d*ny
+            ext=c.carla_shared_extend_m
+            keep=(forward>=pts[:,0].min()-ext)&(forward<=pts[:,0].max()+ext)
+            if keep.sum()<3:continue
+            order=np.argsort(forward[keep])
+            spines[short]=(forward[keep][order],lateral[keep][order],S[2],S[3],S[4])
+            self.diagnostics['shared_'+short]=round(d,2)
+
     def prior_penalty(self,side,path,points=None):
         """Rank down a jump outward from the last boundary or off the lane width."""
         if points is None:points=path_points(path)
@@ -544,6 +572,7 @@ class CarlaDetector(Detector):
             for side,(_,group,forward,center) in ranked.items():
                 spines[side]=self.spine(group,forward,center)
             if c.carla_path_filter_enabled:self.parallel_support(nodes,spines)
+            if c.carla_shared_shape:self.share_shape(spines)
             # Each fragment supports at most one boundary, whatever side its
             # own straight extrapolation suggested.
             support={side:[] for side in spines}

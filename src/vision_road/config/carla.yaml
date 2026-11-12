@@ -33,6 +33,8 @@ vision_road:
     style_history_sec: 0.8
     style_history_frames: 8
     style_hold_sec: 1.0
+    # Curve: a dashed side seen one dash at a time is judged from 12 m of paint gathered along the road.
+    style_accumulate_m: 12.0
 
     # Motion-compensated preference for the confirmed lane; raw paint stays observed.
     carla_tracking_enabled: true
@@ -41,3 +43,6 @@ vision_road:
     carla_tracking_switch_margin: 1.5
     carla_tracking_switch_frames: 3
     carla_tracking_memory_sec: 0.25
+    # Curve: a short boundary takes the long side's shape (normal offset), up to 6 m past its own paint.
+    carla_shared_shape: true
+    carla_shared_extend_m: 6.0

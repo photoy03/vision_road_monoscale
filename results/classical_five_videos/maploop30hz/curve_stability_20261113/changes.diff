@@ -1,0 +1,153 @@
+--- backups/before-curve-20261113/carla.py	2026-11-13 03:53:16.432904355 +0900
++++ src/vision_road/vision_road/carla.py	2026-11-13 04:12:43.931808339 +0900
+@@ -354,6 +354,34 @@
+             spines[side]=replacement
+             self.diagnostics['parallel_'+side]=round(paint,2)
+ 
++    def share_shape(self,spines):
++        """A short boundary (one or two dashes in a curve) takes the long one's shape.
++
++        The long boundary is offset along its normal by the median distance of the
++        short side's own paint, which keeps the curves parallel (R±W, not a shift
++        of the same quadratic).  Only the lateral position comes from the short side."""
++        c=self.c
++        if 'left' not in spines or 'right' not in spines:return
++        span=lambda v:float(v[0][-1]-v[0][0])
++        paint=lambda v:sum(float(np.ptp(a['lane'].points[:,0])) for a in v[4])
++        for short,long in (('right','left'),('left','right')):
++            S,L=spines[short],spines[long]
++            if span(L)<c.carla_shared_long_m or paint(S)>=c.carla_shared_short_m:continue
++            sample,smooth=L[0],L[1];slope=np.gradient(smooth,sample);norm=np.sqrt(1+slope**2)
++            pts=np.vstack([a['lane'].points for a in S[4]])
++            # Signed normal distance of the short paint from the long curve.
++            nx,ny=-slope/norm,1./norm
++            dense=np.column_stack([sample,smooth])
++            j=np.abs(pts[:,0][:,None]-sample[None,:]).argmin(1)
++            d=float(np.median((pts[:,0]-dense[j,0])*nx[j]+(pts[:,1]-dense[j,1])*ny[j]))
++            forward=sample+d*nx;lateral=smooth+d*ny
++            ext=c.carla_shared_extend_m
++            keep=(forward>=pts[:,0].min()-ext)&(forward<=pts[:,0].max()+ext)
++            if keep.sum()<3:continue
++            order=np.argsort(forward[keep])
++            spines[short]=(forward[keep][order],lateral[keep][order],S[2],S[3],S[4])
++            self.diagnostics['shared_'+short]=round(d,2)
++
+     def prior_penalty(self,side,path,points=None):
+         """Rank down a jump outward from the last boundary or off the lane width."""
+         if points is None:points=path_points(path)
+@@ -546,6 +574,7 @@
+             for side,(_,group,forward,center) in ranked.items():
+                 spines[side]=self.spine(group,forward,center)
+             if c.carla_path_filter_enabled:self.parallel_support(nodes,spines)
++            if c.carla_shared_shape:self.share_shape(spines)
+             # Each fragment supports at most one boundary, whatever side its
+             # own straight extrapolation suggested.
+             support={side:[] for side in spines}
+--- backups/before-curve-20261113/core.py	2026-11-13 03:53:16.432904355 +0900
++++ src/vision_road/vision_road/core.py	2026-11-13 04:12:17.045784713 +0900
+@@ -43,6 +43,7 @@
+     style_history_sec: float = 0.8
+     style_history_frames: int = 8
+     style_hold_sec: float = 0.0
++    style_accumulate_m: float = 0.0  # >0: also judge dashed from paint accumulated along the road over the last 20 m travelled
+     candidate_mask_enabled: bool = True
+     candidate_max_width_m: float = 0.45
+     carla_stage: int = 3
+@@ -63,6 +64,11 @@
+     carla_tracking_memory_sec: float = 0.25
+     carla_spine_ema_alpha: float = 0.5  # weight of the current boundary when it matches the previous one
+     carla_link_curvature_max: float = 0.0  # 1/m; optional curve allowance for chain links (1/40, 1/100 regressed maploop)
++    # Curve stabilisation (each off by default; see docs "커브에서 차선이 흔들리는 이유").
++    carla_shared_shape: bool = False  # a short boundary takes the long one's shape, offset along its normal
++    carla_shared_long_m: float = 12.0  # the long side spans at least this
++    carla_shared_short_m: float = 8.0  # the short side has less paint than this
++    carla_shared_extend_m: float = 6.0  # the short side extends past its own paint by up to this along the long side's shape
+     # Optional learned lane mask gate (learned_mask.py); without a mask nothing changes.
+     carla_learned_gate: str = 'off'  # off | remove (drop paint outside the mask) | penalize (lower its chain score)
+     #                                   | replace (the mask's centre lines are the paint; style still from paint)
+--- backups/before-curve-20261113/temporal.py	2026-11-13 03:53:16.432904355 +0900
++++ src/vision_road/vision_road/temporal.py	2026-11-13 04:12:24.258791368 +0900
+@@ -33,7 +33,46 @@
+             raise ValueError('Invalid style history limits')
+         self.c=cfg; self.detector=Detector(cfg); self.reset()
+ 
++    def _accumulate_style(self,binary,valid,lanes,t):
++        """Dashed from paint gathered along the road over the last 20 m travelled.
++
++        In a curve one or two dashes are visible at a time, too little for the
++        per-frame profile.  Paint and gaps along each observed boundary (3-20 m) are
++        kept on a 0.1 m road coordinate (odometer + forward distance).  With at
++        least style_accumulate_m of continuous observation and two or more 2-12 m
++        gaps between marks, an UNKNOWN side becomes DASHED.  It never says SOLID,
++        and a frame without paint on that side changes nothing."""
++        c=self.c;cell=.1;s0=self.odometer;height,width=binary.shape;w=max(1,round(.12/c.mpp))
++        for side in ('left','right'):
++            cells=self.style_cells.setdefault(side,{})
++            bound=next((b for b in self.boundary_lanes if b.side==side and not b.reprojected),None)
++            if bound is None:continue
++            p=bound.points[np.argsort(bound.points[:,0])];x=np.arange(max(c.forward_min,p[0,0]),min(20.,p[-1,0]),cell)
++            if len(x)<2:continue
++            y=np.interp(x,p[:,0],p[:,1]);cols=np.rint((-y-c.lateral_min)/c.mpp).astype(int);rows=np.rint((c.forward_max-x)/c.mpp).astype(int)
++            inside=(rows>=0)&(rows<height)&(cols>=w)&(cols<width-w)
++            rr=np.clip(rows,0,height-1);cc=np.clip(cols[:,None]+np.arange(-w,w+1),0,width-1)
++            seen=inside&np.all(valid[rr[:,None],cc]>0,axis=1);paint=inside&np.any(binary[rr[:,None],cc]>0,axis=1)
++            if not paint.any():continue
++            for k,pnt in zip(np.rint((s0+x[seen])/cell).astype(int).tolist(),paint[seen].tolist()):cells[k]=cells.get(k,False) or pnt
++            first=int((s0-20.)/cell)
++            for k in [k for k in cells if k<first]:del cells[k]
++            keys=sorted(cells);runs=[[keys[0],keys[0]]] if keys else []
++            for k in keys[1:]:
++                if k-runs[-1][1]<=3:runs[-1][1]=k
++                else:runs.append([k,k])
++            a,b=max(runs,key=lambda r:r[1]-r[0])
++            if (b-a)*cell<c.style_accumulate_m:continue
++            signal=np.array([cells.get(k,False) for k in range(a,b+1)]);edges=np.flatnonzero(np.diff(np.r_[0,signal.astype(int),0]))
++            marks=[(lo,hi) for lo,hi in zip(edges[::2],edges[1::2]) if (hi-lo)*cell>=c.style_min_dash_m]
++            gaps=sum(1 for (_,h0),(l1,_) in zip(marks[:-1],marks[1:]) if 2.<=(l1-h0)*cell<=12.)
++            if gaps<2:continue
++            for lane in lanes:
++                if lane.side==side and lane.style=='unknown' and not lane.reprojected:
++                    lane.style='dashed';lane.style_confidence=.7;lane.style_source_time=float(t)
++
+     def reset(self):
++        self.odometer=0.;self.odom_pose=None;self.style_cells={}
+         self.tracks={}; self.last_pose=None; self.last_time=None; self.gray=None; self.valid=None
+         self.registration='none'; self.measured_count=0; self.predicted_count=0
+         self.paint_history=[];self.style_binary=None
+@@ -208,6 +247,10 @@
+             self.detector.tracking_priors=context
+             self.detector.path_tracking.warp(matrix if c.carla_tracking_enabled else None)
+         self.detector.previous.clear(); self.detector.hits.clear()
++        # Distance travelled, the road coordinate of the accumulated style evidence.
++        if pose is not None and self.odom_pose is not None and t>self.odom_pose[0]:
++            self.odometer+=math.hypot(pose[0]-self.odom_pose[1],pose[1]-self.odom_pose[2])
++        self.odom_pose=(t,)+tuple(pose) if pose is not None else None
+         binary=self.detector.binary(bev,valid) if paint_mask is None else paint_mask
+         observed=self.detector.detect(binary if observation_mask is None else observation_mask,priors=priors)
+         # Leave a full BEV pixel margin for subpixel projected endpoints.
+@@ -292,6 +335,7 @@
+                     peer=max(peers,key=lambda l:l.style_source_time)
+                     lane.style=peer.style;lane.style_confidence=peer.style_confidence
+                     lane.style_source_time=track.style_time=peer.style_source_time
++        if c.style_accumulate_m>0 and pose is not None:self._accumulate_style(style_binary,style_valid,result,t)
+         for side,old in records.items():
+             if side in tracks: continue
+             age=t-old.last_observed; misses=old.misses+1
+--- backups/before-curve-20261113/carla.yaml	2026-11-13 04:15:01.200883429 +0900
++++ src/vision_road/config/carla.yaml	2026-11-13 04:15:10.613886087 +0900
+@@ -33,6 +33,8 @@
+     style_history_sec: 0.8
+     style_history_frames: 8
+     style_hold_sec: 1.0
++    # Curve: a dashed side seen one dash at a time is judged from 12 m of paint gathered along the road.
++    style_accumulate_m: 12.0
+ 
+     # Motion-compensated preference for the confirmed lane; raw paint stays observed.
+     carla_tracking_enabled: true
+@@ -41,3 +43,6 @@
+     carla_tracking_switch_margin: 1.5
+     carla_tracking_switch_frames: 3
+     carla_tracking_memory_sec: 0.25
++    # Curve: a short boundary takes the long side's shape (normal offset), up to 6 m past its own paint.
++    carla_shared_shape: true
++    carla_shared_extend_m: 6.0

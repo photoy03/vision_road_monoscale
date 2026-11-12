@@ -33,7 +33,46 @@ class TemporalDetector:
             raise ValueError('Invalid style history limits')
         self.c=cfg; self.detector=Detector(cfg); self.reset()
 
+    def _accumulate_style(self,binary,valid,lanes,t):
+        """Dashed from paint gathered along the road over the last 20 m travelled.
+
+        In a curve one or two dashes are visible at a time, too little for the
+        per-frame profile.  Paint and gaps along each observed boundary (3-20 m) are
+        kept on a 0.1 m road coordinate (odometer + forward distance).  With at
+        least style_accumulate_m of continuous observation and two or more 2-12 m
+        gaps between marks, an UNKNOWN side becomes DASHED.  It never says SOLID,
+        and a frame without paint on that side changes nothing."""
+        c=self.c;cell=.1;s0=self.odometer;height,width=binary.shape;w=max(1,round(.12/c.mpp))
+        for side in ('left','right'):
+            cells=self.style_cells.setdefault(side,{})
+            bound=next((b for b in self.boundary_lanes if b.side==side and not b.reprojected),None)
+            if bound is None:continue
+            p=bound.points[np.argsort(bound.points[:,0])];x=np.arange(max(c.forward_min,p[0,0]),min(20.,p[-1,0]),cell)
+            if len(x)<2:continue
+            y=np.interp(x,p[:,0],p[:,1]);cols=np.rint((-y-c.lateral_min)/c.mpp).astype(int);rows=np.rint((c.forward_max-x)/c.mpp).astype(int)
+            inside=(rows>=0)&(rows<height)&(cols>=w)&(cols<width-w)
+            rr=np.clip(rows,0,height-1);cc=np.clip(cols[:,None]+np.arange(-w,w+1),0,width-1)
+            seen=inside&np.all(valid[rr[:,None],cc]>0,axis=1);paint=inside&np.any(binary[rr[:,None],cc]>0,axis=1)
+            if not paint.any():continue
+            for k,pnt in zip(np.rint((s0+x[seen])/cell).astype(int).tolist(),paint[seen].tolist()):cells[k]=cells.get(k,False) or pnt
+            first=int((s0-20.)/cell)
+            for k in [k for k in cells if k<first]:del cells[k]
+            keys=sorted(cells);runs=[[keys[0],keys[0]]] if keys else []
+            for k in keys[1:]:
+                if k-runs[-1][1]<=3:runs[-1][1]=k
+                else:runs.append([k,k])
+            a,b=max(runs,key=lambda r:r[1]-r[0])
+            if (b-a)*cell<c.style_accumulate_m:continue
+            signal=np.array([cells.get(k,False) for k in range(a,b+1)]);edges=np.flatnonzero(np.diff(np.r_[0,signal.astype(int),0]))
+            marks=[(lo,hi) for lo,hi in zip(edges[::2],edges[1::2]) if (hi-lo)*cell>=c.style_min_dash_m]
+            gaps=sum(1 for (_,h0),(l1,_) in zip(marks[:-1],marks[1:]) if 2.<=(l1-h0)*cell<=12.)
+            if gaps<2:continue
+            for lane in lanes:
+                if lane.side==side and lane.style=='unknown' and not lane.reprojected:
+                    lane.style='dashed';lane.style_confidence=.7;lane.style_source_time=float(t)
+
     def reset(self):
+        self.odometer=0.;self.odom_pose=None;self.style_cells={}
         self.tracks={}; self.last_pose=None; self.last_time=None; self.gray=None; self.valid=None
         self.registration='none'; self.measured_count=0; self.predicted_count=0
         self.paint_history=[];self.style_binary=None
@@ -208,6 +247,10 @@ class TemporalDetector:
             self.detector.tracking_priors=context
             self.detector.path_tracking.warp(matrix if c.carla_tracking_enabled else None)
         self.detector.previous.clear(); self.detector.hits.clear()
+        # Distance travelled, the road coordinate of the accumulated style evidence.
+        if pose is not None and self.odom_pose is not None and t>self.odom_pose[0]:
+            self.odometer+=math.hypot(pose[0]-self.odom_pose[1],pose[1]-self.odom_pose[2])
+        self.odom_pose=(t,)+tuple(pose) if pose is not None else None
         binary=self.detector.binary(bev,valid) if paint_mask is None else paint_mask
         observed=self.detector.detect(binary if observation_mask is None else observation_mask,priors=priors)
         # Leave a full BEV pixel margin for subpixel projected endpoints.
@@ -292,6 +335,7 @@ class TemporalDetector:
                     peer=max(peers,key=lambda l:l.style_source_time)
                     lane.style=peer.style;lane.style_confidence=peer.style_confidence
                     lane.style_source_time=track.style_time=peer.style_source_time
+        if c.style_accumulate_m>0 and pose is not None:self._accumulate_style(style_binary,style_valid,result,t)
         for side,old in records.items():
             if side in tracks: continue
             age=t-old.last_observed; misses=old.misses+1
