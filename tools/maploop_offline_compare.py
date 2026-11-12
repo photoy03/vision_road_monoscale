@@ -4,6 +4,8 @@
   cache: decode the lossless CDR cache once into BEV PNGs, overlay previews, poses
   run:   feed every frame to TemporalDetector(CarlaDetector) from --package-root
          (the node's maploop launch overrides) and draw the node's overlay
+  learned: run the learned lane model once over every frame and store its BEV masks
+         (run --learned uses them, --learned-lag 1 as the node's async thread does)
 """
 import argparse,gzip,json,math,sqlite3,sys
 from dataclasses import replace
@@ -112,6 +114,29 @@ def draw(proj,image,boundaries,lanes,draw_style_label):
     return overlay
 
 
+def learned(a):
+    from rclpy.serialization import deserialize_message
+    from sensor_msgs.msg import Image
+    from vision_road.zstd_cdr import cache_records
+    from vision_road.learned_mask import LaneModel
+    import time
+    package=ROOT/'src/vision_road';cfg=settings(package);proj=projector(package,cfg)
+    model=LaneModel(a.weights,proj);masks=[];times=[]
+    for i,data in enumerate(cache_records(a.cache_file,a.bag)):
+        image=deserialize_message(data,Image);frame=np.frombuffer(image.data,np.uint8).reshape(image.height,image.width,3)
+        if image.encoding=='rgb8':frame=cv2.cvtColor(frame,cv2.COLOR_RGB2BGR)
+        t0=time.perf_counter();masks.append(np.packbits(model.bev(frame)>0,axis=1));times.append(time.perf_counter()-t0)
+        if i%300==0:print('learned',i,round(times[-1]*1e3,1),'ms',flush=True)
+    shape=proj.valid.shape
+    np.savez_compressed(a.cache/'learned.npz',masks=np.stack(masks),shape=np.array(shape))
+    print('learned masks',len(masks),'mean ms',round(float(np.mean(times[20:]))*1e3,1))
+
+
+def learned_masks(path):
+    data=np.load(path);h,w=data['shape']
+    return lambda i:(np.unpackbits(data['masks'][i],axis=1)[:,:w]*255).astype(np.uint8)
+
+
 def run(a):
     sys.path.insert(0,str(a.package_root))
     from vision_road.core import Timeline
@@ -122,6 +147,10 @@ def run(a):
     assert Path(vision_road.__file__).resolve().parent==(a.package_root/'vision_road').resolve(),vision_road.__file__
     cv2.setNumThreads(2)
     cfg=settings(a.package_root);proj=projector(a.package_root,cfg)
+    for item in a.set:
+        k,v=item.split('=',1);kind=type(getattr(cfg,k))
+        cfg=replace(cfg,**{k:v if kind is str else kind(yaml.safe_load(v))})
+    mask_at=learned_masks(a.learned) if a.learned else None
     meta=json.loads((a.cache/'frames.json').read_text());timeline=Timeline(.25)
     # Feed poses as the replay does (up to 0.05 s ahead of each image): the
     # timeline keeps only its newest 2000 samples.
@@ -129,6 +158,10 @@ def run(a):
     valid=cv2.imread(str(a.cache/'valid.png'),cv2.IMREAD_GRAYSCALE)
     my=proj.my;valid[my>=1080*LAUNCH['image_roi_bottom']]=0
     det=TemporalDetector(cfg);det.detector=CarlaDetector(cfg)
+    tracker=None
+    if a.markings:
+        from vision_road import road_markings as RM
+        tracker=RM.MarkingTracker()
     a.output.mkdir(parents=True,exist_ok=True);(a.output/'overlay').mkdir(exist_ok=True)
     keys=set(a.key_frames);rows=[];last_debug=-math.inf
     def simplify(points):
@@ -145,10 +178,16 @@ def run(a):
             while next_pose<len(poses) and poses[next_pose][0]<=t+.05:timeline.add(*poses[next_pose]);next_pose+=1
             bev=cv2.imread(str(a.cache/'bev'/f'{i:05d}.png'))
             pose=timeline.at(t);posed+=pose is not None
+            if mask_at is not None:det.detector.learned=mask_at(i-a.learned_lag) if i>=a.learned_lag else None
             lanes,_=det.process(bev,valid,t,pose)
             display=[replace(l,points=simplify(l.points)) for l in lanes]
             boundaries=[replace(l,points=simplify(l.points)) for l in det.boundary_lanes]
             rec=dict(frame=i,stamp=t,lanes=[lane_record(l) for l in display],boundaries=[lane_record(l) for l in boundaries])
+            if 'learned_outside_pixels' in det.detector.diagnostics:rec['learned_outside_pixels']=det.detector.diagnostics['learned_outside_pixels']
+            if tracker is not None:
+                cand=RM.detect(det.detector,bev,valid,det.boundary_lanes,det.detector.learned)
+                rec['marking_candidates']=cand
+                rec['markings']=[dict(id=m['id'],kind=m['kind'],predicted=m['predicted'],points=np.round(m['points'],2).tolist()) for m in tracker.update(pose,cand)]
             out.write(json.dumps(rec)+'\n');rows.append(rec)
             debug=t-last_debug>=1/5-1e-8
             if debug or i in keys:
@@ -223,11 +262,19 @@ def main():
     r=sub.add_parser('run');r.add_argument('--cache',type=Path,required=True);r.add_argument('--output',type=Path,required=True)
     r.add_argument('--package-root',type=Path,default=ROOT/'src/vision_road');r.add_argument('--video',action='store_true')
     r.add_argument('--key-frames',type=int,nargs='*',default=[])
+    r.add_argument('--learned',type=Path,help='learned.npz from the learned subcommand')
+    r.add_argument('--learned-lag',type=int,default=1,help='frames between the learned mask and the BEV it gates')
+    r.add_argument('--set',nargs='*',default=[],help='Settings overrides, name=value')
+    r.add_argument('--markings',action='store_true',help='also detect and confirm stop lines / crosswalks / markings')
+    l=sub.add_parser('learned');l.add_argument('--cache',type=Path,required=True)
+    l.add_argument('--weights',type=Path,default=ROOT/'data/models/yolopv2/yolopv2.pt')
+    l.add_argument('--bag',type=Path,default=Path('/media/jaehun/38F7-677B/rosbag/maploop_30hz/maploop_30hz_0.db3'))
+    l.add_argument('--cache-file',type=Path,default=ROOT/'data/maploop30hz_native.cdrz')
     m=sub.add_parser('metrics');m.add_argument('--output',type=Path,required=True)
     v=sub.add_parser('render');v.add_argument('--cache',type=Path,required=True);v.add_argument('--runs',type=Path,nargs='+',required=True)
     v.add_argument('--names',nargs='+',required=True);v.add_argument('--frames',type=int,nargs='+',required=True)
     v.add_argument('--output',type=Path,required=True);v.add_argument('--scale',type=float,default=.5)
-    for parser in (c,r,v):parser.add_argument('--lateral',type=float,default=0.,help='BEV half width override in m (default: carla.yaml)')
+    for parser in (c,r,v,l):parser.add_argument('--lateral',type=float,default=0.,help='BEV half width override in m (default: carla.yaml)')
     a=ap.parse_args()
     if getattr(a,'lateral',0.):LAUNCH['lateral']=a.lateral
     if a.cmd=='render':render(a);return
@@ -236,5 +283,7 @@ def main():
         (a.output/'metrics.json').write_text(json.dumps(metrics(rows),indent=1));return
     if a.cmd=='cache':
         sys.path.insert(0,str(ROOT/'src/vision_road'));cache(a)
+    elif a.cmd=='learned':
+        sys.path.insert(0,str(ROOT/'src/vision_road'));learned(a)
     else:a.package_root=a.package_root.resolve();run(a)
 if __name__=='__main__':main()

@@ -19,6 +19,12 @@ def generate_launch_description():
         DeclareLaunchArgument('debug_publish_hz',default_value='5.0'),
         DeclareLaunchArgument('display_simplify_error_m',default_value='0.025'),
         DeclareLaunchArgument('display_filter',default_value='true'),
+        # Learned lane mask (YOLOPv2, GPU) gating paint within 15 m, and road markings. Off by default;
+        # with weights set but no GPU the node logs it and runs as without.
+        DeclareLaunchArgument('learned_weights',default_value=''),
+        DeclareLaunchArgument('learned_gate',default_value='remove'),
+        DeclareLaunchArgument('road_markings',default_value='false'),
+        DeclareLaunchArgument('learned_every',default_value='2'),
         Node(package='vision_road',executable='road_node',name='vision_road',output='screen',parameters=[share+'/config/carla.yaml',{
             'use_sim_time':LaunchConfiguration('use_sim_time'),
             'image_topic':'/sensing/camera/dashcam/image_raw','image_reliability':LaunchConfiguration('image_reliability'),'image_queue_depth':10,
@@ -28,7 +34,11 @@ def generate_launch_description():
             'performance_report':ParameterValue(LaunchConfiguration('performance_report'),value_type=str),
             'debug_publish_hz':ParameterValue(LaunchConfiguration('debug_publish_hz'),value_type=float),
             'mpp':ParameterValue(LaunchConfiguration('bev_mpp'),value_type=float),
-            'display_simplify_error_m':ParameterValue(LaunchConfiguration('display_simplify_error_m'),value_type=float)}]),
+            'display_simplify_error_m':ParameterValue(LaunchConfiguration('display_simplify_error_m'),value_type=float),
+            'learned_weights':ParameterValue(LaunchConfiguration('learned_weights'),value_type=str),
+            'carla_learned_gate':ParameterValue(LaunchConfiguration('learned_gate'),value_type=str),'carla_learned_gate_far_m':15.,
+            'road_markings':ParameterValue(LaunchConfiguration('road_markings'),value_type=bool),
+            'learned_every':ParameterValue(LaunchConfiguration('learned_every'),value_type=int)}]),
         # HUD-only smoothing of the boundaries; road_node's own topics are unchanged.
         Node(package='vision_road',executable='lane_display_filter',condition=IfCondition(LaunchConfiguration('display_filter')),
              parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time')}]),

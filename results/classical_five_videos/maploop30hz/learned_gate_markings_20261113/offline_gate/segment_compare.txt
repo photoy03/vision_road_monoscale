@@ -1,0 +1,39 @@
+== straight
+baseline       l obs 0.941 std 1.07 jump 0 bad 91 trans 188 frag 15277 {'solid': 627, 'unknown': 8} | r obs 0.821 std 2.33 jump 0 bad 34 trans 30 frag 3548 {'dashed': 593, 'unknown': 45}
+remove15       l obs 0.941 std 1.07 jump 0 bad 92 trans 184 frag 15372 {'solid': 627, 'unknown': 8} | r obs 0.803 std 1.74 jump 0 bad 22 trans 27 frag 3509 {'dashed': 593, 'unknown': 43}
+remove20       l obs 0.942 std 1.08 jump 0 bad 92 trans 184 frag 15372 {'solid': 627, 'unknown': 6} | r obs 0.803 std 1.74 jump 0 bad 22 trans 27 frag 3509 {'dashed': 593, 'unknown': 43}
+remove25       l obs 0.942 std 1.08 jump 0 bad 92 trans 184 frag 15372 {'solid': 627, 'unknown': 6} | r obs 0.798 std 1.75 jump 0 bad 22 trans 27 frag 3501 {'dashed': 593, 'unknown': 40}
+remove35       l obs 0.942 std 1.08 jump 0 bad 92 trans 184 frag 15372 {'solid': 627, 'unknown': 6} | r obs 0.798 std 1.74 jump 0 bad 22 trans 27 frag 3495 {'dashed': 593, 'unknown': 41}
+remove20_w25   l obs 0.942 std 1.04 jump 0 bad 92 trans 184 frag 15351 {'solid': 627, 'unknown': 6} | r obs 0.805 std 1.55 jump 0 bad 22 trans 27 frag 3508 {'dashed': 593, 'unknown': 43}
+remove20_w50   l obs 0.942 std 1.05 jump 0 bad 91 trans 188 frag 15321 {'solid': 627, 'unknown': 6} | r obs 0.808 std 1.75 jump 0 bad 22 trans 28 frag 3503 {'dashed': 593, 'unknown': 42}
+remove20_lag0  l obs 0.942 std 1.12 jump 0 bad 92 trans 184 frag 15371 {'solid': 627, 'unknown': 6} | r obs 0.808 std 1.72 jump 0 bad 24 trans 27 frag 3518 {'dashed': 593, 'unknown': 43}
+remove15_lag2  l obs 0.941 std 1.08 jump 0 bad 92 trans 184 frag 15372 {'solid': 627, 'unknown': 8} | r obs 0.802 std 1.52 jump 0 bad 20 trans 27 frag 3503 {'dashed': 593, 'unknown': 40}
+remove15_lag3  l obs 0.941 std 1.09 jump 0 bad 92 trans 184 frag 15372 {'solid': 627, 'unknown': 8} | r obs 0.789 std 1.36 jump 0 bad 15 trans 27 frag 3503 {'dashed': 595, 'unknown': 38}
+penal20        l obs 0.942 std 1.09 jump 0 bad 91 trans 188 frag 15278 {'solid': 627, 'unknown': 9} | r obs 0.826 std 2.3 jump 0 bad 34 trans 29 frag 3559 {'dashed': 593, 'unknown': 48}
+penal35        l obs 0.942 std 1.09 jump 0 bad 91 trans 188 frag 15278 {'solid': 627, 'unknown': 9} | r obs 0.826 std 2.29 jump 0 bad 34 trans 29 frag 3553 {'dashed': 593, 'unknown': 48}
+== curve
+baseline       l obs 0.862 std 2.13 jump 0 bad 329 trans 2877 frag 5043 {'unknown': 28, 'solid': 316} | r obs 0.615 std 2.39 jump 0 bad 153 trans 349 frag 940 {'unknown': 203, 'dashed': 103}
+remove15       l obs 0.864 std 2.15 jump 0 bad 333 trans 2860 frag 5069 {'unknown': 28, 'solid': 316} | r obs 0.597 std 1.52 jump 0 bad 146 trans 326 frag 911 {'unknown': 189, 'dashed': 103}
+remove20       l obs 0.864 std 2.15 jump 0 bad 333 trans 2860 frag 5069 {'unknown': 28, 'solid': 316} | r obs 0.590 std 1.67 jump 0 bad 146 trans 315 frag 883 {'unknown': 187, 'dashed': 97}
+remove25       l obs 0.864 std 2.15 jump 0 bad 333 trans 2860 frag 5069 {'unknown': 28, 'solid': 316} | r obs 0.590 std 1.67 jump 0 bad 146 trans 312 frag 883 {'unknown': 190, 'dashed': 97}
+remove35       l obs 0.864 std 2.15 jump 0 bad 333 trans 2860 frag 5069 {'unknown': 28, 'solid': 316} | r obs 0.597 std 1.7 jump 0 bad 149 trans 317 frag 884 {'unknown': 190, 'dashed': 97}
+remove20_w25   l obs 0.864 std 2.18 jump 0 bad 334 trans 2853 frag 5099 {'unknown': 38, 'solid': 306} | r obs 0.595 std 1.8 jump 0 bad 148 trans 316 frag 886 {'unknown': 187, 'dashed': 97}
+remove20_w50   l obs 0.864 std 2.12 jump 0 bad 330 trans 2880 frag 5046 {'unknown': 28, 'solid': 316} | r obs 0.590 std 2.6 jump 0 bad 146 trans 318 frag 886 {'unknown': 187, 'dashed': 97}
+remove20_lag0  l obs 0.862 std 2.15 jump 0 bad 332 trans 2859 frag 5063 {'unknown': 28, 'solid': 316} | r obs 0.592 std 1.74 jump 0 bad 144 trans 314 frag 890 {'unknown': 184, 'dashed': 103}
+remove15_lag2  l obs 0.864 std 2.08 jump 0 bad 333 trans 2864 frag 5074 {'unknown': 28, 'solid': 316} | r obs 0.613 std 1.87 jump 0 bad 152 trans 329 frag 931 {'unknown': 200, 'dashed': 103}
+remove15_lag3  l obs 0.864 std 2.08 jump 0 bad 333 trans 2859 frag 5070 {'unknown': 28, 'solid': 316} | r obs 0.592 std 2.1 jump 0 bad 144 trans 326 frag 910 {'unknown': 189, 'dashed': 103}
+penal20        l obs 0.862 std 2.13 jump 0 bad 329 trans 2877 frag 5043 {'unknown': 28, 'solid': 316} | r obs 0.610 std 2.39 jump 0 bad 151 trans 350 frag 937 {'unknown': 202, 'dashed': 103}
+penal35        l obs 0.862 std 2.13 jump 0 bad 329 trans 2877 frag 5043 {'unknown': 28, 'solid': 316} | r obs 0.626 std 2.68 jump 0 bad 157 trans 351 frag 950 {'unknown': 209, 'dashed': 100}
+== junction
+baseline       l obs 0.199 std 1.64 jump 0 bad 0 trans 0 frag 3299 {'unknown': 96, 'solid': 272} | r obs 0.161 std 3.07 jump 1 bad 0 trans 2 frag 1133 {'unknown': 85, 'dashed': 179, 'solid': 2}
+remove15       l obs 0.203 std 1.73 jump 0 bad 0 trans 0 frag 3356 {'unknown': 91, 'solid': 272} | r obs 0.159 std 1.66 jump 1 bad 0 trans 2 frag 1140 {'unknown': 81, 'dashed': 183, 'solid': 2}
+remove20       l obs 0.203 std 1.73 jump 0 bad 0 trans 0 frag 3356 {'unknown': 91, 'solid': 272} | r obs 0.157 std 1.67 jump 1 bad 0 trans 2 frag 1110 {'unknown': 93, 'dashed': 169, 'solid': 4}
+remove25       l obs 0.203 std 1.73 jump 0 bad 0 trans 0 frag 3358 {'unknown': 93, 'solid': 272} | r obs 0.157 std 1.68 jump 1 bad 0 trans 2 frag 1062 {'unknown': 124, 'dashed': 140, 'solid': 1}
+remove35       l obs 0.203 std 1.73 jump 0 bad 0 trans 0 frag 3356 {'unknown': 94, 'solid': 272} | r obs 0.157 std 1.63 jump 1 bad 0 trans 2 frag 808 {'unknown': 43, 'dashed': 144, 'solid': 1}
+remove20_w25   l obs 0.205 std 1.74 jump 0 bad 0 trans 0 frag 3359 {'unknown': 91, 'solid': 272} | r obs 0.159 std 1.66 jump 1 bad 0 trans 2 frag 1109 {'unknown': 96, 'dashed': 169, 'solid': 1}
+remove20_w50   l obs 0.201 std 1.7 jump 0 bad 0 trans 0 frag 3339 {'unknown': 91, 'solid': 272} | r obs 0.163 std 2.29 jump 1 bad 0 trans 2 frag 1113 {'unknown': 92, 'dashed': 168, 'solid': 4}
+remove20_lag0  l obs 0.203 std 1.72 jump 0 bad 0 trans 0 frag 3356 {'unknown': 91, 'solid': 272} | r obs 0.161 std 1.71 jump 1 bad 0 trans 2 frag 1116 {'unknown': 85, 'dashed': 179, 'solid': 1}
+remove15_lag2  l obs 0.203 std 1.75 jump 0 bad 0 trans 0 frag 3356 {'unknown': 93, 'solid': 272} | r obs 0.163 std 2.36 jump 1 bad 0 trans 2 frag 1150 {'unknown': 81, 'dashed': 183, 'solid': 2}
+remove15_lag3  l obs 0.203 std 2.17 jump 0 bad 0 trans 1 frag 3355 {'unknown': 90, 'solid': 272} | r obs 0.159 std 2.23 jump 0 bad 0 trans 2 frag 1153 {'unknown': 81, 'dashed': 185, 'solid': 2}
+penal20        l obs 0.199 std 1.64 jump 0 bad 0 trans 0 frag 3299 {'unknown': 96, 'solid': 272} | r obs 0.161 std 3.07 jump 1 bad 0 trans 2 frag 1138 {'unknown': 88, 'dashed': 178, 'solid': 2}
+penal35        l obs 0.199 std 1.64 jump 0 bad 0 trans 0 frag 3297 {'unknown': 97, 'solid': 272} | r obs 0.161 std 3.04 jump 1 bad 0 trans 2 frag 1134 {'unknown': 94, 'dashed': 173, 'solid': 2}

@@ -1,0 +1,157 @@
+--- backups/before-learned-markings-20261113/hero-hud-main/include/hero_hud/hud_types.hpp	2026-11-13 02:20:44.628930516 +0900
++++ /home/jaehun/Desktop/hero-hud-main/include/hero_hud/hud_types.hpp	2026-11-13 03:02:51.934603472 +0900
+@@ -89,9 +89,21 @@
+   bool predicted{false};
+ };
+ 
++// vision-road /road/road_markings: 정지선은 두 점, 횡단보도·노면 표시는 닫힌 외곽선.
++// 내용(글자, 화살표 방향)은 없다. "여기에 표시가 있다"까지만 온다.
++enum class RoadMarkingKind { StopLine, Crosswalk, Marking };
++
++struct RoadMarking {
++  RoadMarkingKind kind{RoadMarkingKind::Marking};
++  std::vector<Vec2> points;
++  bool predicted{false};  // 확정됐지만 이번 프레임에는 안 보임
++};
++
+ struct RoadPaint {
+   std::vector<RoadLine> lines;       // measured paint, kept as fragments
+   std::vector<RoadLine> boundaries;  // fitted display curves
++  std::vector<RoadMarking> markings;
++  double marking_stamp{0.0};
+   bool dashed_left{false};
+   bool dashed_right{false};
+   double stamp{0.0};                 // latest measured paint receipt
+--- backups/before-learned-markings-20261113/hero-hud-main/include/hero_hud/ros_bridge.hpp	2026-11-13 02:20:44.629930517 +0900
++++ /home/jaehun/Desktop/hero-hud-main/include/hero_hud/ros_bridge.hpp	2026-11-13 03:02:51.934603472 +0900
+@@ -43,6 +43,7 @@
+   void onRoadPaint(const visualization_msgs::msg::MarkerArray::SharedPtr in);
+   void onRoadBoundary(const visualization_msgs::msg::MarkerArray::SharedPtr in);
+   void onRoadStyle(const vision_lane_interfaces::msg::LaneStyleArray::SharedPtr in);
++  void onRoadMarking(const visualization_msgs::msg::MarkerArray::SharedPtr in);
+   void publishRoadPaint();
+ 
+   HudState* state_{nullptr};
+@@ -54,6 +55,7 @@
+   rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr sub_road_paint_;
+   rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr sub_road_boundary_;
+   rclcpp::Subscription<vision_lane_interfaces::msg::LaneStyleArray>::SharedPtr sub_road_style_;
++  rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr sub_road_marking_;
+   RoadPaint latest_road_;
+   rclcpp::Subscription<msg::AmbientLight>::SharedPtr sub_ambient_;
+   rclcpp::executors::SingleThreadedExecutor exec_;
+--- backups/before-learned-markings-20261113/hero-hud-main/include/hero_hud/world_item.hpp	2026-11-13 02:20:44.629930517 +0900
++++ /home/jaehun/Desktop/hero-hud-main/include/hero_hud/world_item.hpp	2026-11-13 03:02:51.935603485 +0900
+@@ -140,6 +140,7 @@
+   // 같아야 하고, 같은 함수를 쓰면 그것이 저절로 보장된다. 화면 축척을 따로
+   // 재던 코드(addScreenRibbon)는 이것으로 대체되어 사라졌다.
+   void drawRoadPaint(VertexBuffer& out, const RoadPaint& paint, double now) const;
++  void drawRoadMarkings(VertexBuffer& out, const RoadPaint& paint, double now) const;
+   void addWorldRibbon(VertexBuffer& out, const std::vector<Vec2>& center,
+                       float half_m, const std::vector<Rgba>& colors) const;
+ 
+--- backups/before-learned-markings-20261113/hero-hud-main/src/ros_bridge.cpp	2026-11-13 02:20:44.626930514 +0900
++++ /home/jaehun/Desktop/hero-hud-main/src/ros_bridge.cpp	2026-11-13 03:02:51.935603485 +0900
+@@ -83,6 +83,13 @@
+       [this](const vision_lane_interfaces::msg::LaneStyleArray::SharedPtr in) {
+         onRoadStyle(in);
+       });
++  const auto marking_topic = node_->declare_parameter<std::string>(
++      "road.marking_topic", "/road/road_markings");
++  sub_road_marking_ = node_->create_subscription<visualization_msgs::msg::MarkerArray>(
++      marking_topic, qos,
++      [this](const visualization_msgs::msg::MarkerArray::SharedPtr in) {
++        onRoadMarking(in);
++      });
+ 
+   RCLCPP_INFO(node_->get_logger(),
+               "HUD %dx%d, hfov %.1f deg, wheelbase %.3f m",
+@@ -316,6 +323,30 @@
+   }
+   publishRoadPaint();
+ }
++
++void RosBridge::onRoadMarking(
++    const visualization_msgs::msg::MarkerArray::SharedPtr in) {
++  latest_road_.markings.clear();
++  latest_road_.marking_stamp = monotonicSeconds();
++  for (const auto& marker : in->markers) {
++    if (marker.action != visualization_msgs::msg::Marker::ADD ||
++        marker.type != visualization_msgs::msg::Marker::LINE_STRIP ||
++        marker.header.frame_id != "base_link" || marker.points.size() < 2 ||
++        latest_road_.markings.size() >= 16) continue;
++    RoadMarking mark;
++    if (marker.ns == "stop_line") mark.kind = RoadMarkingKind::StopLine;
++    else if (marker.ns == "crosswalk") mark.kind = RoadMarkingKind::Crosswalk;
++    else if (marker.ns == "marking") mark.kind = RoadMarkingKind::Marking;
++    else continue;
++    mark.predicted = marker.color.r > 0.5f;
++    for (const auto& point : marker.points)
++      if (std::isfinite(point.x) && std::isfinite(point.y))
++        mark.points.push_back(Vec2{static_cast<float>(point.x),
++                                   static_cast<float>(point.y)});
++    if (mark.points.size() >= 2) latest_road_.markings.push_back(std::move(mark));
++  }
++  publishRoadPaint();
++}
+ 
+ void RosBridge::onVehicle(const msg::VehicleState::SharedPtr in) {
+   VehicleState v;
+--- backups/before-learned-markings-20261113/hero-hud-main/src/world_item.cpp	2026-11-13 02:20:44.626930514 +0900
++++ /home/jaehun/Desktop/hero-hud-main/src/world_item.cpp	2026-11-13 03:02:51.935603485 +0900
+@@ -937,6 +937,39 @@
+   }
+ }
+ 
++void WorldItem::drawRoadMarkings(VertexBuffer& out, const RoadPaint& paint,
++                                 double now) const {
++  // 정지선은 차로를 가로지르는 굵은 붉은 띠, 횡단보도는 호박색 영역 테두리,
++  // 그 밖의 노면 표시(화살표·글자 자리)는 흰 테두리. 이번 프레임에 안 보인
++  // 확정 표시는 어둡게 그린다. 0.35초 넘게 안 오면 지운다.
++  if (!(now - paint.marking_stamp >= 0.0 && now - paint.marking_stamp < 0.35)) return;
++  for (const auto& mark : paint.markings) {
++    // 테두리를 0.25 m 간격으로 촘촘히 해야 투영 뒤에도 지면을 따라간다.
++    std::vector<Vec2> path;
++    for (size_t i = 0; i + 1 < mark.points.size(); ++i) {
++      const Vec2 a = mark.points[i], b = mark.points[i + 1];
++      const float len = std::hypot(b.x - a.x, b.y - a.y);
++      const int steps = std::max(1, static_cast<int>(std::ceil(len / 0.25f)));
++      for (int k = 0; k < steps; ++k) {
++        const float t = static_cast<float>(k) / steps;
++        path.push_back(Vec2{a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)});
++      }
++    }
++    path.push_back(mark.points.back());
++    float half = 0.05f;
++    Rgba c = dim(kWhite, adapt(0.75f));
++    if (mark.kind == RoadMarkingKind::StopLine) {
++      half = 0.15f;
++      c = dim(kRed, adapt(0.95f));
++    } else if (mark.kind == RoadMarkingKind::Crosswalk) {
++      half = 0.07f;
++      c = dim(kAmber, adapt(0.9f));
++    }
++    if (mark.predicted) c = withAlpha(c, 0.45f);
++    addWorldRibbon(out, path, half, std::vector<Rgba>(path.size(), c));
++  }
++}
++
+ void WorldItem::buildFrame(VertexBuffer& out, double now) {
+   if (!state_ || !projector_) {
+     return;
+@@ -961,6 +994,7 @@
+     projector_->setRange(24.0f);
+     projector_->setLateralHalf(4.5f);
+     if (road_fresh || boundary_fresh) drawRoadPaint(world, *road, now);
++    if (road) drawRoadMarkings(world, *road, now);
+     out.insert(out.end(), world.begin(), world.end());
+     return;
+   }
+@@ -1045,6 +1079,7 @@
+   projector_->setRange(horizon_m);
+   projector_->setLateralHalf(lateral_target);
+   if (road_fresh) drawRoadPaint(world, *road, now);
++  if (road) drawRoadMarkings(world, *road, now);
+   drawCorridor(world, state_->vehicle(),
+                (mode == HudMode::Normal) ? scene.get() : nullptr, mode, now,
+                parking);

@@ -42,6 +42,8 @@ class CarlaDetector(Detector):
         super().__init__(replace(cfg,lane_width_min=-12.,lane_width_max=12.))
         if cfg.carla_chain_confirm_frames<1 or cfg.carla_chain_band_m<=0 or not 0<=cfg.carla_link_curvature_max<=.2 or not 0<cfg.carla_spine_ema_alpha<=1:
             raise ValueError('Invalid CARLA chain filter limits')
+        if cfg.carla_learned_gate not in ('off','remove','penalize') or min(cfg.carla_learned_gate_m,cfg.carla_learned_gate_along_m,cfg.carla_learned_gate_far_m)<0 or not 0<=cfg.carla_learned_penalty<=1:
+            raise ValueError('Invalid learned gate settings')
         if cfg.carla_tracking_match_m<=0 or cfg.carla_tracking_memory_sec<=0 or cfg.carla_tracking_switch_frames<1 or min(cfg.carla_tracking_keep_bonus,cfg.carla_tracking_switch_margin)<0:
             raise ValueError('Invalid path tracking settings')
         self.path_tracking=PathTracking(cfg);self.tracking_priors={}
@@ -50,12 +52,14 @@ class CarlaDetector(Detector):
         self.lane_width=3.3  # m; running estimate from frames with both boundaries
         self.last_spines={}  # previous frame boundaries, uncompensated: about 0.3 m of travel at 30 Hz
         self.strand_gap={};self.frame_index=0  # side -> (double line spacing m, frame), kept 30 frames
+        self.learned=None  # BEV learned lane mask for the current frame, set by the caller (optional)
+        self.learned_outside=None
 
     def binary(self,bev,valid):
         c=self.c
         gray=cv2.cvtColor(bev,cv2.COLOR_BGR2GRAY).astype(np.float32)
         gray=cv2.GaussianBlur(gray,(3,3),.55);self.gray=gray
-        h,l,s=cv2.split(cv2.cvtColor(bev,cv2.COLOR_BGR2HLS))
+        h,l,s=cv2.split(cv2.cvtColor(bev,cv2.COLOR_BGR2HLS));self.light=l;self.saturation=s  # reused by road_markings
         b,g,r=cv2.split(bev.astype(np.float32))
         white=(s<120)&(l>c.carla_white_light_min)
         self.yellow=(h>=16)&(h<=42)&(s>20)&((g-b)>18)&((g-b)>.09*np.maximum(g,1))&((g-b)>1.25*(r-g))
@@ -94,10 +98,25 @@ class CarlaDetector(Detector):
                         self.grid_mask[max(0,a-round(.5/c.mpp)):min(len(raw),b+round(.5/c.mpp)+1)]=255
             raw[self.grid_mask>0]=0
             # Geometry is filtered once in paint_fragments, after the box mask.
+        removed=self.learned_gate(raw)
         self.style_mask=raw.copy();self.style_valid=valid.copy()
         self.valid=valid.copy();self.mask=raw.copy()
         self.diagnostics=dict(raw_pixels=int(np.count_nonzero(self.raw_mask)),retained_pixels=int(np.count_nonzero(raw)),grid_pixels=int(np.count_nonzero(self.grid_mask)),candidates=[])
+        if removed is not None:self.diagnostics['learned_outside_pixels']=removed
         return raw
+
+    def learned_gate(self,raw):
+        """Paint away from the learned lane mask (crosswalk bars, arrows, text, patches) is
+        removed or marked for a score penalty, within carla_learned_gate_far_m only."""
+        c=self.c;self.learned_outside=None
+        if c.carla_learned_gate=='off' or self.learned is None or self.learned.shape!=raw.shape:return None
+        kernel=np.ones((2*round(c.carla_learned_gate_along_m/c.mpp)+1,2*round(c.carla_learned_gate_m/c.mpp)+1),np.uint8)
+        allow=cv2.dilate(self.learned,kernel)>0
+        allow[:max(0,round((c.forward_max-c.carla_learned_gate_far_m)/c.mpp))]=True
+        outside=(raw>0)&~allow
+        if c.carla_learned_gate=='remove':raw[outside]=0;self.yellow_mask[outside]=0
+        else:self.learned_outside=outside
+        return int(np.count_nonzero(outside))
 
     def fragment_graph(self,mask):
         """Local stripe nodes with width/direction-consistent inter-tile links.
@@ -344,6 +363,10 @@ class CarlaDetector(Detector):
         if not n:return chosen
         first=np.array([a['lane'].points[0,0] for a in candidates]);last=np.array([a['lane'].points[-1,0] for a in candidates])
         length=np.array([float(np.ptp(a['lane'].points[:,0])) for a in candidates])
+        if self.learned_outside is not None:
+            # Paint the learned mask does not call a lane counts for less in the chain score.
+            outside=np.array([float(np.mean(self.learned_outside[a['pixels']])) for a in candidates])
+            length=length*(1-c.carla_learned_penalty*outside)
         slope=np.array([a['fit'][0] for a in candidates]);intercept=np.array([a['fit'][1] for a in candidates])
         tangent=np.arctan(slope);lo=np.array([a['lo'] for a in candidates]);hi=np.array([a['hi'] for a in candidates])
         yellow=np.array([a['yellow'] for a in candidates]);anchor=np.abs([a['anchor'] for a in candidates])

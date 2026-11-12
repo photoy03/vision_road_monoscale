@@ -28,6 +28,8 @@ from .classical import PaintEvidenceDetector
 from .carla import CarlaDetector
 from .marking_style import draw_style_label
 
+MARKING_COLORS=dict(stop_line=(0,0,255),crosswalk=(255,0,255),marking=(0,200,255))  # BGR overlay colours
+
 
 def seconds(stamp):
     return stamp.sec + stamp.nanosec*1e-9
@@ -87,10 +89,20 @@ class RoadNode(Node):
         self.world_frame = param('world_frame', 'map')
         self.base_frame = param('base_frame', 'base_link')
         self.compute_worker=None
+        # Optional learned lane mask (gates paint when carla_learned_gate is set) and road markings.
+        from .rt_worker import Extras,LearnedMask
+        extras=dict(markings=param('road_markings',False))
+        weights=param('learned_weights','') if backend=='carla' else ''
+        if weights:self.projector.initialize(*self.projector.size)
+        self.learned=LearnedMask(self.projector,weights,param('learned_every',1))
+        self.get_logger().info('Learned lane mask: '+self.learned.status)
         if param('isolated_compute',False):
             from .rt_worker import ComputeWorker
             self.projector.initialize(*self.projector.size)
-            self.compute_worker=ComputeWorker(self.projector,cfg,backend,self.image_roi_bottom,threads)
+            self.compute_worker=ComputeWorker(self.projector,cfg,backend,self.image_roi_bottom,threads,extras)
+            self.extras=None
+        else:
+            self.extras=Extras(**extras) if backend=='carla' and extras['markings'] else None
         self.pending = deque(); self.last_image = None; self.last_commit = -math.inf
         self.last_map_publish = -math.inf; self.dropped = 0; self.frames = 0
         self.bridge = CvBridge()
@@ -98,6 +110,7 @@ class RoadNode(Node):
         self.paint_marker_pub=self.create_publisher(MarkerArray,'/road/lane_markers',10)
         self.boundary_marker_pub=self.create_publisher(MarkerArray,'/road/lane_boundary_markers',10)
         self.style_pub = self.create_publisher(LaneStyleArray, '/road/lane_styles', 10)
+        self.marking_pub=self.create_publisher(MarkerArray,'/road/road_markings',10)
         self.global_pub = self.create_publisher(MarkingSegmentArray, '/parking/cpp/global_marking_segments_fused', 2)
         self.map_pub = self.create_publisher(Image, '/parking/cpp/global_marking_map', 2)
         self.grid_pub = self.create_publisher(OccupancyGrid, '/road/lane_grid', 2)
@@ -123,6 +136,8 @@ class RoadNode(Node):
     def reset(self):
         self.pending.clear(); self.map.cells.clear(); self.detector.reset()
         if self.compute_worker is not None:self.compute_worker.reset_pending=True
+        if getattr(self,'extras',None) is not None:self.extras.reset()
+        if getattr(self,'learned',None) is not None:self.learned.reset()
         self.last_commit = -math.inf; self.last_map_publish = -math.inf;self.last_debug=-math.inf
 
     def on_odom(self, msg):
@@ -180,6 +195,7 @@ class RoadNode(Node):
         self.worker_stop.set()
         if self.worker is not None:self.worker.join(timeout=8)
         if self.compute_worker is not None:self.compute_worker.close();self.compute_worker=None
+        self.learned.close()
 
     def on_compressed(self,msg):
         if self.async_processing:self.enqueue_image('compressed',msg)
@@ -232,8 +248,10 @@ class RoadNode(Node):
         if self.compute_worker is not None:
             if self.projector.source_size!=(frame.shape[1],frame.shape[0]):self.projector.initialize(frame.shape[1],frame.shape[0])
             phase('projection')
-            result=self.compute_worker.compute(frame,t,pose)
-            lanes=result['lanes'];binary=result['binary'];bev=result['bev']
+            learned=self.learned.next(t,frame)
+            phase('learned_mask')
+            result=self.compute_worker.compute(frame,t,pose,learned)
+            lanes=result['lanes'];binary=result['binary'];bev=result['bev'];markings=result.get('markings',[])
             self.detector.boundary_lanes=result['boundaries'];self.detector.measured_count=result['measured'];self.detector.predicted_count=result['predicted']
             self.detector.registration=result['registration'];self.detector.detector.diagnostics=result['diagnostics']
             phase('detector')
@@ -243,7 +261,9 @@ class RoadNode(Node):
             valid[self.projector.my>=frame.shape[0]*self.image_roi_bottom]=0
             bev=cv2.bitwise_and(bev,bev,mask=valid)
             phase('projection')
+            if isinstance(self.detector.detector,CarlaDetector):self.detector.detector.learned=self.learned.next(t,frame)
             lanes, binary = self.detector.process(bev, valid, t, pose)
+            markings=self.extras.after(self.detector,bev,valid,pose) if self.extras is not None else []
             phase('detector')
         display_lanes=[replace(lane,points=self.display_points(lane.points)) for lane in lanes]
         self.local_pub.publish(self.array(display_lanes, header.stamp, self.base_frame, pose))
@@ -252,6 +272,7 @@ class RoadNode(Node):
         boundaries=[replace(lane,points=self.display_points(lane.points)) for lane in self.detector.boundary_lanes]
         self.paint_marker_pub.publish(self.markers(display_lanes,header.stamp,'observed_paint'))
         self.boundary_marker_pub.publish(self.markers(boundaries,header.stamp,'boundary_fit'))
+        self.marking_pub.publish(self.road_marking_markers(markings,header.stamp))
         phase('markers')
         if self.debug and (self.debug_hz==0 or t-self.last_debug>=1/self.debug_hz-1e-8):
             self.last_debug=t
@@ -271,6 +292,13 @@ class RoadNode(Node):
                 if lane_index<len(boundaries):continue
                 if lane.side not in label_candidates or np.ptp(lane.points[:,0])>np.ptp(label_candidates[lane.side][0].points[:,0]):label_candidates[lane.side]=(lane,pixels)
             for lane,pixels in label_candidates.values():draw_style_label(overlay,lane,pixels)
+            for mark in markings:
+                outline=mark['points'] if mark['kind']=='stop_line' else np.vstack([mark['points'],mark['points'][:1]])
+                dense=np.vstack([np.linspace(a,b,8) for a,b in zip(outline[:-1],outline[1:])])
+                pixels,visible=self.projector.image_points(dense);pixels*=scale
+                if visible.sum()>=2:
+                    color=MARKING_COLORS[mark['kind']]
+                    cv2.polylines(overlay,[np.rint(pixels[visible]).astype(np.int32)],False,color,4 if mark['kind']=='stop_line' else 2)
             out = self.bridge.cv2_to_imgmsg(overlay, 'bgr8'); out.header = header; self.overlay_pub.publish(out)
             phase('overlay')
             self.publish_image(self.binary_pub, binary, header.stamp, 'mono8')
@@ -326,6 +354,23 @@ class RoadNode(Node):
             marker.color.r=1. if lane.reprojected else 0.
             marker.lifetime.sec=0;marker.lifetime.nanosec=300000000
             marker.points=[Point(x=float(p[0]),y=float(p[1]),z=.02) for p in lane.points]
+            msg.markers.append(marker)
+        return msg
+
+    def road_marking_markers(self,markings,stamp):
+        """Stop lines as a 2-point strip, crosswalks and other markings as a closed outline, base_link.
+        ns is the kind; color.r=1 marks a confirmed marking not seen this frame."""
+        msg=MarkerArray()
+        clear=Marker();clear.header=Header(stamp=stamp,frame_id=self.base_frame);clear.action=Marker.DELETEALL
+        msg.markers.append(clear)
+        for mark in markings:
+            marker=Marker();marker.header=clear.header;marker.ns=mark['kind'];marker.id=int(mark['id'])
+            marker.type=Marker.LINE_STRIP;marker.action=Marker.ADD;marker.pose.orientation.w=1.
+            marker.scale.x=.3 if mark['kind']=='stop_line' else .1
+            marker.color.a=.9;marker.color.g=.5;marker.color.b=1.;marker.color.r=1. if mark['predicted'] else 0.
+            marker.lifetime.nanosec=300000000
+            points=mark['points'] if mark['kind']=='stop_line' else np.vstack([mark['points'],mark['points'][:1]])
+            marker.points=[Point(x=float(p[0]),y=float(p[1]),z=.02) for p in points]
             msg.markers.append(marker)
         return msg
 
