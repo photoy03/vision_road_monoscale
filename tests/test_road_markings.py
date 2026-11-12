@@ -132,3 +132,21 @@ def test_missing_weights_leave_the_detector_unchanged():
     assert off.status=='off' and off.next(1.,np.zeros((4,4,3),np.uint8)) is None
     missing=LearnedMask(Projector(),'/nonexistent/yolopv2.pt')
     assert missing.status.startswith('unavailable') and missing.next(1.,np.zeros((4,4,3),np.uint8)) is None
+
+
+def test_centre_lines_keep_narrow_runs_only():
+    from vision_road.carla import centre_lines
+    m=np.zeros((4,40),bool);m[:,5:11]=True;m[:,20:40]=True
+    c=centre_lines(m,10)
+    assert c[:,7:9].all() and c.sum()==8 and not c[:,20:].any()
+
+
+def test_replace_uses_learned_lines_and_keeps_paint_for_style():
+    im=canvas()
+    for x in range(4,30,6):box(im,-1.81,-1.69,x,x+3)  # dashed paint
+    learned=np.zeros(im.shape[:2],np.uint8);learned[:,column(-1.6):column(-1.9)]=255  # one continuous learned line
+    d,raw,_=run(im,replace(C,carla_learned_gate='replace',carla_learned_gate_far_m=20.),learned)
+    rows=np.flatnonzero(raw[:,column(-1.75)-3:column(-1.75)+4].any(1));x=C.forward_max-rows*C.mpp
+    gap=(x>7.2)&(x<9.8)&(x<20)  # between the first two dashes
+    assert gap.any()  # the learned line bridges the dash gap within 20 m
+    assert d.replaced_paint is not None and not d.replaced_paint[round((C.forward_max-8.5)/C.mpp)].any()

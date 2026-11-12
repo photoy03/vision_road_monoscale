@@ -65,6 +65,7 @@ class Settings:
     carla_link_curvature_max: float = 0.0  # 1/m; optional curve allowance for chain links (1/40, 1/100 regressed maploop)
     # Optional learned lane mask gate (learned_mask.py); without a mask nothing changes.
     carla_learned_gate: str = 'off'  # off | remove (drop paint outside the mask) | penalize (lower its chain score)
+    #                                   | replace (the mask's centre lines are the paint; style still from paint)
     carla_learned_gate_m: float = 0.35  # lateral widening of the learned mask
     carla_learned_gate_along_m: float = 1.0  # forward/backward widening, bridges dash gaps
     carla_learned_gate_far_m: float = 20.0  # gate only this close; the mask thins out and misses far paint

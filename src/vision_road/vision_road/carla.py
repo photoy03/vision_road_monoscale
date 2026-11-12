@@ -15,6 +15,15 @@ except ImportError:
     _native=None
 
 
+def centre_lines(mask,max_width):
+    """Per row, the middle 2 pixels of every horizontal run no wider than max_width pixels."""
+    h,w=mask.shape;left=np.zeros((h,w),np.int32);right=np.zeros((h,w),np.int32);m=mask.astype(np.int32)
+    for j in range(w):left[:,j]=(left[:,j-1]+1)*m[:,j] if j else m[:,j]
+    for j in range(w-1,-1,-1):right[:,j]=(right[:,j+1]+1)*m[:,j] if j<w-1 else m[:,j]
+    width=left+right-1
+    return mask&(np.abs(left-right)<=1)&(width<=max_width)
+
+
 def shifted(image, offset, axis=1):
     """Replicated boundaries, unlike wrapping a row to the opposite image edge."""
     indices=np.clip(np.arange(image.shape[axis])+offset,0,image.shape[axis]-1)
@@ -42,7 +51,7 @@ class CarlaDetector(Detector):
         super().__init__(replace(cfg,lane_width_min=-12.,lane_width_max=12.))
         if cfg.carla_chain_confirm_frames<1 or cfg.carla_chain_band_m<=0 or not 0<=cfg.carla_link_curvature_max<=.2 or not 0<cfg.carla_spine_ema_alpha<=1:
             raise ValueError('Invalid CARLA chain filter limits')
-        if cfg.carla_learned_gate not in ('off','remove','penalize') or min(cfg.carla_learned_gate_m,cfg.carla_learned_gate_along_m,cfg.carla_learned_gate_far_m)<0 or not 0<=cfg.carla_learned_penalty<=1:
+        if cfg.carla_learned_gate not in ('off','remove','penalize','replace') or min(cfg.carla_learned_gate_m,cfg.carla_learned_gate_along_m,cfg.carla_learned_gate_far_m)<0 or not 0<=cfg.carla_learned_penalty<=1:
             raise ValueError('Invalid learned gate settings')
         if cfg.carla_tracking_match_m<=0 or cfg.carla_tracking_memory_sec<=0 or cfg.carla_tracking_switch_frames<1 or min(cfg.carla_tracking_keep_bonus,cfg.carla_tracking_switch_margin)<0:
             raise ValueError('Invalid path tracking settings')
@@ -53,7 +62,7 @@ class CarlaDetector(Detector):
         self.last_spines={}  # previous frame boundaries, uncompensated: about 0.3 m of travel at 30 Hz
         self.strand_gap={};self.frame_index=0  # side -> (double line spacing m, frame), kept 30 frames
         self.learned=None  # BEV learned lane mask for the current frame, set by the caller (optional)
-        self.learned_outside=None
+        self.learned_outside=None;self.replaced_paint=None
 
     def binary(self,bev,valid):
         c=self.c
@@ -76,7 +85,7 @@ class CarlaDetector(Detector):
             background=np.maximum(np.maximum(left,right),25.)
             eligible=(ridge>=c.carla_ridge_min)&(ridge/background>=c.carla_relative_min)
             response=np.maximum(response,np.where(eligible,ridge,0))
-        safe=cv2.erode(valid,np.ones((3,9),np.uint8))>0
+        safe=cv2.erode(valid,np.ones((3,9),np.uint8))>0;self.valid_safe=safe.astype(np.uint8)
         raw=((response>0)&color&safe).astype(np.uint8)*255
         self.response=response;self.raw_mask=raw.copy()
         self.yellow_mask=((self.yellow)&(raw>0)).astype(np.uint8)*255
@@ -108,8 +117,9 @@ class CarlaDetector(Detector):
     def learned_gate(self,raw):
         """Paint away from the learned lane mask (crosswalk bars, arrows, text, patches) is
         removed or marked for a score penalty, within carla_learned_gate_far_m only."""
-        c=self.c;self.learned_outside=None
+        c=self.c;self.learned_outside=None;self.replaced_paint=None
         if c.carla_learned_gate=='off' or self.learned is None or self.learned.shape!=raw.shape:return None
+        if c.carla_learned_gate=='replace':return self.learned_replace(raw)
         kernel=np.ones((2*round(c.carla_learned_gate_along_m/c.mpp)+1,2*round(c.carla_learned_gate_m/c.mpp)+1),np.uint8)
         allow=cv2.dilate(self.learned,kernel)>0
         allow[:max(0,round((c.forward_max-c.carla_learned_gate_far_m)/c.mpp))]=True
@@ -117,6 +127,19 @@ class CarlaDetector(Detector):
         if c.carla_learned_gate=='remove':raw[outside]=0;self.yellow_mask[outside]=0
         else:self.learned_outside=outside
         return int(np.count_nonzero(outside))
+
+    def learned_replace(self,raw):
+        """Within carla_learned_gate_far_m the learned mask's centre lines replace the paint.
+        Yellow and the solid/dashed evidence still come from the measured paint."""
+        c=self.c;far=max(0,round((c.forward_max-c.carla_learned_gate_far_m)/c.mpp))
+        paint=raw.copy();lines=centre_lines(self.learned>0,round(.9/c.mpp))
+        lines&=self.valid_safe>0
+        raw[far:]=np.where(lines[far:],255,0).astype(np.uint8)
+        raw[self.grid_mask>0]=0
+        near_yellow=cv2.dilate(self.yellow_mask,np.ones((3,2*round(.3/c.mpp)+1),np.uint8))>0
+        self.yellow_mask=((raw>0)&near_yellow).astype(np.uint8)*255
+        self.replaced_paint=paint
+        return int(np.count_nonzero(lines[far:]))
 
     def fragment_graph(self,mask):
         """Local stripe nodes with width/direction-consistent inter-tile links.
@@ -554,6 +577,10 @@ class CarlaDetector(Detector):
         self.diagnostics['selected_chains']=len(accepted_groups)
         self.diagnostics['tracking']=dict(self.path_tracking.decisions)
         mask[:]=selected;self.style_mask=selected.copy()
+        if self.replaced_paint is not None:
+            # Dashes are measured on the real paint along the chosen learned lines.
+            near=cv2.dilate(selected,np.ones((1,2*round(.25/c.mpp)+1),np.uint8))>0
+            self.style_mask=np.where(near&(self.replaced_paint>0),255,0).astype(np.uint8)
         self.diagnostics['retained_pixels']=int(np.count_nonzero(selected))
         self.diagnostics['fragments']=len(lanes)
         self.style_lanes={}

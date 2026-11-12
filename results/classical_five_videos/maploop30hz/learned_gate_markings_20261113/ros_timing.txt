@@ -1,10 +1,16 @@
 ros_baseline2 frames 1756 mean 26.0 p95 41.2 over33 384 {'projection': 0.25, 'learned_mask': 0.0, 'detector': 19.8, 'segments_styles': 1.45, 'markers': 2.24, 'overlay': 4.11, 'bev_debug': 0.15}
 ros_baseline_a frames 1807 mean 24.5 p95 35.8 over33 214 {'projection': 0.25, 'learned_mask': 0.0, 'detector': 18.71, 'segments_styles': 1.39, 'markers': 2.02, 'overlay': 3.37, 'bev_debug': 0.13}
 ros_baseline_b frames 1807 mean 24.5 p95 36.0 over33 221 {'projection': 0.24, 'learned_mask': 0.0, 'detector': 18.78, 'segments_styles': 1.37, 'markers': 2.06, 'overlay': 3.41, 'bev_debug': 0.12}
+ros_baseline_ca frames 1807 mean 24.3 p95 36.0 over33 219 {'projection': 0.24, 'learned_mask': 0.0, 'detector': 18.37, 'segments_styles': 1.4, 'markers': 2.04, 'overlay': 3.58, 'bev_debug': 0.13}
+ros_baseline_cb frames 1807 mean 23.9 p95 35.5 over33 198 {'projection': 0.24, 'learned_mask': 0.0, 'detector': 18.29, 'segments_styles': 1.37, 'markers': 2.01, 'overlay': 3.42, 'bev_debug': 0.12}
 ros_baseline frames 1807 mean 24.1 p95 36.0 over33 219 {'projection': 0.23, 'detector': 18.51, 'segments_styles': 1.39, 'markers': 2.07, 'overlay': 3.48, 'bev_debug': 0.12}
 ros_learned_every2_a frames 1806 mean 28.8 p95 38.0 over33 523 {'projection': 0.25, 'learned_mask': 0.39, 'detector': 22.25, 'segments_styles': 1.5, 'markers': 2.24, 'overlay': 3.64, 'bev_debug': 0.11}
 ros_learned_every2_b frames 1802 mean 28.6 p95 38.4 over33 530 {'projection': 0.25, 'learned_mask': 0.38, 'detector': 22.11, 'segments_styles': 1.49, 'markers': 2.23, 'overlay': 3.81, 'bev_debug': 0.12}
+ros_learned_every2_c frames 1656 mean 33.0 p95 47.6 over33 958 {'projection': 0.26, 'learned_mask': 0.52, 'detector': 25.6, 'segments_styles': 1.66, 'markers': 2.55, 'overlay': 4.16, 'bev_debug': 0.13}
 ros_learned_run1 frames 1481 mean 31.3 p95 48.0 over33 612 {'projection': 0.25, 'learned_mask': 0.9, 'detector': 23.79, 'segments_styles': 1.55, 'markers': 2.31, 'overlay': 4.28, 'bev_debug': 0.16}
 ros_learned_run2 frames 1538 mean 37.1 p95 54.5 over33 1026 {'projection': 0.28, 'learned_mask': 1.02, 'detector': 28.59, 'segments_styles': 1.79, 'markers': 2.74, 'overlay': 4.8, 'bev_debug': 0.16}
 ros_markings_only frames 1793 mean 27.1 p95 37.8 over33 459 {'projection': 0.24, 'detector': 21.16, 'segments_styles': 1.42, 'markers': 2.18, 'overlay': 3.74, 'bev_debug': 0.11}
 ros_model_nogate frames 1681 mean 31.3 p95 50.5 over33 740 {'projection': 0.26, 'detector': 24.67, 'segments_styles': 1.64, 'markers': 2.48, 'overlay': 4.12, 'bev_debug': 0.13}
+ros_replace_a frames 1542 mean 26.8 p95 37.0 over33 258 {'projection': 0.24, 'learned_mask': 0.43, 'detector': 20.97, 'segments_styles': 1.11, 'markers': 1.7, 'overlay': 3.7, 'bev_debug': 0.15}
+ros_replace_b frames 1806 mean 25.9 p95 36.6 over33 285 {'projection': 0.23, 'learned_mask': 0.31, 'detector': 20.58, 'segments_styles': 1.08, 'markers': 1.69, 'overlay': 3.43, 'bev_debug': 0.12}
+ros_replace_c frames 1807 mean 25.8 p95 36.0 over33 243 {'projection': 0.23, 'learned_mask': 0.31, 'detector': 20.05, 'segments_styles': 1.08, 'markers': 1.69, 'overlay': 3.78, 'bev_debug': 0.14}
