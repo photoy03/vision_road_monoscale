@@ -1,6 +1,6 @@
-"""HUD display filter: confirmation, smoothing, outlier gate, hold, fixed sampling and style switching."""
+"""HUD display filter: confirmation, smoothing, outlier gate, hold, motion, restart, fixed sampling and styles."""
 import numpy as np
-from vision_road.display_filter import DisplayFilter, FilterSettings, fit, evaluate
+from vision_road.display_filter import DisplayFilter, FilterSettings, fit, evaluate, shift, relative
 
 DT=1/30
 
@@ -10,8 +10,8 @@ def line(y,start=4.,end=30.,c=0.):
     return np.column_stack([x,y+c*x*x])
 
 
-def feed(f,t,y=None,predicted=False,**kw):
-    f.update(t,[] if y is None else [('left',line(y,**kw),predicted)])
+def feed(f,t,y=None,predicted=False,motion=(0.,0.,0.),**kw):
+    f.update(t,[] if y is None else [('left',line(y,**kw),predicted)],motion)
     return {side:(p,pred,style) for side,p,pred,style in f.output()}
 
 
@@ -110,3 +110,44 @@ def test_style_is_remembered_across_a_short_loss():
     t+=400*DT
     for i in range(10):o=feed(f,t+i*DT,1.75)
     assert o['left'][2] is None
+
+
+def test_shift_moves_a_curve_into_the_next_base_link():
+    flat=np.array([1.75]*3)
+    assert np.allclose(shift(flat,(1.,0.,0.)),1.75)
+    assert np.allclose(shift(flat,(0.,.5,0.)),1.25)
+    turned=shift(np.zeros(3),(0.,0.,.1))
+    assert abs(evaluate(turned,np.array([10.]))[0]+np.tan(.1)*10)<.02
+    assert np.allclose(relative((1.,2.,np.pi/2),(1.,3.,np.pi/2)),(1.,0.,0.),atol=1e-9)
+
+
+def test_held_line_follows_the_vehicle():
+    f=DisplayFilter()
+    for i in range(20):feed(f,i*DT,1.75)
+    # The vehicle drifts left 5 cm per frame for 20 frames without seeing the line.
+    for i in range(20,40):o=feed(f,i*DT,motion=(.5,.05,0.))
+    assert o['left'][1] and abs(at10(o)-.75)<.02
+
+
+def test_without_odometry_a_lost_side_is_kept_only_briefly():
+    f=DisplayFilter()
+    for i in range(20):feed(f,i*DT,1.75)
+    held=[bool(feed(f,(20+i)*DT,motion=None)) for i in range(15)]
+    assert all(held[:5]) and not any(held[8:])  # 0.2 s at 30 Hz
+
+
+def test_rejected_jump_is_drawn_as_predicted():
+    f=DisplayFilter()
+    for i in range(20):feed(f,i*DT,1.75)
+    o=feed(f,20*DT,2.4)
+    assert o['left'][1] and abs(at10(o)-1.75)<.02
+    o=feed(f,21*DT,1.75)
+    assert not o['left'][1]
+
+
+def test_replay_restart_starts_over():
+    f=DisplayFilter()
+    for i in range(300):f.update_style(i*DT,'left','dashed',.9);feed(f,i*DT,1.75)
+    out=[feed(f,i*DT,2.5) for i in range(10)]
+    assert not out[0] and out[-1] and abs(at10(out[-1])-2.5)<.02
+    assert out[-1]['left'][2] is None

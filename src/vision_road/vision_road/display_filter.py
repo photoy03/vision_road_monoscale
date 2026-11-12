@@ -2,9 +2,10 @@
 
 road_node publishes boundaries tuned not to lose a lane; a head-up display
 needs lines that do not shake or blink.  This node sits between the two: it
-confirms a side M-of-N, keeps one quadratic per side, smooths it with a 1-euro
-filter, rejects single-frame jumps, holds a lost side briefly in the predicted
-colour and only switches solid/dashed after the style has been stable.
+confirms a side M-of-N, keeps one quadratic per side, moves it with the vehicle
+odometry, smooths it with a 1-euro filter, rejects single-frame jumps, holds a
+lost side briefly in the predicted colour and only switches solid/dashed after
+the style has been stable.
 The detector topics are left untouched.
 """
 import math
@@ -28,7 +29,7 @@ class FilterSettings:
     update_span_m:float=3.      # shorter observations are ignored
     max_start_m:float=12.       # so are ones that begin farther out (a 25-35 m piece says little about 3 m)
     min_cutoff_hz:float=.3      # 1-euro: smoothing when the line is still
-    beta:float=1.               # 1-euro: speed gain (raise if curves lag)
+    beta:float=.5               # 1-euro: speed gain (raise if curves lag); low because motion is compensated
     d_cutoff_hz:float=1.
     gate_m:float=.30            # jump at 10 m treated as an outlier
     gate_frames:int=3           # consecutive consistent outliers accepted as a real change
@@ -37,10 +38,12 @@ class FilterSettings:
     step_m:float=.5
     extend_m:float=3.           # draw at most this far past the observed end
     hold_s:float=1.             # keep a lost side this long, in the predicted colour
+    odom_timeout_s:float=.2     # without vehicle motion for this long ...
+    odom_lost_hold_s:float=.2   # ... a lost side is kept only this long (it cannot be moved)
     style_stable_s:float=.5
+    restart_s:float=.5          # a stamp this far behind the last one means the replay restarted
     style_memory_s:float=10.    # a side that comes back within this keeps its solid/dashed (gaps of 5-6 s seen)
     dashed_min_confidence:float=.6
-    follow_predicted:bool=True  # while holding, follow road_node's odometry-reprojected boundary
 
 
 def fit(points,ridge=1e-3):
@@ -62,6 +65,21 @@ def fit(points,ridge=1e-3):
 def evaluate(stations,x):
     coeff=np.linalg.solve(_V,stations)
     return coeff[0]+coeff[1]*x+coeff[2]*x*x
+
+
+def relative(previous,pose):
+    """Motion (dx, dy, dyaw) from one world pose (x, y, yaw) to the next, in the first's frame."""
+    c,s=math.cos(previous[2]),math.sin(previous[2]);wx,wy=pose[0]-previous[0],pose[1]-previous[1]
+    return (c*wx+s*wy,-s*wx+c*wy,math.atan2(math.sin(pose[2]-previous[2]),math.cos(pose[2]-previous[2])))
+
+
+def shift(stations,motion):
+    """Carry a curve into the next base_link: motion (dx, dy, dyaw) is the vehicle's
+    move since the last update, expressed in the previous base_link."""
+    dx,dy,dyaw=motion;x=np.arange(0.,25.01,.5)
+    c,s=math.cos(dyaw),math.sin(dyaw);px=x-dx;py=evaluate(stations,x)-dy
+    nx=c*px+s*py;ny=-s*px+c*py
+    return _V@np.polyfit(nx,ny,2)[::-1]
 
 
 class OneEuro:
@@ -100,6 +118,11 @@ class SideTrack:
     @property
     def value(self):return self.filter.x
 
+    def move(self,motion):
+        if self.value is not None:self.filter.x=shift(self.value,motion)
+        self.pending=[shift(p,motion) for p in self.pending]
+        if self.far is not None:self.far-=motion[0]
+
     def drop(self):
         # The style survives a short loss: style evidence is sparse (a dashed line in a
         # curve is often UNKNOWN), and re-learning it showed the line solid on return.
@@ -118,24 +141,23 @@ class SideTrack:
             self.filter.reset(stations,t);self.pending=[];return True
         return False
 
-    def update(self,t,observed,predicted):
-        s=self.s;obs=None
+    def update(self,t,observed,hold_s):
+        s=self.s;obs=None;accepted=False
         if observed is not None:
             stations,near,far=fit(observed)
             if far-near>=s.update_span_m and near<=s.max_start_m:obs=(stations,near,far)
         self.history.append(obs is not None)
         if obs is not None:
             stations,_,far=obs
-            if self.take(stations,t):
+            accepted=self.take(stations,t)
+            if accepted:
                 # The drawn end grows quickly and shrinks slowly, so its length does not flicker.
                 self.far=far if self.far is None else self.far+(.5 if far>self.far else .1)*(far-self.far)
             self.last_observed=t
-        elif self.value is not None and predicted is not None and s.follow_predicted:
-            stations,near,_=fit(predicted)
-            if near<=s.max_start_m and abs(stations[1]-self.value[1])<=s.gate_m:self.filter(stations,t)
-        self.predicted=obs is None
+        # Only a measurement taken this frame is drawn as observed; a rejected jump shows the kept line.
+        self.predicted=not accepted
         if t-self.last_observed>s.hold_s+s.style_memory_s:self.style=self.candidate=None
-        if t-self.last_observed>s.hold_s:
+        if t-self.last_observed>hold_s:
             if self.shown or self.value is not None:self.drop()
             return
         if not self.shown and obs is not None and obs[2]-obs[1]>=s.start_span_m and sum(self.history)>=s.confirm_hits:
@@ -157,20 +179,38 @@ class SideTrack:
 
 class DisplayFilter:
     def __init__(self,settings=None):
-        self.s=settings or FilterSettings();self.sides={side:SideTrack(self.s) for side in ('left','right')}
+        self.s=settings or FilterSettings();self.reset()
 
-    def update(self,t,lines):
-        """lines: iterable of (side, points Nx2, predicted).  The longest line per side and kind is used."""
+    def reset(self):
+        self.sides={side:SideTrack(self.s) for side in ('left','right')};self.last_t=None;self.last_motion_t=None
+
+    def update(self,t,lines,motion=None):
+        """lines: iterable of (side, points Nx2, predicted); the longest observed line per side is used,
+        predicted ones are ignored.  motion: vehicle (dx, dy, dyaw) since the previous update in the
+        previous base_link, or None when odometry is unavailable."""
+        if self.restarted(t):self.reset()
+        if self.last_t is not None and t<self.last_t:return  # a late message
+        self.last_t=t
+        if motion is not None:
+            self.last_motion_t=t
+            for track in self.sides.values():track.move(motion)
+        odom=self.last_motion_t is not None and t-self.last_motion_t<=self.s.odom_timeout_s
+        hold=self.s.hold_s if odom else min(self.s.hold_s,self.s.odom_lost_hold_s)
         best={}
         for side,points,predicted in lines:
             p=np.asarray(points,float)
-            if side not in self.sides or len(p)<2:continue
-            key=(side,bool(predicted));span=float(p[:,0].max()-p[:,0].min())
-            if key not in best or span>best[key][0]:best[key]=(span,p)
+            if side not in self.sides or len(p)<2 or predicted:continue
+            span=float(p[:,0].max()-p[:,0].min())
+            if side not in best or span>best[side][0]:best[side]=(span,p)
         for side,track in self.sides.items():
-            track.update(t,best.get((side,False),(0,None))[1],best.get((side,True),(0,None))[1])
+            track.update(t,best.get(side,(0,None))[1],hold)
+
+    def restarted(self,t):
+        # Styles arrive on their own topic and may trail the markers by a frame or two.
+        return self.last_t is not None and t<self.last_t-self.s.restart_s
 
     def update_style(self,t,side,style,confidence):
+        if self.restarted(t):self.reset()
         if side in self.sides:self.sides[side].update_style(t,style,confidence)
 
     def output(self):
@@ -188,7 +228,10 @@ def main():
     from std_msgs.msg import Header
     from geometry_msgs.msg import Point
     from visualization_msgs.msg import Marker, MarkerArray
+    from nav_msgs.msg import Odometry
+    from rclpy.qos import QoSProfile, ReliabilityPolicy
     from vision_lane_interfaces.msg import LaneStyle, LaneStyleArray
+    from .core import Timeline
 
     class LaneDisplayFilter(Node):
         def __init__(self):
@@ -203,6 +246,14 @@ def main():
             self.style_pub=self.create_publisher(LaneStyleArray,self.declare_parameter('style_output_topic','/road/lane_display_styles').value,10)
             self.create_subscription(MarkerArray,self.declare_parameter('boundary_topic','/road/lane_boundary_markers').value,self.on_boundaries,10)
             self.create_subscription(LaneStyleArray,self.declare_parameter('style_topic','/road/lane_styles').value,self.on_styles,10)
+            self.timeline=Timeline(.25);self.last_pose=None
+            self.create_subscription(Odometry,self.declare_parameter('odom_topic','/road/reference_odom').value,self.on_odom,
+                                     QoSProfile(depth=200,reliability=ReliabilityPolicy.BEST_EFFORT))
+
+        def on_odom(self,msg):
+            q=msg.pose.pose.orientation
+            yaw=math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z))
+            self.timeline.add(msg.header.stamp.sec+msg.header.stamp.nanosec*1e-9,msg.pose.pose.position.x,msg.pose.pose.position.y,yaw)
 
         def on_styles(self,msg):
             t=msg.header.stamp.sec+msg.header.stamp.nanosec*1e-9
@@ -219,7 +270,13 @@ def main():
             header=msg.markers[0].header if msg.markers else None
             if header is None:return
             stamp=header.stamp;t=stamp.sec+stamp.nanosec*1e-9
-            self.filter.update(t,lines)
+            if self.filter.restarted(t):self.last_pose=None
+            pose=self.timeline.at(t);motion=None
+            if pose is not None:
+                if self.last_pose is not None and t>self.last_pose[0]:motion=relative(self.last_pose[1],pose)
+                elif self.last_pose is None:motion=(0.,0.,0.)
+                self.last_pose=(t,pose)
+            self.filter.update(t,lines,motion)
             out=MarkerArray();head=Header(stamp=stamp,frame_id=self.frame)
             clear=Marker();clear.header=head;clear.action=Marker.DELETEALL;out.markers.append(clear)
             styles=LaneStyleArray();styles.header=head;styles.camera_id='front'

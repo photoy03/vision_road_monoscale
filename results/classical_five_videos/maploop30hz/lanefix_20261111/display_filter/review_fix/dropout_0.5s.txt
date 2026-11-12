@@ -1,0 +1,4 @@
+with odometry left end of hold: mean 0.015 p95 0.035 max 0.040 n 12 | all held frames mean 0.013
+with odometry right end of hold: mean 0.031 p95 0.128 max 0.205 n 10 | all held frames mean 0.027
+without (old behaviour) left end of hold: mean 0.100 p95 0.385 max 0.558 n 12 | all held frames mean 0.066
+without (old behaviour) right end of hold: mean 0.168 p95 0.505 max 0.604 n 10 | all held frames mean 0.109
