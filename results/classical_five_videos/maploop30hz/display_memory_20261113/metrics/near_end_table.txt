@@ -1,0 +1,24 @@
+straight/left    before  ev  11 mem {'zero': 0.0, 'part': 0.0, 'none': 1.0} | h36 ev  0.11/ 0.18 oth  0.21/ 0.08 | y3 ev  0.17 oth  0.08 | h03 all  None/ None | y0 all  None/ None
+straight/left    after   ev  11 mem {'zero': 0.862, 'part': 0.076, 'none': 0.062} | h36 ev  0.23/ 0.54 oth  0.06/ 0.05 | y3 ev   0.4 oth  0.03 | h03 all  0.13/  0.1 | y0 all   0.1/ 0.05
+straight/right   before  ev  34 mem {'zero': 0.0, 'part': 0.0, 'none': 1.0} | h36 ev  5.78/10.38 oth  2.05/ 1.28 | y3 ev  6.61 oth  0.91 | h03 all  None/ None | y0 all  None/ None
+straight/right   after   ev  34 mem {'zero': 0.664, 'part': 0.256, 'none': 0.08} | h36 ev  0.54/ 0.92 oth  0.78/ 0.66 | y3 ev  0.78 oth  0.42 | h03 all  1.73/ 0.86 | y0 all  9.01/ 0.71
+curve/left       before  ev  18 mem {'zero': 0.0, 'part': 0.0, 'none': 1.0} | h36 ev  7.94/16.93 oth  1.54/ 3.11 | y3 ev 10.32 oth  1.64 | h03 all  None/ None | y0 all  None/ None
+curve/left       after   ev  18 mem {'zero': 0.901, 'part': 0.099, 'none': 0.0} | h36 ev  0.39/ 0.73 oth  0.73/ 1.15 | y3 ev  0.27 oth  0.29 | h03 all   1.1/ 1.83 | y0 all   0.5/  0.8
+curve/right      before  ev  31 mem {'zero': 0.0, 'part': 0.0, 'none': 1.0} | h36 ev  4.57/ 5.81 oth  5.34/ 10.8 | y3 ev  3.01 oth  4.53 | h03 all  None/ None | y0 all  None/ None
+curve/right      after   ev  31 mem {'zero': 0.675, 'part': 0.239, 'none': 0.086} | h36 ev  0.31/ 0.69 oth  1.68/ 1.13 | y3 ev  0.26 oth  0.36 | h03 all  3.46/ 1.71 | y0 all  1.27/ 0.77
+straight2/left   before  ev   5 mem {'zero': 0.0, 'part': 0.0, 'none': 1.0} | h36 ev  6.55/ 9.49 oth  2.05/ 4.77 | y3 ev  6.98 oth  2.98 | h03 all  None/ None | y0 all  None/ None
+straight2/left   after   ev   5 mem {'zero': 1.0, 'part': 0.0, 'none': 0.0} | h36 ev  1.17/ 1.69 oth  1.02/ 2.01 | y3 ev  0.88 oth  0.91 | h03 all  1.33/ 2.55 | y0 all  0.88/ 1.63
+straight2/right  before  ev  13 mem {'zero': 0.0, 'part': 0.0, 'none': 1.0} | h36 ev  4.06/ 7.71 oth  1.35/ 3.25 | y3 ev  4.75 oth  2.32 | h03 all  None/ None | y0 all  None/ None
+straight2/right  after   ev  13 mem {'zero': 0.61, 'part': 0.39, 'none': 0.0} | h36 ev  1.26/ 2.18 oth  0.78/ 1.79 | y3 ev  1.11 oth  0.63 | h03 all  1.25/ 2.78 | y0 all  0.73/ 1.41
+crosswalk/left   before  ev   0 mem {'zero': 0.0, 'part': 0.0, 'none': 1.0} | h36 ev  None/ None oth  0.49/ 0.49 | y3 ev  None oth  0.25 | h03 all  None/ None | y0 all  None/ None
+crosswalk/left   after   ev   0 mem {'zero': 0.738, 'part': 0.0, 'none': 0.262} | h36 ev  None/ None oth  0.67/ 0.58 | y3 ev  None oth   0.1 | h03 all   2.2/ 1.43 | y0 all  0.84/ 0.52
+crosswalk/right  before  ev   3 mem {'zero': 0.0, 'part': 0.0, 'none': 1.0} | h36 ev  0.03/ 0.03 oth  7.39/ 7.03 | y3 ev  0.38 oth  4.06 | h03 all  None/ None | y0 all  None/ None
+crosswalk/right  after   ev   3 mem {'zero': 0.309, 'part': 0.33, 'none': 0.361} | h36 ev  0.68/  0.9 oth  0.87/ 1.39 | y3 ev  0.29 oth  0.18 | h03 all  0.94/ 2.13 | y0 all  0.53/ 1.05
+island/left      before  ev   4 mem {'zero': 0.0, 'part': 0.0, 'none': 1.0} | h36 ev  0.82/  1.4 oth  0.77/ 1.71 | y3 ev  1.02 oth  0.94 | h03 all  None/ None | y0 all  None/ None
+island/left      after   ev   4 mem {'zero': 0.659, 'part': 0.233, 'none': 0.109} | h36 ev   0.2/ 0.34 oth  0.34/ 0.68 | y3 ev  0.24 oth  0.37 | h03 all  0.46/ 0.93 | y0 all  0.28/ 0.59
+island/right     before  ev  14 mem {'zero': 0.0, 'part': 0.0, 'none': 1.0} | h36 ev  6.97/ 11.7 oth  7.27/ 2.13 | y3 ev 13.79 oth  1.31 | h03 all  None/ None | y0 all  None/ None
+island/right     after   ev  14 mem {'zero': 0.563, 'part': 0.345, 'none': 0.092} | h36 ev  0.19/ 0.36 oth  0.66/  0.6 | y3 ev  0.13 oth  0.16 | h03 all  5.13/ 1.25 | y0 all  1.57/ 0.67
+junction2/left   before  ev   4 mem {'zero': 0.0, 'part': 0.0, 'none': 1.0} | h36 ev  None/ None oth  0.22/ 0.57 | y3 ev  None oth   0.4 | h03 all  None/ None | y0 all  None/ None
+junction2/left   after   ev   4 mem {'zero': 0.4, 'part': 0.235, 'none': 0.365} | h36 ev  None/ None oth  0.49/ 1.36 | y3 ev  None oth  0.93 | h03 all  0.67/  1.7 | y0 all  0.51/ 1.42
+junction2/right  before  ev   8 mem {'zero': 0.0, 'part': 0.0, 'none': 1.0} | h36 ev  0.13/ 0.17 oth  0.47/ 0.94 | y3 ev  0.04 oth  0.74 | h03 all  None/ None | y0 all  None/ None
+junction2/right  after   ev   8 mem {'zero': 0.151, 'part': 0.566, 'none': 0.283} | h36 ev  0.11/ 0.15 oth  0.32/ 0.62 | y3 ev  0.03 oth  0.54 | h03 all  0.44/ 1.04 | y0 all  0.37/ 0.96

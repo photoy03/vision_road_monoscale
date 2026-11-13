@@ -175,3 +175,74 @@ def test_sustained_move_is_taken_within_the_short_hold():
     for i in range(20):feed(f,i*DT,1.75)
     out=[feed(f,(20+i)*DT,2.4,motion=None) for i in range(4)]
     assert all(out) and abs(at10(out[2])-2.4)<.02 and not out[2]['left'][1]
+
+
+MEMORY=dict(near_m=0.,memory_m=10.)
+
+
+def dashed_drive(f,frames,speed=.3,seed=0):
+    """A straight right line at y=-1.8 painted 3 m on / 3 m off, seen from 5.5 m.  The boundary
+    road_node publishes spans the gaps and its heading is off by up to 10 mrad from frame to
+    frame; the paint fragments are exact.  Returns the displayed lateral value at 0 m per frame."""
+    rng=np.random.default_rng(seed);y0=[]
+    for i in range(frames):
+        travelled=i*speed;dashes=[]
+        for k in range(30):
+            a,b=k*6.-travelled,k*6.+3.-travelled
+            if b>5.5 and a<30:dashes.append((max(a,5.5),min(b,30.)))
+        start=dashes[0][0];err=rng.uniform(-.01,.01)
+        x=np.linspace(start,30.,12);boundary=np.column_stack([x,-1.8+err*(x-15.)])
+        paint=[('right',np.array([[a,-1.8],[b,-1.8]])) for a,b in dashes]
+        f.update(i*DT,[('right',boundary,False)],(speed,0.,0.) if i else (0.,0.,0.),paint)
+        out={side:p for side,p,_,_ in f.output()}
+        if 'right' in out:y0.append(float(np.interp(0.,out['right'][:,0],out['right'][:,1])))
+    return np.array(y0)
+
+
+def test_remembered_paint_holds_the_near_end_of_a_dashed_line():
+    plain=dashed_drive(DisplayFilter(FilterSettings(near_m=0.)),150)[60:]
+    kept=dashed_drive(DisplayFilter(FilterSettings(**MEMORY)),150)[60:]
+    # Without memory the end at the rear axle swings with the far fragments' heading.
+    # (The remembered points are the boundary's, so they carry some of its error: 7 -> 2.5 cm at most.)
+    assert np.abs(kept+1.8).max()<.03<.06<np.abs(plain+1.8).max()
+    assert np.std(np.diff(kept))<.2*np.std(np.diff(plain))
+
+
+def test_only_paint_seen_this_frame_is_remembered():
+    f=DisplayFilter(FilterSettings(**MEMORY));line=np.column_stack([np.linspace(5.5,30,12),np.full(12,-1.8)])
+    for i in range(8):f.update(i*DT,[('right',line,False)],(0.,0.,0.),[('right',np.array([[5.5,-1.8],[6.5,-1.8]]))])
+    m=f.sides['right'].memory
+    assert len(m) and m[:,0].min()>=5.5-1e-6 and m[:,0].max()<=6.6
+    # Stray paint well off the boundary does not count as seen.
+    f=DisplayFilter(FilterSettings(**MEMORY))
+    for i in range(8):f.update(i*DT,[('right',line,False)],(0.,0.,0.),[('right',np.array([[5.5,-3.],[9.,-3.]]))])
+    assert not len(f.sides['right'].memory)
+
+
+def test_memory_is_dropped_by_travel_restart_lost_odometry_and_off_by_default():
+    f=DisplayFilter(FilterSettings(**MEMORY));line=np.column_stack([np.linspace(5.5,30,12),np.full(12,-1.8)])
+    paint=[('right',line)]
+    for i in range(8):f.update(i*DT,[('right',line,False)],(0.,0.,0.),paint)
+    assert len(f.sides['right'].memory)
+    for i in range(8,8+40):f.update(i*DT,[],(.3,0.,0.))  # 12 m without seeing anything new
+    assert not len(f.sides['right'].memory)
+    for i in range(50,58):f.update(i*DT,[('right',line,False)],(0.,0.,0.),paint)
+    f.update(57*DT,[('right',line,False)],None,paint)
+    assert not len(f.sides['right'].memory)
+    for i in range(58,66):f.update(i*DT,[('right',line,False)],(0.,0.,0.),paint)
+    f.update(1.,[('right',line,False)],(0.,0.,0.),paint)  # the replay restarted
+    assert len(f.sides["right"].memory)==17  # one frame: 5.5-9.5 m every 0.25 m
+    f=DisplayFilter()
+    for i in range(8):f.update(i*DT,[('right',line,False)],(0.,0.,0.),paint)
+    assert not len(f.sides['right'].memory)
+
+
+def test_a_line_switch_forgets_the_old_line():
+    f=DisplayFilter(FilterSettings(**MEMORY));x=np.linspace(5.5,30,12)
+    for i in range(30):
+        f.update(i*DT,[('right',np.column_stack([x,np.full(12,-1.8)]),False)],(.3,0.,0.),[('right',np.array([[5.5,-1.8],[9.,-1.8]]))])
+    for i in range(30,36):
+        f.update(i*DT,[('right',np.column_stack([x+5,np.full(12,-3.6)]),False)],(.3,0.,0.),[('right',np.array([[10.5,-3.6],[14.,-3.6]]))])
+    p={side:q for side,q,_,_ in f.output()}['right']
+    # The new line is drawn flat down to the rear axle, not tilted toward the old one.
+    assert np.abs(p[:,1]+3.6).max()<.03

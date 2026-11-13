@@ -5,7 +5,9 @@ needs lines that do not shake or blink.  This node sits between the two: it
 confirms a side M-of-N, keeps one quadratic per side, moves it with the vehicle
 odometry, smooths it with a 1-euro filter, rejects single-frame jumps, holds a
 lost side briefly in the predicted colour and only switches solid/dashed after
-the style has been stable.
+the style has been stable.  With memory_m set it remembers where it saw paint and
+carries it under the vehicle, so the line reaches near_m (down to the rear axle)
+from seen paint rather than from the far fragment's direction.
 The detector topics are left untouched.
 """
 import math
@@ -33,7 +35,7 @@ class FilterSettings:
     d_cutoff_hz:float=1.
     gate_m:float=.30            # jump at 10 m treated as an outlier
     gate_frames:int=3           # consecutive consistent outliers accepted as a real change
-    near_m:float=3.
+    near_m:float=3.             # draw from here (base_link x); below the first seen paint it comes from memory or the fit
     far_m:float=20.
     step_m:float=.5
     extend_m:float=3.           # draw at most this far past the observed end
@@ -44,20 +46,24 @@ class FilterSettings:
     restart_s:float=.5          # a stamp this far behind the last one means the replay restarted
     style_memory_s:float=10.    # a side that comes back within this keeps its solid/dashed (gaps of 5-6 s seen)
     dashed_min_confidence:float=.6
+    memory_m:float=0.           # >0: keep seen paint this many metres of travel and fit it below the observation (0 = off)
+    memory_store_m:float=4.     # remember the observation's first metres only (the nearest look is the best)
+    memory_gate_m:float=.25     # remembered bins this far off the kept line are left out (stray paint)
 
 
-def fit(points,ridge=1e-3):
+def fit(points,ridge=1e-3,strength=None):
     """Quadratic through a polyline in base_link (x forward, y left), returned as station values.
 
     The input is usually a simplified polyline with a handful of vertices, so it
     is resampled along x first.  Short spans get a stronger pull toward zero
-    curvature so a 3 m piece does not bend the whole display."""
+    curvature so a 3 m piece does not bend the whole display.  strength, when given,
+    replaces that two-step pull."""
     p=np.asarray(points,float);p=p[np.argsort(p[:,0])]
     x=np.arange(p[0,0],p[-1,0]+1e-6,.5)
     if len(x)<2:x=p[[0,-1],0]
     y=np.interp(x,p[:,0],p[:,1]);span=float(x[-1]-x[0])
     A=np.column_stack([np.ones_like(x),x,x*x])
-    lam=len(x)*float(np.mean(x*x))**2*(ridge if span>=8 else 10.)
+    lam=len(x)*float(np.mean(x*x))**2*(strength if strength is not None else ridge if span>=8 else 10.)
     coeff=np.linalg.solve(A.T@A+np.diag([0.,0.,lam]),A.T@y)
     return _V@coeff,float(x[0]),float(x[-1])
 
@@ -114,6 +120,7 @@ class SideTrack:
         self.filter=OneEuro(s.min_cutoff_hz,s.beta,s.d_cutoff_hz)
         self.shown=False;self.predicted=False;self.last_observed=-math.inf;self.far=None;self.pending=[]
         self.style=None;self.candidate=None;self.candidate_since=None
+        self.memory=np.empty((0,3))  # x, y in base_link and the travel when seen
 
     @property
     def value(self):return self.filter.x
@@ -122,14 +129,48 @@ class SideTrack:
         if self.value is not None:self.filter.x=shift(self.value,motion)
         self.pending=[shift(p,motion) for p in self.pending]
         if self.far is not None:self.far-=motion[0]
+        if len(self.memory):
+            dx,dy,dyaw=motion;c,s=math.cos(dyaw),math.sin(dyaw);px=self.memory[:,0]-dx;py=self.memory[:,1]-dy
+            self.memory=np.column_stack([c*px+s*py,-s*px+c*py,self.memory[:,2]])
 
     def drop(self):
         # The style survives a short loss: style evidence is sparse (a dashed line in a
         # curve is often UNKNOWN), and re-learning it showed the line solid on return.
-        self.shown=False;self.filter.reset();self.far=None;self.pending=[];self.history.clear()
+        self.shown=False;self.filter.reset();self.far=None;self.pending=[];self.history.clear();self.memory=np.empty((0,3))
 
-    def take(self,stations,t):
-        """Gate a measurement at 10 m; returns False when it was set aside as an outlier."""
+    def store(self,observed,paint,travel):
+        """Remember the near part of an accepted observation, only where paint was seen this frame.
+
+        observed is the boundary road_node published (a merged line that also spans the gaps
+        of a dashed line); paint is that side's observed fragments, or None when the paint
+        topic is missing, in which case the boundary is stored as it is."""
+        p=observed[np.argsort(observed[:,0])]
+        x=np.arange(p[0,0],min(p[-1,0],p[0,0]+self.s.memory_store_m)+1e-6,.25);y=np.interp(x,p[:,0],p[:,1])
+        if paint is not None:
+            seen=np.zeros(len(x),bool)
+            for q in paint:
+                q=q[np.argsort(q[:,0])];inside=(x>=q[0,0]-.1)&(x<=q[-1,0]+.1)  # BEV chunks leave 7 cm joins
+                if inside.any():seen[inside]|=np.abs(np.interp(x[inside],q[:,0],q[:,1])-y[inside])<=.5
+            x,y=x[seen],y[seen]
+        if len(x):self.memory=np.vstack([self.memory,np.column_stack([x,y,np.full(len(x),travel)])])
+
+    def recall(self,near,stations):
+        """Remembered paint from near_m up to the seen near end, as 0.5 m bin means (mean x and y,
+        so a bin in a curve does not snap to its centre).  Bins far off the kept line (or, before
+        there is one, the observation's own fit) are left out."""
+        lo=self.s.near_m-.25;n_bins=int(math.ceil((near-.25-lo)/.5))
+        if n_bins<1 or not len(self.memory):return None
+        m=self.memory[(self.memory[:,0]>=lo)&(self.memory[:,0]<near-.25)]
+        if not len(m):return None
+        i=np.minimum(((m[:,0]-lo)/.5).astype(int),n_bins-1)
+        n=np.bincount(i,minlength=n_bins);ok=n>0
+        p=np.column_stack([np.bincount(i,weights=m[:,0],minlength=n_bins)[ok],np.bincount(i,weights=m[:,1],minlength=n_bins)[ok]])/n[ok,None]
+        p=p[np.abs(p[:,1]-evaluate(stations if self.value is None else self.value,p[:,0]))<=self.s.memory_gate_m]
+        return p if len(p) else None
+
+    def take(self,stations,t,alone=None):
+        """Gate a measurement at 10 m; returns False when it was set aside as an outlier.
+        alone: the observation fitted without remembered paint, used when the line switches."""
         if self.value is None:
             self.filter.reset(stations,t);return True
         if abs(stations[1]-self.value[1])<=self.s.gate_m:
@@ -138,24 +179,32 @@ class SideTrack:
         self.pending=(self.pending+[stations])[-self.s.gate_frames:]
         recent=[p[1] for p in self.pending]
         if len(recent)>=self.s.gate_frames and max(recent)-min(recent)<=self.s.gate_m:
-            # A sustained change (new line, lane change): jump to it rather than slide.
-            self.filter.reset(stations,t);self.pending=[];return True
+            # A sustained change (new line, lane change): jump to it rather than slide, and forget the old line.
+            self.filter.reset(stations if alone is None else alone,t);self.pending=[];self.memory=np.empty((0,3));return True
         return False
 
-    def update(self,t,observed,hold_s):
+    def update(self,t,observed,hold_s,paint=None,travel=None):
         s=self.s;obs=None;accepted=False
         if observed is not None:
             stations,near,far=fit(observed)
-            if far-near>=s.update_span_m and near<=s.max_start_m:obs=(stations,near,far)
+            if far-near>=s.update_span_m and near<=s.max_start_m:
+                # What is seen now wins; remembered paint only fills below the seen near end.
+                below=self.recall(near,stations) if travel is not None else None
+                alone=stations
+                # The curvature pull changes smoothly with the span: spans hover about 8 m, where the
+                # two-step pull flipped the curvature from frame to frame in a curve.
+                if below is not None:stations=fit(np.vstack([below,observed]),strength=10**np.interp(far-float(below[0,0]),[4.,12.],[1.,-3.]))[0]
+                obs=(stations,near,far,alone)
         if obs is not None:
-            stations,_,far=obs
-            accepted=self.take(stations,t)
+            stations,_,far,alone=obs
+            accepted=self.take(stations,t,alone)
             if accepted:
                 # The drawn end grows quickly and shrinks slowly, so its length does not flicker.
                 self.far=far if self.far is None else self.far+(.5 if far>self.far else .1)*(far-self.far)
                 # Rejected candidates do not extend the hold: an unstable stream must not keep
                 # the last good line on screen past hold_s.
                 self.last_observed=t
+                if travel is not None:self.store(np.asarray(observed,float),paint,travel)
         # Confirmation counts accepted observations only; counting rejected ones let an unstable
         # stream re-confirm a dropped line within 5 frames, so it blinked about once a second.
         self.history.append(accepted)
@@ -187,18 +236,27 @@ class DisplayFilter:
         self.s=settings or FilterSettings();self.reset()
 
     def reset(self):
-        self.sides={side:SideTrack(self.s) for side in ('left','right')};self.last_t=None;self.last_motion_t=None
+        self.sides={side:SideTrack(self.s) for side in ('left','right')};self.last_t=None;self.last_motion_t=None;self.travel=0.
 
-    def update(self,t,lines,motion=None):
+    def update(self,t,lines,motion=None,paint=None):
         """lines: iterable of (side, points Nx2, predicted); the longest observed line per side is used,
         predicted ones are ignored.  motion: vehicle (dx, dy, dyaw) since the previous update in the
-        previous base_link, or None when odometry is unavailable."""
+        previous base_link, or None when odometry is unavailable.  paint: iterable of (side, points)
+        observed paint fragments of this frame, used to remember only where paint was seen."""
         if self.restarted(t):self.reset()
         if self.last_t is not None and t<self.last_t:return  # a late message
         self.last_t=t
         if motion is not None:
-            self.last_motion_t=t
+            self.last_motion_t=t;self.travel+=math.hypot(motion[0],motion[1])
             for track in self.sides.values():track.move(motion)
+        memory=self.s.memory_m>0 and motion is not None
+        for track in self.sides.values():
+            # Memory that cannot be moved with the vehicle, or is older than memory_m of travel, is dropped.
+            if not memory:track.memory=np.empty((0,3))
+            elif len(track.memory):track.memory=track.memory[self.travel-track.memory[:,2]<=self.s.memory_m]
+        fragments={}
+        if paint is not None:
+            for side,points in paint:fragments.setdefault(side,[]).append(np.asarray(points,float))
         odom=self.last_motion_t is not None and t-self.last_motion_t<=self.s.odom_timeout_s
         hold=self.s.hold_s if odom else min(self.s.hold_s,self.s.odom_lost_hold_s)
         best={}
@@ -208,7 +266,7 @@ class DisplayFilter:
             span=float(p[:,0].max()-p[:,0].min())
             if side not in best or span>best[side][0]:best[side]=(span,p)
         for side,track in self.sides.items():
-            track.update(t,best.get(side,(0,None))[1],hold)
+            track.update(t,best.get(side,(0,None))[1],hold,None if paint is None else fragments.get(side,[]),self.travel if memory else None)
 
     def restarted(self,t):
         # Styles arrive on their own topic and may trail the markers by a frame or two.
@@ -251,6 +309,9 @@ def main():
             self.style_pub=self.create_publisher(LaneStyleArray,self.declare_parameter('style_output_topic','/road/lane_display_styles').value,10)
             self.create_subscription(MarkerArray,self.declare_parameter('boundary_topic','/road/lane_boundary_markers').value,self.on_boundaries,10)
             self.create_subscription(LaneStyleArray,self.declare_parameter('style_topic','/road/lane_styles').value,self.on_styles,10)
+            # Observed paint of the same frame (road_node publishes it just before the boundaries).
+            self.paint=None
+            self.create_subscription(MarkerArray,self.declare_parameter('paint_topic','/road/lane_markers').value,self.on_paint,10)
             self.timeline=Timeline(.25);self.last_pose=None
             self.create_subscription(Odometry,self.declare_parameter('odom_topic','/road/reference_odom').value,self.on_odom,
                                      QoSProfile(depth=200,reliability=ReliabilityPolicy.BEST_EFFORT))
@@ -259,6 +320,16 @@ def main():
             q=msg.pose.pose.orientation
             yaw=math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z))
             self.timeline.add(msg.header.stamp.sec+msg.header.stamp.nanosec*1e-9,msg.pose.pose.position.x,msg.pose.pose.position.y,yaw)
+
+        def on_paint(self,msg):
+            lines=[];stamp=None
+            for m in msg.markers:
+                if m.action!=Marker.ADD or m.type!=Marker.LINE_STRIP or len(m.points)<2 or m.color.r>.5:continue
+                side='left' if m.ns.endswith('/left') else 'right' if m.ns.endswith('/right') else None
+                if side is None:continue
+                stamp=m.header.stamp;lines.append((side,[(p.x,p.y) for p in m.points]))
+            if msg.markers:stamp=msg.markers[0].header.stamp
+            if stamp is not None:self.paint=(stamp.sec+stamp.nanosec*1e-9,lines)
 
         def on_styles(self,msg):
             t=msg.header.stamp.sec+msg.header.stamp.nanosec*1e-9
@@ -281,7 +352,8 @@ def main():
                 if self.last_pose is not None and t>self.last_pose[0]:motion=relative(self.last_pose[1],pose)
                 elif self.last_pose is None:motion=(0.,0.,0.)
                 self.last_pose=(t,pose)
-            self.filter.update(t,lines,motion)
+            paint=self.paint[1] if self.paint is not None and abs(self.paint[0]-t)<1e-6 else None
+            self.filter.update(t,lines,motion,paint)
             out=MarkerArray();head=Header(stamp=stamp,frame_id=self.frame)
             clear=Marker();clear.header=head;clear.action=Marker.DELETEALL;out.markers.append(clear)
             styles=LaneStyleArray();styles.header=head;styles.camera_id='front'

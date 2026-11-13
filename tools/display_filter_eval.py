@@ -8,7 +8,9 @@ recording of the live topics (/road/lane_boundary_markers, /road/lane_display_ma
 styles and /road/reference_odom; one or more replay passes) and the node's own
 output is scored, or with --refilter the filter is re-run on the recorded input
 and odometry.  The predictions file carries no odometry, so there the filter
-runs without motion compensation (lost sides held only odom_lost_hold_s).
+runs without motion compensation (lost sides held only odom_lost_hold_s) unless
+--odom names the cache's truth_base.json (rear-axle poses, as /road/reference_odom).
+The observed paint lanes of the predictions are passed as the filter's paint.
 Metrics per side, raw vs filtered:
   jitter      std / p90 of the frame-to-frame change of the lateral position at 10 m
               (all frames, and straight frames only); steps above 0.30 m are
@@ -38,7 +40,7 @@ def at(points,x=10.):
     return float(np.interp(x,p[:,0],p[:,1])) if p[0,0]<=x<=p[-1,0] else None
 
 
-def run(rows,settings,odom=None):
+def run(rows,settings,odom=None,with_paint=True):
     f=DisplayFilter(settings);out=[];timeline=Timeline(.25);k=0;last=None
     for r in rows:
         t=r['stamp']
@@ -53,7 +55,9 @@ def run(rows,settings,odom=None):
             styled=[l for l in r['lanes'] if l['side']==side and not l['reprojected'] and l['style']!='unknown']
             if styled:
                 lane=max(styled,key=lambda l:l['hits']);f.update_style(t,side,lane['style'],1.)
-        f.update(t,[(b['side'],b['points'],b['reprojected']) for b in r['boundaries']],motion)
+        # Recorded topics carry no paint points: the filter then remembers the boundary as it is.
+        paint=[(l['side'],l['points']) for l in r['lanes'] if not l['reprojected']] if with_paint else None
+        f.update(t,[(b['side'],b['points'],b['reprojected']) for b in r['boundaries']],motion,paint)
         out.append({side:(p,pred,style) for side,p,pred,style in f.output()})
     return out
 
@@ -141,6 +145,7 @@ def main():
     ap.add_argument('--refilter',action='store_true',help='with --recorded: re-run the filter on the recorded input and odometry')
     ap.add_argument('--pass',dest='passno',type=int,default=0,help='with --recorded: which replay pass')
     ap.add_argument('--output',type=Path)
+    ap.add_argument('--odom',type=Path,help='predictions mode: truth_base.json [[t,x,y,yaw],...] for motion compensation')
     ap.add_argument('--curve',type=float,nargs=2,default=(22.,35.))
     ap.add_argument('--set',nargs='*',default=[],help='FilterSettings overrides, name=value')
     a=ap.parse_args()
@@ -158,11 +163,11 @@ def main():
                                     if l['style']!=2 or l['confidence']>=s.dashed_min_confidence]))
             style={l['side']:names.get(l['style']) for l in r.get('display_styles',[])}
             filtered.append({b['side']:(np.asarray(b['points']),b['predicted'],style.get(b['side'])) for b in r.get('display',[])})
-        if a.refilter:filtered=run(rows,s,odom)
+        if a.refilter:filtered=run(rows,s,odom,with_paint=False)
         else:s=None
     else:
         rows=[json.loads(l) for l in gzip.open(a.predictions,'rt')]
-        filtered=run(rows,s)
+        filtered=run(rows,s,json.loads(a.odom.read_text()) if a.odom else None)
     m=dict(settings=s and vars(s),curve_window_s=list(a.curve),sides=metrics(rows,filtered,a.curve))
     print(json.dumps(m['sides'],indent=1))
     if a.output:

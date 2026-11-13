@@ -1,0 +1,9 @@
+{
+  "source_frames": 900,
+  "overlay_frames": 148,
+  "hud_frames": 340,
+  "hud_subscribers_at_start": 2,
+  "synchronized_seconds": 29.5,
+  "video": "/tmp/claude-1000/-home-jaehun-Desktop-vision-road/29db546f-08e5-4fc6-9d69-1be1602904b8/scratchpad/near/hud_after/road_and_hud.mp4",
+  "note": "Two live ROS outputs from the same replay, aligned by capture wall time. HUD is a separate ground-coordinate display; CARLA recorded reference pose is used."
+}

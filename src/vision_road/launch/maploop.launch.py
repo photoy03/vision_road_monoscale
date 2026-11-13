@@ -41,7 +41,7 @@ def generate_launch_description():
             'learned_every':ParameterValue(LaunchConfiguration('learned_every'),value_type=int)}]),
         # HUD-only smoothing of the boundaries; road_node's own topics are unchanged.
         Node(package='vision_road',executable='lane_display_filter',condition=IfCondition(LaunchConfiguration('display_filter')),
-             parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
+             parameters=[share+'/config/carla.yaml',{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
         Node(package='vision_road',executable='reference_pose',condition=IfCondition(LaunchConfiguration('reference_pose')),
              parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
         Node(package='tf2_ros',executable='static_transform_publisher',arguments=[

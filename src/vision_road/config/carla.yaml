@@ -49,3 +49,9 @@ vision_road:
     # Left double line: one pair of rails; centres of seen pairs kept 25 m of travel label a single near strand.
     carla_strand_pair: true
     carla_strand_memory_m: 25.0
+lane_display_filter:
+  ros__parameters:
+    # HUD line reaches the rear axle (HUD path start, bottom of the screen); paint seen in the last
+    # 10 m of travel fills below the first seen paint (~5.5 m), the fit's arc where there is none.
+    near_m: 0.0
+    memory_m: 10.0
