@@ -233,7 +233,7 @@ class Detector:
                     ix=np.flatnonzero((yy>=top)&(yy<bottom)&(np.abs(xx-cursor)<c.margin_m/c.mpp))
                     ids.extend(ix)
                     if len(ix)>=6:
-                        cursor=float(np.median(xx[ix]))
+                        cursor=float(median(xx[ix]))
                 fit=self._fit(xx,yy,np.asarray(ids,dtype=int))
                 if fit is not None:
                     candidates.append(fit)
@@ -325,6 +325,19 @@ class Timeline:
             return None
         f = (t-a[0])/(b[0]-a[0]); dyaw = math.atan2(math.sin(b[3]-a[3]), math.cos(b[3]-a[3]))
         return (a[1]+f*(b[1]-a[1]), a[2]+f*(b[2]-a[2]), a[3]+f*dyaw)
+
+
+def median(values):
+    """np.median of a 1-D array (NaN in, NaN out, empty gives NaN) without its per-call overhead.
+
+    The detector takes about a hundred medians of short arrays per frame; np.partition is
+    several times cheaper than np.median there and gives the same value."""
+    a=np.asarray(values,dtype=float).ravel();n=a.size
+    if n==0:return np.float64(np.nan)
+    k=n//2
+    if n%2:p=np.partition(a,k);m=p[k]
+    else:p=np.partition(a,(k-1,k));m=(p[k-1]+p[k])/2
+    return np.float64(np.nan) if np.isnan(p[-1]) else m
 
 
 def to_world(points, pose):

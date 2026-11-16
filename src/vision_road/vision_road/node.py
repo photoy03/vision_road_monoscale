@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import struct
 import math
 import time
 import queue
@@ -10,6 +11,7 @@ from dataclasses import fields, replace
 import cv2
 import numpy as np
 import rclpy
+from rclpy.serialization import deserialize_message
 from rclpy.node import Node
 from rclpy.clock import Clock, ClockType
 from rclpy.qos import qos_profile_sensor_data, QoSProfile, ReliabilityPolicy
@@ -67,7 +69,12 @@ class RoadNode(Node):
         cv2.setNumThreads(threads)
         self.pose_lock=threading.RLock();self.state_lock=threading.RLock()
         self.async_processing=param('async_processing',False)
-        self.image_jobs=queue.Queue(maxsize=10);self.worker_stop=threading.Event();self.worker=None;self.reset_pending=False
+        # Several Python threads share this process (image callback, detection hand-off, outputs): a thread
+        # waiting for the interpreter lock otherwise waits up to 5 ms, which showed up as latency.
+        switch=param('gil_switch_interval_ms',0.0)
+        if switch>0:import sys;sys.setswitchinterval(switch/1000.)
+        # 1 keeps only the newest image waiting: a slow frame drops the older one instead of delaying all later frames.
+        self.image_jobs=queue.Queue(maxsize=param('image_job_depth',10));self.worker_stop=threading.Event();self.worker=None;self.reset_pending=False
         self.timeline = Timeline(param('odom_max_gap_sec', 0.25))
         self.map = LaneMap(param('map_resolution_m', 0.10), param('map_radius_m', 80.0), param('map_ttl_sec', 120.0), param('map_max_cells', 100000))
         if min(self.map.resolution, self.map.radius, self.map.ttl, self.map.max_cells, self.timeline.max_gap) <= 0:
@@ -77,7 +84,7 @@ class RoadNode(Node):
         if self.max_pending < 1 or self.wait_sec <= 0:
             raise ValueError('Pending queue and wait duration must be positive')
         self.performance_path=param('performance_report','')
-        self.performance_rows=[]
+        self.performance_rows=[];self.received={}  # header stamp -> wall time the image callback ran
         self.display_error=param('display_simplify_error_m',0.0)
         if not math.isfinite(self.display_error) or not 0<=self.display_error<=.05:raise ValueError('Invalid display simplification bound')
         self.overlay_max_width=param('overlay_max_width',0)
@@ -85,6 +92,10 @@ class RoadNode(Node):
         self.debug_hz=param('debug_publish_hz',0.0);self.last_debug=-math.inf
         if self.debug_hz<0:raise ValueError('Invalid debug image rate')
         self.debug = param('debug_images', True)
+        self.debug_jobs=queue.Queue(maxsize=1) if param('debug_thread',False) else None
+        # output_thread: lane topics, the inline display and debug images are published by their own thread.
+        self.output_jobs=queue.Queue(maxsize=2) if param('output_thread',False) else None
+        self.output_lock=threading.Lock();self.output_rows={}
         self.map_hz = param('map_publish_hz', 2.0)
         self.world_frame = param('world_frame', 'map')
         self.base_frame = param('base_frame', 'base_link')
@@ -118,6 +129,17 @@ class RoadNode(Node):
         self.binary_pub = self.create_publisher(Image, '/parking/cpp/binary', qos_profile_sensor_data)
         self.bev_pub = self.create_publisher(Image, '/parking/cpp/vector_bev', qos_profile_sensor_data)
         self.overlay_pub = self.create_publisher(Image, '/road/overlay', qos_profile_sensor_data)
+        # display_filter_inline: the HUD display filter (lane_display_filter) runs here on this node's own
+        # messages, with the settings of carla.yaml's lane_display_filter section; one ROS hop less.
+        self.display_stage=None
+        if param('display_filter_inline',False):
+            from .display_filter import DisplayStage,settings_from
+            section=yaml.safe_load(open(param('display_filter_config',get_package_share_directory('vision_road')+'/config/carla.yaml')))
+            values=(section.get('lane_display_filter') or {}).get('ros__parameters',{})
+            self.display_stage=DisplayStage(settings_from(values),self.base_frame)
+            self.display_pub=self.create_publisher(MarkerArray,'/road/lane_display_markers',10)
+            self.display_style_pub=self.create_publisher(LaneStyleArray,'/road/lane_display_styles',10)
+            self.get_logger().info('Display filter inline: '+str(self.display_stage.filter.s))
         image_topic = param('image_topic', '/sensing/camera/front/fisheye/image_raw')
         compressed = param('compressed', False)
         reliability = param('image_reliability', 'best_effort')
@@ -125,12 +147,20 @@ class RoadNode(Node):
         if reliability not in ('reliable', 'best_effort') or depth < 1:
             raise ValueError('Invalid image QoS settings')
         image_qos = QoSProfile(depth=depth, reliability=ReliabilityPolicy.RELIABLE if reliability=='reliable' else ReliabilityPolicy.BEST_EFFORT)
-        self.create_subscription(CompressedImage if compressed else Image, image_topic, self.on_compressed if compressed else self.on_image, image_qos)
+        # raw_image_cdr: take the serialized image and view its pixel array in place; building a Python
+        # Image (6 MB) and converting it costs several milliseconds per frame.
+        self.raw_cdr=param('raw_image_cdr',False) and not compressed;self.raw_shape=None
+        if self.raw_cdr:self.create_subscription(Image,image_topic,self.on_image_cdr,image_qos,raw=True)
+        else:self.create_subscription(CompressedImage if compressed else Image, image_topic, self.on_compressed if compressed else self.on_image, image_qos)
         # Best effort accepts both reliable and best-effort odometry publishers.
         self.create_subscription(Odometry, param('odom_topic', '/localization/kinematic_state'), self.on_odom, QoSProfile(depth=200, reliability=ReliabilityPolicy.BEST_EFFORT))
         self.create_timer(0.02, self.timer_flush, clock=Clock(clock_type=ClockType.STEADY_TIME))
         if self.async_processing:
             self.worker=threading.Thread(target=self.work_images,name='road-image-worker',daemon=True);self.worker.start()
+        if self.debug_jobs is not None:
+            self.debug_worker=threading.Thread(target=self.debug_loop,name='road-debug-images',daemon=True);self.debug_worker.start()
+        if self.output_jobs is not None:
+            self.output_worker=threading.Thread(target=self.output_loop,name='road-lane-outputs',daemon=True);self.output_worker.start()
         self.get_logger().info('Road detector ready: '+backend+'; image processing only, no learned model')
 
     def reset(self):
@@ -187,6 +217,7 @@ class RoadNode(Node):
                 if self.reset_pending:self.reset();self.last_image=None;self.reset_pending=False
                 try:
                     if kind=='raw':self.process_image(msg)
+                    elif kind=='frame':self.process_frame(*msg)
                     else:self.process_compressed(msg)
                 except Exception as exc:
                     self.dropped+=1;self.get_logger().error('Image worker: '+str(exc))
@@ -194,6 +225,7 @@ class RoadNode(Node):
     def stop_processing(self):
         self.worker_stop.set()
         if self.worker is not None:self.worker.join(timeout=8)
+        if self.output_jobs is not None:self.output_worker.join(timeout=4)
         if self.compute_worker is not None:self.compute_worker.close();self.compute_worker=None
         self.learned.close()
 
@@ -209,8 +241,35 @@ class RoadNode(Node):
         self.process(frame, msg.header)
 
     def on_image(self,msg):
+        if self.performance_path:self.received[(msg.header.stamp.sec,msg.header.stamp.nanosec)]=time.perf_counter_ns()
         if self.async_processing:self.enqueue_image('raw',msg)
         else:self.process_image(msg)
+
+    def on_image_cdr(self,raw):
+        received=time.perf_counter_ns()
+        if self.raw_shape is None:
+            first=deserialize_message(raw,Image)
+            if first.encoding not in ('bgr8','rgb8') or first.step!=first.width*3 or first.is_bigendian:
+                raise ValueError('raw_image_cdr needs packed bgr8/rgb8 images')
+            self.raw_shape=(first.height,first.width,first.encoding,first.header.frame_id)
+        h,w,encoding,frame_id=self.raw_shape
+        # CDR: 4-byte encapsulation, then the header stamp; the pixel array is the last field.
+        sec,nanosec=struct.unpack_from('<iI',raw,4)
+        header=Header(frame_id=frame_id);header.stamp.sec=sec;header.stamp.nanosec=nanosec
+        if self.performance_path:self.received[(sec,nanosec)]=received
+        frame=np.frombuffer(raw,np.uint8,h*w*3,len(raw)-h*w*3).reshape(h,w,3)
+        if self.async_processing:self.enqueue_image('frame',(frame,encoding,header))
+        else:self.process_frame(frame,encoding,header)
+
+    def process_frame(self,frame,encoding,header):
+        begin=time.perf_counter_ns()
+        try:self.process(cv2.cvtColor(frame,cv2.COLOR_RGB2BGR) if encoding=='rgb8' else frame,header)
+        except (ValueError,cv2.error) as exc:
+            self.dropped+=1
+            self.get_logger().error(str(exc),throttle_duration_sec=5)
+        finally:
+            if self.performance_path:self.performance_rows.append(dict(stamp=seconds(header.stamp),receive_ns=self.received.pop((header.stamp.sec,header.stamp.nanosec),None),
+                                                                    arrival_ns=begin,finish_ns=time.perf_counter_ns(),phases=getattr(self,'last_phases',{})))
 
     def process_image(self, msg):
         begin=time.perf_counter_ns()
@@ -220,7 +279,8 @@ class RoadNode(Node):
             self.dropped += 1
             self.get_logger().error(str(exc), throttle_duration_sec=5)
         finally:
-            if self.performance_path:self.performance_rows.append(dict(stamp=seconds(msg.header.stamp),arrival_ns=begin,finish_ns=time.perf_counter_ns(),phases=getattr(self,'last_phases',{})))
+            if self.performance_path:self.performance_rows.append(dict(stamp=seconds(msg.header.stamp),receive_ns=self.received.pop((msg.header.stamp.sec,msg.header.stamp.nanosec),None),
+                                                                    arrival_ns=begin,finish_ns=time.perf_counter_ns(),phases=getattr(self,'last_phases',{})))
 
     def display_points(self,points):
         if self.display_error<=0 or len(points)<3:return points
@@ -229,7 +289,11 @@ class RoadNode(Node):
     def save_performance(self):
         if self.performance_path:
             path=Path(self.performance_path);path.parent.mkdir(parents=True,exist_ok=True)
-            path.write_text(json.dumps(dict(frames=len(self.performance_rows),records=self.performance_rows),separators=(',',':')))
+            # Images received but never processed (dropped from the job queue) keep only their receive time.
+            unprocessed=[dict(stamp=a+b*1e-9,receive_ns=v) for (a,b),v in self.received.items()]
+            for row in self.performance_rows:
+                ns=round(row['stamp']*1e9);row.update(self.output_rows.get((ns//1000000000,ns%1000000000),{}))
+            path.write_text(json.dumps(dict(frames=len(self.performance_rows),records=self.performance_rows,unprocessed=unprocessed),separators=(',',':')))
 
     def process(self, frame, header):
         phase_start=time.perf_counter_ns()
@@ -265,48 +329,50 @@ class RoadNode(Node):
             lanes, binary = self.detector.process(bev, valid, t, pose)
             markings=self.extras.after(self.detector,bev,valid,pose) if self.extras is not None else []
             phase('detector')
+        job=(frame,header,t,pose,lanes,self.detector.boundary_lanes,binary,bev,markings)
+        if self.output_jobs is not None:
+            # The next frame's detection overlaps these outputs; frames stay in order and none is skipped.
+            self.output_jobs.put(job);phase('handoff')
+        else:self.publish_outputs(*job,phase)
+
+    def output_loop(self):
+        while not self.worker_stop.is_set() or not self.output_jobs.empty():
+            try:job=self.output_jobs.get(timeout=.05)
+            except queue.Empty:continue
+            start=time.perf_counter_ns();phases={};mark=[start]
+            def phase(name):
+                now=time.perf_counter_ns();phases[name]=(now-mark[0])/1e6;mark[0]=now
+            try:
+                with self.output_lock:self.publish_outputs(*job,phase)
+            except Exception as exc:self.get_logger().error('Lane outputs: '+str(exc),throttle_duration_sec=5)
+            if self.performance_path:
+                stamp=job[1].stamp;self.output_rows[(stamp.sec,stamp.nanosec)]=dict(output_start_ns=start,output_finish_ns=time.perf_counter_ns(),output_phases=phases)
+
+    def publish_outputs(self,frame,header,t,pose,lanes,boundary_lanes,binary,bev,markings,phase):
         display_lanes=[replace(lane,points=self.display_points(lane.points)) for lane in lanes]
-        self.local_pub.publish(self.array(display_lanes, header.stamp, self.base_frame, pose))
-        self.publish_styles(lanes, header.stamp)
-        phase('segments_styles')
-        boundaries=[replace(lane,points=self.display_points(lane.points)) for lane in self.detector.boundary_lanes]
-        self.paint_marker_pub.publish(self.markers(display_lanes,header.stamp,'observed_paint'))
+        boundaries=[replace(lane,points=self.display_points(lane.points)) for lane in boundary_lanes]
+        style_msg=self.style_message(lanes,header.stamp)
+        # What the HUD draws goes out first: the display line when the filter runs here (fed the same
+        # lanes as the markers below carry), then paint, styles and boundaries; segments and markings after.
+        if self.display_stage is not None:
+            self.display_stage.on_styles(style_msg)
+            shown=self.display_stage.on_lanes(header.stamp,[(l.side,l.points,l.reprojected) for l in boundaries if len(l.points)>=2],
+                                              [(l.side,l.points) for l in display_lanes if not l.reprojected and len(l.points)>=2],self.pose_at)
+            if shown is not None:self.display_pub.publish(shown[0]);self.display_style_pub.publish(shown[1])
+            phase('display_filter')
+        self.paint_marker_pub.publish(self.markers(display_lanes,header.stamp,'observed_paint'));self.style_pub.publish(style_msg)
         self.boundary_marker_pub.publish(self.markers(boundaries,header.stamp,'boundary_fit'))
-        self.marking_pub.publish(self.road_marking_markers(markings,header.stamp))
         phase('markers')
+        self.local_pub.publish(self.array(display_lanes, header.stamp, self.base_frame, pose))
+        self.marking_pub.publish(self.road_marking_markers(markings,header.stamp))
+        phase('segments_markings')
         if self.debug and (self.debug_hz==0 or t-self.last_debug>=1/self.debug_hz-1e-8):
             self.last_debug=t
-            scale=min(1.,self.overlay_max_width/frame.shape[1]) if self.overlay_max_width else 1.
-            overlay=cv2.resize(frame,(round(frame.shape[1]*scale),round(frame.shape[0]*scale))) if scale<1 else frame.copy()
-            label_candidates={}
-            for lane_index,lane in enumerate(boundaries+display_lanes):
-                pixels, visible = self.projector.image_points(lane.points)
-                pixels*=scale
-                safe=visible & np.isfinite(pixels).all(axis=1) & (np.max(np.abs(pixels),axis=1)<1e6)
-                color=(255,220,0) if lane_index<len(boundaries) else ((0,255,255) if lane.reprojected else (0,255,0))
-                if np.all(safe):cv2.polylines(overlay,[np.rint(pixels).astype(np.int32)],False,color,3)
-                else:
-                    edges=np.flatnonzero(np.r_[True,np.diff(safe.astype(int))!=0,True])
-                    for lo,hi in zip(edges[:-1],edges[1:]):
-                        if safe[lo] and hi-lo>=2:cv2.polylines(overlay,[np.rint(pixels[lo:hi]).astype(np.int32)],False,color,3)
-                if lane_index<len(boundaries):continue
-                if lane.side not in label_candidates or np.ptp(lane.points[:,0])>np.ptp(label_candidates[lane.side][0].points[:,0]):label_candidates[lane.side]=(lane,pixels)
-            for lane,pixels in label_candidates.values():draw_style_label(overlay,lane,pixels)
-            for mark in markings:
-                outline=mark['points'] if mark['kind']=='stop_line' else np.vstack([mark['points'],mark['points'][:1]])
-                dense=np.vstack([np.linspace(a,b,8) for a,b in zip(outline[:-1],outline[1:])])
-                pixels,visible=self.projector.image_points(dense);pixels*=scale
-                if visible.sum()>=2:
-                    color=MARKING_COLORS[mark['kind']]
-                    cv2.polylines(overlay,[np.rint(pixels[visible]).astype(np.int32)],False,color,4 if mark['kind']=='stop_line' else 2)
-            out = self.bridge.cv2_to_imgmsg(overlay, 'bgr8'); out.header = header; self.overlay_pub.publish(out)
-            phase('overlay')
-            self.publish_image(self.binary_pub, binary, header.stamp, 'mono8')
-            c = self.detector.c
-            for lane in display_lanes:
-                pts = np.column_stack([(-lane.points[:, 1]-c.lateral_min)/c.mpp, (c.forward_max-lane.points[:, 0])/c.mpp]).astype('int32')
-                cv2.polylines(bev, [pts], False, (0,255,255) if lane.reprojected else (0,255,0), 2)
-            self.publish_image(self.bev_pub, bev, header.stamp, 'bgr8')
+            if self.debug_jobs is not None:
+                # Drawing waits for the next frame's lanes otherwise; a busy drawer skips this one.
+                try:self.debug_jobs.put_nowait((frame,header,boundaries,display_lanes,markings,binary,bev))
+                except queue.Full:pass
+            else:self.draw_debug(frame,header,boundaries,display_lanes,markings,binary,bev,phase)
         phase('bev_debug')
         if not self.map_enabled:
             self.flush();return
@@ -314,6 +380,46 @@ class RoadNode(Node):
             self.pending.popleft(); self.dropped += 1
         self.pending.append((t, time.monotonic(), header.stamp, lanes))
         self.flush()
+
+    def debug_loop(self):
+        while not self.worker_stop.is_set():
+            try:job=self.debug_jobs.get(timeout=.1)
+            except queue.Empty:continue
+            try:self.draw_debug(*job,lambda name:None)
+            except Exception as exc:self.get_logger().error('Debug images: '+str(exc),throttle_duration_sec=5)
+
+    def draw_debug(self,frame,header,boundaries,display_lanes,markings,binary,bev,phase):
+        scale=min(1.,self.overlay_max_width/frame.shape[1]) if self.overlay_max_width else 1.
+        overlay=cv2.resize(frame,(round(frame.shape[1]*scale),round(frame.shape[0]*scale))) if scale<1 else frame.copy()
+        label_candidates={}
+        for lane_index,lane in enumerate(boundaries+display_lanes):
+            pixels, visible = self.projector.image_points(lane.points)
+            pixels*=scale
+            safe=visible & np.isfinite(pixels).all(axis=1) & (np.max(np.abs(pixels),axis=1)<1e6)
+            color=(255,220,0) if lane_index<len(boundaries) else ((0,255,255) if lane.reprojected else (0,255,0))
+            if np.all(safe):cv2.polylines(overlay,[np.rint(pixels).astype(np.int32)],False,color,3)
+            else:
+                edges=np.flatnonzero(np.r_[True,np.diff(safe.astype(int))!=0,True])
+                for lo,hi in zip(edges[:-1],edges[1:]):
+                    if safe[lo] and hi-lo>=2:cv2.polylines(overlay,[np.rint(pixels[lo:hi]).astype(np.int32)],False,color,3)
+            if lane_index<len(boundaries):continue
+            if lane.side not in label_candidates or np.ptp(lane.points[:,0])>np.ptp(label_candidates[lane.side][0].points[:,0]):label_candidates[lane.side]=(lane,pixels)
+        for lane,pixels in label_candidates.values():draw_style_label(overlay,lane,pixels)
+        for mark in markings:
+            outline=mark['points'] if mark['kind']=='stop_line' else np.vstack([mark['points'],mark['points'][:1]])
+            dense=np.vstack([np.linspace(a,b,8) for a,b in zip(outline[:-1],outline[1:])])
+            pixels,visible=self.projector.image_points(dense);pixels*=scale
+            if visible.sum()>=2:
+                color=MARKING_COLORS[mark['kind']]
+                cv2.polylines(overlay,[np.rint(pixels[visible]).astype(np.int32)],False,color,4 if mark['kind']=='stop_line' else 2)
+        out = self.bridge.cv2_to_imgmsg(overlay, 'bgr8'); out.header = header; self.overlay_pub.publish(out)
+        phase('overlay')
+        self.publish_image(self.binary_pub, binary, header.stamp, 'mono8')
+        c = self.detector.c
+        for lane in display_lanes:
+            pts = np.column_stack([(-lane.points[:, 1]-c.lateral_min)/c.mpp, (c.forward_max-lane.points[:, 0])/c.mpp]).astype('int32')
+            cv2.polylines(bev, [pts], False, (0,255,255) if lane.reprojected else (0,255,0), 2)
+        self.publish_image(self.bev_pub, bev, header.stamp, 'bgr8')
 
     def flush(self):
         while self.pending:
@@ -401,6 +507,9 @@ class RoadNode(Node):
         return msg
 
     def publish_styles(self,lanes,stamp):
+        self.style_pub.publish(self.style_message(lanes,stamp))
+
+    def style_message(self,lanes,stamp):
         msg=LaneStyleArray();msg.header=Header(stamp=stamp,frame_id=self.base_frame);msg.camera_id='front'
         kinds={'unknown':LaneStyle.UNKNOWN,'solid':LaneStyle.SOLID,'dashed':LaneStyle.DASHED}
         unique={}
@@ -416,7 +525,7 @@ class RoadNode(Node):
             ns=round(lane.style_source_time*1e9)
             style.style_source_stamp=type(stamp)(sec=ns//1000000000,nanosec=ns%1000000000)
             msg.lanes.append(style)
-        self.style_pub.publish(msg)
+        return msg
 
     def publish_image(self, pub, image, stamp, encoding):
         msg = self.bridge.cv2_to_imgmsg(image, encoding)

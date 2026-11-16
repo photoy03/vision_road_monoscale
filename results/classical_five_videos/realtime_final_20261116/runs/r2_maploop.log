@@ -1,0 +1,7 @@
+[WARN] [1794841190.917327660] [rcl]: Found remap rule 'display_filter_inline:=true'. This syntax is deprecated. Use '--ros-args --remap display_filter_inline:=true' instead.
+Traceback (most recent call last):
+  File "/home/jaehun/Desktop/vision-road/tools/realtime_eval.py", line 138, in <module>
+    if __name__=='__main__':main()
+  File "/home/jaehun/Desktop/vision-road/tools/realtime_eval.py", line 65, in main
+    if not node.count_publishers('/road/lane_display_markers'):raise RuntimeError('lane_display_filter did not start')
+RuntimeError: lane_display_filter did not start

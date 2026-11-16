@@ -1,0 +1,23 @@
+[INFO] [launch]: All log files can be found below /home/jaehun/.ros/log/2026-11-17-00-08-59-306846-ros-49888
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [road_node-1]: process started with pid [49904]
+[INFO] [lane_display_filter-2]: process started with pid [49906]
+[INFO] [reference_pose-3]: process started with pid [49908]
+[INFO] [static_transform_publisher-4]: process started with pid [49910]
+[static_transform_publisher-4] [INFO] [1794841739.372675638] [static_transform_publisher_YQucqZWKA4k2TMr2]: Spinning until stopped - publishing transform
+[static_transform_publisher-4] translation: ('2.200000', '0.000000', '1.400000')
+[static_transform_publisher-4] rotation: ('-0.500000', '0.500000', '-0.500000', '0.500000')
+[static_transform_publisher-4] from 'base_link' to 'dashcam_optical_link'
+[reference_pose-3] [WARN] [1794841739.652936607] [maploop_reference_pose]: Evaluation reference from CARLA truth; this is not estimated odometry
+[road_node-1] [INFO] [1794841739.810347464] [vision_road]: Learned lane mask: off
+[road_node-1] [INFO] [1794841740.053268492] [vision_road]: Road detector ready: carla; image processing only, no learned model
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[INFO] [static_transform_publisher-4]: sending signal 'SIGINT' to process[static_transform_publisher-4]
+[INFO] [reference_pose-3]: sending signal 'SIGINT' to process[reference_pose-3]
+[INFO] [lane_display_filter-2]: sending signal 'SIGINT' to process[lane_display_filter-2]
+[INFO] [road_node-1]: sending signal 'SIGINT' to process[road_node-1]
+[static_transform_publisher-4] [INFO] [1794841768.882633110] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[INFO] [static_transform_publisher-4]: process has finished cleanly [pid 49910]
+[INFO] [reference_pose-3]: process has finished cleanly [pid 49908]
+[INFO] [lane_display_filter-2]: process has finished cleanly [pid 49906]
+[INFO] [road_node-1]: process has finished cleanly [pid 49904]

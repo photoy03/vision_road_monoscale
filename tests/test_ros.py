@@ -97,3 +97,44 @@ def test_display_simplification_bounds_error_and_preserves_fragment_ends():
     fraction=np.clip(np.sum(delta*direction,axis=2)/np.sum(direction*direction,axis=1),0,1)
     distance=np.linalg.norm(delta-fraction[:,:,None]*direction[None,:,:],axis=2)
     assert np.max(np.min(distance,axis=1))<=.010001
+
+
+def test_realtime_path_raw_image_inline_display_and_output_thread(tmp_path):
+    """carla.yaml's real-time settings: the serialized image is read in place, the display filter runs inline
+    and outputs go out on their own thread; the HUD topic carries each frame's stamp in order."""
+    report=tmp_path/'timing.json'
+    rclpy.init(args=['--ros-args','-p','detector_backend:=carla','-p','raw_image_cdr:=true','-p','display_filter_inline:=true',
+                     '-p','output_thread:=true','-p','debug_thread:=true','-p','image_job_depth:=1','-p','async_processing:=true',
+                     '-p','image_topic:=/test/image_raw','-p','image_reliability:=reliable','-p','carla_chain_confirm_frames:=1',
+                     '-p','performance_report:='+str(report)])
+    road=RoadNode();reader=Node('road_realtime_reader');executor=SingleThreadedExecutor()
+    executor.add_node(road);executor.add_node(reader)
+    from sensor_msgs.msg import Image
+    from cv_bridge import CvBridge
+    shown,boundaries=[],[]
+    reader.create_subscription(MarkerArray,'/road/lane_display_markers',shown.append,10)
+    reader.create_subscription(MarkerArray,'/road/lane_boundary_markers',boundaries.append,10)
+    images=reader.create_publisher(Image,'/test/image_raw',10)
+    def pump(duration):
+        until=time.monotonic()+duration
+        while time.monotonic()<until:executor.spin_once(timeout_sec=.01)
+    try:
+        assert road.display_stage is not None and road.raw_cdr and road.output_jobs is not None
+        frame=cv2.imread(str(Path(__file__).resolve().parents[1]/'artifacts/synthetic_camera.png'));pump(.5)
+        stamps=[]
+        for k in range(10):
+            t=20.+k*.1;msg=Odometry();msg.header=Header(stamp=Time(sec=int(t),nanosec=round((t-int(t))*1e9)),frame_id='map')
+            msg.pose.pose.orientation.w=1.;msg.pose.pose.position.x=2.+k*.5;road.on_odom(msg)
+            image=CvBridge().cv2_to_imgmsg(frame,'bgr8');image.header=Header(stamp=msg.header.stamp,frame_id='camera')
+            images.publish(image);stamps.append((image.header.stamp.sec,image.header.stamp.nanosec));pump(.25)
+        pump(.5)
+        got=[(m.markers[0].header.stamp.sec,m.markers[0].header.stamp.nanosec) for m in shown]
+        assert got==sorted(got) and set(got)<=set(stamps) and len(got)>=8  # in order; at most a frame or two dropped
+        assert any(m.ns.startswith('display/') for msg in shown[-3:] for m in msg.markers)  # the line is drawn
+        assert len(boundaries)==len(shown)
+    finally:
+        road.stop_processing();road.save_performance()
+        executor.shutdown();road.destroy_node();reader.destroy_node();rclpy.shutdown()
+    rows=__import__('json').loads(report.read_text())['records']
+    assert rows and all(r['receive_ns'] is not None and r['receive_ns']<=r['arrival_ns'] for r in rows)
+    assert all('output_finish_ns' in r for r in rows)

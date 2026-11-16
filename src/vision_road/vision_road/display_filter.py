@@ -12,7 +12,7 @@ The detector topics are left untouched.
 """
 import math
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 
 import numpy as np
 
@@ -303,15 +303,93 @@ class DisplayFilter:
         return out
 
 
+class DisplayStage:
+    """The display filter on ROS messages, without a node: road_node can run it inline (display_filter_inline)
+    and the lane_display_filter node wraps it.  Inputs are road_node's own topics; on_boundaries returns the
+    /road/lane_display_markers and /road/lane_display_styles messages for the boundary message's stamp."""
+
+    def __init__(self,settings,frame='base_link'):
+        from vision_lane_interfaces.msg import LaneStyle
+        self.filter=DisplayFilter(settings);self.frame=frame;self.paint=None;self.last_pose=None
+        self.names={LaneStyle.SOLID:'solid',LaneStyle.DASHED:'dashed'};self.kinds={v:k for k,v in self.names.items()}
+
+    def on_paint(self,msg):
+        from visualization_msgs.msg import Marker
+        lines=[];stamp=None
+        for m in msg.markers:
+            if m.action!=Marker.ADD or m.type!=Marker.LINE_STRIP or len(m.points)<2 or m.color.r>.5:continue
+            side='left' if m.ns.endswith('/left') else 'right' if m.ns.endswith('/right') else None
+            if side is None:continue
+            stamp=m.header.stamp;lines.append((side,[(p.x,p.y) for p in m.points]))
+        if msg.markers:stamp=msg.markers[0].header.stamp
+        if stamp is not None:self.paint=(stamp.sec+stamp.nanosec*1e-9,lines)
+
+    def on_styles(self,msg):
+        t=msg.header.stamp.sec+msg.header.stamp.nanosec*1e-9
+        for lane in msg.lanes:
+            if not lane.reprojected:self.filter.update_style(t,lane.side,self.names.get(lane.style),lane.confidence)
+
+    def on_boundaries(self,msg,pose_at):
+        """pose_at(t): the vehicle pose (x, y, yaw) at a stamp, or None.  Returns (markers, styles) or None."""
+        from visualization_msgs.msg import Marker
+        lines=[]
+        for m in msg.markers:
+            if m.action!=Marker.ADD or m.type!=Marker.LINE_STRIP or len(m.points)<2:continue
+            side='left' if m.ns.endswith('/left') else 'right' if m.ns.endswith('/right') else None
+            if side is None:continue
+            lines.append((side,[(p.x,p.y) for p in m.points],m.color.r>.5))
+        header=msg.markers[0].header if msg.markers else None
+        if header is None:return None
+        return self.update(header.stamp,lines,pose_at)
+
+    def on_lanes(self,stamp,boundaries,paint,pose_at):
+        """The same from lanes, without messages (road_node inline): boundaries [(side, points, predicted)],
+        paint [(side, points)] observed fragments of this frame."""
+        self.paint=(stamp.sec+stamp.nanosec*1e-9,paint)
+        return self.update(stamp,boundaries,pose_at)
+
+    def update(self,stamp,lines,pose_at):
+        from std_msgs.msg import Header
+        from geometry_msgs.msg import Point
+        from visualization_msgs.msg import Marker, MarkerArray
+        from vision_lane_interfaces.msg import LaneStyle, LaneStyleArray
+        t=stamp.sec+stamp.nanosec*1e-9
+        if self.filter.restarted(t):self.last_pose=None
+        pose=pose_at(t);motion=None
+        if pose is not None:
+            if self.last_pose is not None and t>self.last_pose[0]:motion=relative(self.last_pose[1],pose)
+            elif self.last_pose is None:motion=(0.,0.,0.)
+            self.last_pose=(t,pose)
+        paint=self.paint[1] if self.paint is not None and abs(self.paint[0]-t)<1e-6 else None
+        self.filter.update(t,lines,motion,paint)
+        out=MarkerArray();head=Header(stamp=stamp,frame_id=self.frame)
+        clear=Marker();clear.header=head;clear.action=Marker.DELETEALL;out.markers.append(clear)
+        styles=LaneStyleArray();styles.header=head;styles.camera_id='front'
+        for ident,(side,points,predicted,style) in enumerate(self.filter.output()):
+            m=Marker();m.header=head;m.ns='display/'+side;m.id=ident;m.type=Marker.LINE_STRIP;m.action=Marker.ADD
+            m.pose.orientation.w=1.;m.scale.x=.05;m.color.a=.9;m.color.g=1.;m.color.b=1.;m.color.r=1. if predicted else 0.
+            m.lifetime.nanosec=300000000
+            m.points=[Point(x=float(x),y=float(y),z=.02) for x,y in points];out.markers.append(m)
+            if style is not None:
+                lane=LaneStyle();lane.side=side;lane.style=self.kinds[style];lane.confidence=1.
+                lane.reprojected=False;lane.source_stamp=stamp;lane.style_source_stamp=stamp
+                styles.lanes.append(lane)
+        return out,styles
+
+
+def settings_from(values):
+    """FilterSettings from a parameter dict (unknown keys ignored), e.g. carla.yaml's lane_display_filter section."""
+    names={f.name for f in fields(FilterSettings)}
+    return FilterSettings(**{k:v for k,v in values.items() if k in names})
+
+
 def main():
     import rclpy
     from rclpy.node import Node
-    from std_msgs.msg import Header
-    from geometry_msgs.msg import Point
-    from visualization_msgs.msg import Marker, MarkerArray
+    from visualization_msgs.msg import MarkerArray
     from nav_msgs.msg import Odometry
     from rclpy.qos import QoSProfile, ReliabilityPolicy
-    from vision_lane_interfaces.msg import LaneStyle, LaneStyleArray
+    from vision_lane_interfaces.msg import LaneStyleArray
     from .core import Timeline
 
     class LaneDisplayFilter(Node):
@@ -319,18 +397,15 @@ def main():
             super().__init__('lane_display_filter')
             defaults=FilterSettings()
             values={k:self.declare_parameter(k,v).value for k,v in vars(defaults).items()}
-            self.filter=DisplayFilter(FilterSettings(**values))
-            self.frame=self.declare_parameter('base_frame','base_link').value
-            names={LaneStyle.SOLID:'solid',LaneStyle.DASHED:'dashed'}
-            self.kinds={v:k for k,v in names.items()};self.names=names
+            self.stage=DisplayStage(FilterSettings(**values),self.declare_parameter('base_frame','base_link').value)
+            self.filter=self.stage.filter
             self.marker_pub=self.create_publisher(MarkerArray,self.declare_parameter('output_topic','/road/lane_display_markers').value,10)
             self.style_pub=self.create_publisher(LaneStyleArray,self.declare_parameter('style_output_topic','/road/lane_display_styles').value,10)
             self.create_subscription(MarkerArray,self.declare_parameter('boundary_topic','/road/lane_boundary_markers').value,self.on_boundaries,10)
-            self.create_subscription(LaneStyleArray,self.declare_parameter('style_topic','/road/lane_styles').value,self.on_styles,10)
+            self.create_subscription(LaneStyleArray,self.declare_parameter('style_topic','/road/lane_styles').value,self.stage.on_styles,10)
             # Observed paint of the same frame (road_node publishes it just before the boundaries).
-            self.paint=None
-            self.create_subscription(MarkerArray,self.declare_parameter('paint_topic','/road/lane_markers').value,self.on_paint,10)
-            self.timeline=Timeline(.25);self.last_pose=None
+            self.create_subscription(MarkerArray,self.declare_parameter('paint_topic','/road/lane_markers').value,self.stage.on_paint,10)
+            self.timeline=Timeline(.25)
             self.create_subscription(Odometry,self.declare_parameter('odom_topic','/road/reference_odom').value,self.on_odom,
                                      QoSProfile(depth=200,reliability=ReliabilityPolicy.BEST_EFFORT))
 
@@ -339,52 +414,9 @@ def main():
             yaw=math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z))
             self.timeline.add(msg.header.stamp.sec+msg.header.stamp.nanosec*1e-9,msg.pose.pose.position.x,msg.pose.pose.position.y,yaw)
 
-        def on_paint(self,msg):
-            lines=[];stamp=None
-            for m in msg.markers:
-                if m.action!=Marker.ADD or m.type!=Marker.LINE_STRIP or len(m.points)<2 or m.color.r>.5:continue
-                side='left' if m.ns.endswith('/left') else 'right' if m.ns.endswith('/right') else None
-                if side is None:continue
-                stamp=m.header.stamp;lines.append((side,[(p.x,p.y) for p in m.points]))
-            if msg.markers:stamp=msg.markers[0].header.stamp
-            if stamp is not None:self.paint=(stamp.sec+stamp.nanosec*1e-9,lines)
-
-        def on_styles(self,msg):
-            t=msg.header.stamp.sec+msg.header.stamp.nanosec*1e-9
-            for lane in msg.lanes:
-                if not lane.reprojected:self.filter.update_style(t,lane.side,self.names.get(lane.style),lane.confidence)
-
         def on_boundaries(self,msg):
-            lines=[]
-            for m in msg.markers:
-                if m.action!=Marker.ADD or m.type!=Marker.LINE_STRIP or len(m.points)<2:continue
-                side='left' if m.ns.endswith('/left') else 'right' if m.ns.endswith('/right') else None
-                if side is None:continue
-                lines.append((side,[(p.x,p.y) for p in m.points],m.color.r>.5))
-            header=msg.markers[0].header if msg.markers else None
-            if header is None:return
-            stamp=header.stamp;t=stamp.sec+stamp.nanosec*1e-9
-            if self.filter.restarted(t):self.last_pose=None
-            pose=self.timeline.at(t);motion=None
-            if pose is not None:
-                if self.last_pose is not None and t>self.last_pose[0]:motion=relative(self.last_pose[1],pose)
-                elif self.last_pose is None:motion=(0.,0.,0.)
-                self.last_pose=(t,pose)
-            paint=self.paint[1] if self.paint is not None and abs(self.paint[0]-t)<1e-6 else None
-            self.filter.update(t,lines,motion,paint)
-            out=MarkerArray();head=Header(stamp=stamp,frame_id=self.frame)
-            clear=Marker();clear.header=head;clear.action=Marker.DELETEALL;out.markers.append(clear)
-            styles=LaneStyleArray();styles.header=head;styles.camera_id='front'
-            for ident,(side,points,predicted,style) in enumerate(self.filter.output()):
-                m=Marker();m.header=head;m.ns='display/'+side;m.id=ident;m.type=Marker.LINE_STRIP;m.action=Marker.ADD
-                m.pose.orientation.w=1.;m.scale.x=.05;m.color.a=.9;m.color.g=1.;m.color.b=1.;m.color.r=1. if predicted else 0.
-                m.lifetime.nanosec=300000000
-                m.points=[Point(x=float(x),y=float(y),z=.02) for x,y in points];out.markers.append(m)
-                if style is not None:
-                    lane=LaneStyle();lane.side=side;lane.style=self.kinds[style];lane.confidence=1.
-                    lane.reprojected=False;lane.source_stamp=stamp;lane.style_source_stamp=stamp
-                    styles.lanes.append(lane)
-            self.marker_pub.publish(out);self.style_pub.publish(styles)
+            result=self.stage.on_boundaries(msg,self.timeline.at)
+            if result is not None:self.marker_pub.publish(result[0]);self.style_pub.publish(result[1])
 
     rclpy.init();node=LaneDisplayFilter()
     try:rclpy.spin(node)

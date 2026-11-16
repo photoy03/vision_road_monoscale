@@ -1,0 +1,51 @@
+{"video": "town05", "frames": 1808, "processed_ratio": 1.0, "display_received": 1808, "latency_drift_ms_last_vs_first_tenth": -1.69, "display_gaps_over_100ms": 0}
+{
+ "publish_to_display": {
+  "n": 1808,
+  "mean": 36.81,
+  "median": 36.02,
+  "p95": 55.74,
+  "p99": 60.76,
+  "max": 67.78
+ },
+ "publish_to_receive": {
+  "n": 1808,
+  "mean": 6.23,
+  "median": 6.02,
+  "p95": 7.58,
+  "p99": 10.38,
+  "max": 28.97
+ },
+ "receive_to_start": {
+  "n": 1808,
+  "mean": 1.43,
+  "median": 0.42,
+  "p95": 6.93,
+  "p99": 12.49,
+  "max": 23.06
+ },
+ "start_to_finish": {
+  "n": 1808,
+  "mean": 23.37,
+  "median": 23.5,
+  "p95": 35.92,
+  "p99": 38.59,
+  "max": 52.43
+ },
+ "finish_to_boundary": {
+  "n": 1808,
+  "mean": 2.41,
+  "median": 2.69,
+  "p95": 5.56,
+  "p99": 7.61,
+  "max": 17.28
+ },
+ "boundary_to_display": {
+  "n": 1808,
+  "mean": 3.39,
+  "median": 3.46,
+  "p95": 5.9,
+  "p99": 7.93,
+  "max": 20.31
+ }
+}

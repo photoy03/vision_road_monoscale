@@ -3,7 +3,8 @@ from dataclasses import dataclass, replace
 import math
 import cv2
 import numpy as np
-from .core import Detector, Lane, to_world
+from numpy.core.multiarray import interp  # np.interp without its Python wrapper (hundreds of calls per frame)
+from .core import Detector, Lane, to_world, median
 from .marking_style import classify_lane
 try:
     from . import _native
@@ -49,7 +50,7 @@ class TemporalDetector:
             if bound is None:continue
             p=bound.points[np.argsort(bound.points[:,0])];x=np.arange(max(c.forward_min,p[0,0]),min(20.,p[-1,0]),cell)
             if len(x)<2:continue
-            y=np.interp(x,p[:,0],p[:,1]);cols=np.rint((-y-c.lateral_min)/c.mpp).astype(int);rows=np.rint((c.forward_max-x)/c.mpp).astype(int)
+            y=interp(x,p[:,0],p[:,1]);cols=np.rint((-y-c.lateral_min)/c.mpp).astype(int);rows=np.rint((c.forward_max-x)/c.mpp).astype(int)
             inside=(rows>=0)&(rows<height)&(cols>=w)&(cols<width-w)
             rr=np.clip(rows,0,height-1);cc=np.clip(cols[:,None]+np.arange(-w,w+1),0,width-1)
             seen=inside&np.all(valid[rr[:,None],cc]>0,axis=1);paint=inside&np.any(binary[rr[:,None],cc]>0,axis=1)
@@ -122,7 +123,7 @@ class TemporalDetector:
         if not (.98<scale<1.02) or abs(angle)>math.radians(5) or distance>c.temporal_max_distance_m: return None,0.
         # An affine model is only accepted if it explains held-out residuals too.
         residual=np.linalg.norm(a @ matrix[:,:2].T+matrix[:,2]-b,axis=1)
-        if np.median(residual)>1.2: return None,0.
+        if median(residual)>1.2: return None,0.
         self.registration='optical_flow'
         return matrix,distance
 
@@ -161,7 +162,7 @@ class TemporalDetector:
                     lo=max(a[0,0],b[0,0]);hi=min(a[-1,0],b[-1,0])
                     if hi-lo<.20:continue
                     f=np.linspace(lo,hi,8)
-                    error=float(np.median(np.abs(np.interp(f,a[:,0],a[:,1])-np.interp(f,b[:,0],b[:,1]))))
+                    error=float(median(np.abs(interp(f,a[:,0],a[:,1])-interp(f,b[:,0],b[:,1]))))
                     if error<min(.22,self.c.temporal_match_m):pairs.append((error,i,key))
             assigned=set();used=set()
             for _,i,key in sorted(pairs):
@@ -191,14 +192,14 @@ class TemporalDetector:
                 lo=max(points[0,0],prior[0,0]);hi=min(points[-1,0],prior[-1,0])
                 if hi-lo>=.6:
                     sample=np.linspace(lo,min(hi,lo+8.),20)
-                    error=np.median(np.abs(np.interp(sample,points[:,0],points[:,1])-np.interp(sample,prior[:,0],prior[:,1])))
+                    error=median(np.abs(interp(sample,points[:,0],points[:,1])-interp(sample,prior[:,0],prior[:,1])))
                     if error<=(.30 if matrix is not None else .60):
                         hits=old_hits+1
                         if matrix is not None:
                             # Blend at sample positions, not polynomial terms;
                             # a mismatch above resets the memory instead.
                             overlap=(points[:,0]>=lo)&(points[:,0]<=hi)
-                            points[overlap,1]=alpha*points[overlap,1]+(1-alpha)*np.interp(points[overlap,0],prior[:,0],prior[:,1])
+                            points[overlap,1]=alpha*points[overlap,1]+(1-alpha)*interp(points[overlap,0],prior[:,0],prior[:,1])
             current[candidate.side]=(points,hits,float(t))
             if hits>=self.c.carla_chain_confirm_frames:
                 self.boundary_lanes.append(replace(candidate,points=points,hits=hits,source_time=float(t)))
@@ -283,7 +284,8 @@ class TemporalDetector:
             history.append((float(t),style_binary.copy()))
             self.paint_history=history[-c.style_history_frames:]
             if len(self.paint_history)>=2:
-                votes=np.sum([m>0 for _,m in self.paint_history],axis=0)
+                votes=np.zeros(valid.shape,np.uint8)
+                for _,m in self.paint_history:votes=cv2.add(votes,(m>0).view(np.uint8))
                 style_binary=((votes>=2)&(valid>0)).astype('uint8')*255
         self.style_binary=style_binary
         result=[]; tracks={};style_cache={}
@@ -295,13 +297,13 @@ class TemporalDetector:
                 a=lane.points; b=old.lane.points
                 lo=max(a[0,0],b[0,0]); hi=min(a[-1,0],b[-1,0])
                 sample=np.linspace(lo,hi,12) if hi>lo else []
-                error=np.median(np.abs(np.interp(sample,a[:,0],a[:,1])-np.interp(sample,b[:,0],b[:,1]))) if len(sample) else math.inf
+                error=median(np.abs(interp(sample,a[:,0],a[:,1])-interp(sample,b[:,0],b[:,1]))) if len(sample) else math.inf
                 if error<c.temporal_match_m:
                     matched=True
                     lane.hits=min(65535,old.lane.hits+1)
                     overlap=(a[:,0]>=lo)&(a[:,0]<=hi)
                     weight=.95 if getattr(self.detector,'fragment_tracks',False) else .75
-                    lane.points[overlap,1]=weight*a[overlap,1]+(1-weight)*np.interp(a[overlap,0],b[:,0],b[:,1])
+                    lane.points[overlap,1]=weight*a[overlap,1]+(1-weight)*interp(a[overlap,0],b[:,0],b[:,1])
             lane.source_time=float(t)
             style_lane=getattr(self.detector,'style_lanes',{}).get(lane.side,lane)
             cache_key=lane.side if getattr(self.detector,'fragment_tracks',False) else key
@@ -363,7 +365,7 @@ class TemporalDetector:
                 p=lane.points;b=boundary.points
                 inside=(p[:,0]>=b[0,0])&(p[:,0]<=b[-1,0])
                 if np.count_nonzero(inside)<3:continue
-                error=np.median(np.abs(p[inside,1]-np.interp(p[inside,0],b[:,0],b[:,1])))
+                error=median(np.abs(p[inside,1]-interp(p[inside,0],b[:,0],b[:,1])))
                 band=corridors.get(lane.side,c.carla_chain_band_m)
                 if error<=band:
                     filtered.append(lane)

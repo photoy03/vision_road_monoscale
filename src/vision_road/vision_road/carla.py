@@ -7,7 +7,8 @@ import math
 import statistics
 import cv2
 import numpy as np
-from .core import Detector, Lane
+from numpy.core.multiarray import interp  # np.interp without its Python wrapper (hundreds of calls per frame)
+from .core import Detector, Lane, median
 from .path_tracking import PathTracking,continuity_error,path_points
 try:
     from . import _native
@@ -87,13 +88,14 @@ class CarlaDetector(Detector):
         # subsequent geometry uses this same response rather than a second
         # incompatible absolute-white threshold.
         smooth=cv2.blur(gray,(3,3))
-        for width in (.10,.16,.24,.34):
-            radius=max(2,round((width/2+.07)/c.mpp))
-            left=shifted(smooth,-radius);right=shifted(smooth,radius)
-            ridge=gray-np.maximum(left,right)
-            background=np.maximum(np.maximum(left,right),25.)
-            eligible=(ridge>=c.carla_ridge_min)&(ridge/background>=c.carla_relative_min)
-            response=np.maximum(response,np.where(eligible,ridge,0))
+        # OpenCV element-wise ops on one replicate-padded copy: the same values as shifting per width, 2-3x faster.
+        radii=[max(2,round((width/2+.07)/c.mpp)) for width in (.10,.16,.24,.34)];pad=max(radii);w=gray.shape[1]
+        padded=cv2.copyMakeBorder(smooth,0,0,pad,pad,cv2.BORDER_REPLICATE)
+        for radius in radii:
+            side=cv2.max(padded[:,pad-radius:pad-radius+w],padded[:,pad+radius:pad+radius+w])
+            ridge=cv2.subtract(gray,side)
+            eligible=(ridge>=c.carla_ridge_min)&(ridge>=c.carla_relative_min*cv2.max(side,25.))
+            response=cv2.max(response,np.where(eligible,ridge,np.float32(0)))
         safe=cv2.erode(valid,np.ones((3,9),np.uint8))>0;self.valid_safe=safe.astype(np.uint8)
         raw=((response>0)&color&safe).astype(np.uint8)*255
         self.response=response;self.raw_mask=raw.copy()
@@ -107,7 +109,7 @@ class CarlaDetector(Detector):
             long=cv2.morphologyEx(horizontal.astype(np.uint8),cv2.MORPH_OPEN,np.ones((1,max(3,round(1.4/c.mpp))),np.uint8))
             rows=np.flatnonzero(np.sum(long,axis=1)*c.mpp>=1.4)
             groups=np.split(rows,np.flatnonzero(np.diff(rows)>max(2,round(.25/c.mpp)))+1) if len(rows) else []
-            centers=[int(np.median(a)) for a in groups if len(a)]
+            centers=[int(median(a)) for a in groups if len(a)]
             if len(centers)>=3:
                 # Suppress only runs of repeated bars within a local 12 m band.
                 for j in range(len(centers)-2):
@@ -209,7 +211,7 @@ class CarlaDetector(Detector):
         chosen={}
         for lane in candidates:
             if lane.points[0,0]>12.:continue
-            anchor=float(np.interp(np.clip(8.,lane.points[0,0],lane.points[-1,0]),lane.points[:,0],lane.points[:,1]))
+            anchor=float(interp(np.clip(8.,lane.points[0,0],lane.points[-1,0]),lane.points[:,0],lane.points[:,1]))
             side='left' if anchor>0 else 'right'
             if not .65<=abs(anchor)<=4.8:continue
             if lane.side!=side:continue
@@ -246,7 +248,7 @@ class CarlaDetector(Detector):
         """
         nodes=sorted(nodes,key=lambda a:a['lane'].points[0,0])
         centers=np.array([np.mean(a['lane'].points[:,0]) for a in nodes])
-        offsets=np.array([float(np.mean(a['lane'].points[:,1]-np.interp(a['lane'].points[:,0],sample,smooth))) for a in nodes])
+        offsets=np.array([float(np.mean(a['lane'].points[:,1]-interp(a['lane'].points[:,0],sample,smooth))) for a in nodes])
         target=offsets.copy();double=False;strand=np.zeros(len(nodes),bool)
         voted=self.pair_vote(nodes,sample,smooth,side) if yellow and self.c.carla_strand_pair else None
         if voted is not None:
@@ -256,9 +258,9 @@ class CarlaDetector(Detector):
             split=(order[k]+order[k+1])/2;outer=offsets>=split
             extent=lambda flag:sum(np.ptp(a['lane'].points[:,0]) for a,f in zip(nodes,flag) if f)
             if .10<=gaps[k] and order[-1]-order[0]<=.55 and min(extent(outer),extent(~outer))>=2.:
-                mid=(np.median(offsets[outer])+np.median(offsets[~outer]))/2
-                target[outer]+=mid-np.median(offsets[outer]);target[~outer]+=mid-np.median(offsets[~outer]);double=True;strand=outer
-                gap=float(np.median(offsets[outer])-np.median(offsets[~outer]));old=self.strand_gap.get(side)
+                mid=(median(offsets[outer])+median(offsets[~outer]))/2
+                target[outer]+=mid-median(offsets[outer]);target[~outer]+=mid-median(offsets[~outer]);double=True;strand=outer
+                gap=float(median(offsets[outer])-median(offsets[~outer]));old=self.strand_gap.get(side)
                 if old is not None and self.frame_index-old[1]<=30:gap=.7*old[0]+.3*gap
                 self.strand_gap[side]=(gap,self.frame_index)
         remembered=self.strand_gap.get(side);previous=self.last_spines.get(side)
@@ -270,7 +272,7 @@ class CarlaDetector(Detector):
             for i,a in enumerate(nodes):
                 pts=a['lane'].points
                 if not previous[0][0]<=centers[i]<=previous[0][-1]:continue
-                delta=float(np.mean(pts[:,1]-np.interp(pts[:,0],previous[0],previous[1])))
+                delta=float(np.mean(pts[:,1]-interp(pts[:,0],previous[0],previous[1])))
                 if half/2<=abs(delta)<=1.5*half:target[i]-=math.copysign(half,delta);double=True
         # Neighbour medians within 3 m; n is a few dozen, so plain Python
         # beats a masked n x n NumPy median here.
@@ -295,9 +297,9 @@ class CarlaDetector(Detector):
                 else:
                     forward,measured=grouped_median(np.vstack([a['lane'].points for a,_ in items]))
                     mids=np.array([np.mean(a['lane'].points[:,0]) for a,_ in items]);values=np.array([v for _,v in items]);order=np.argsort(mids)
-                    offset=np.interp(forward,mids[order],values[order])
+                    offset=interp(forward,mids[order],values[order])
                 # Each strand stays within half a BEV pixel of its measured paint.
-                lateral=np.clip(np.interp(forward,sample,smooth)+offset,measured-.45*self.c.mpp,measured+.45*self.c.mpp)
+                lateral=np.clip(interp(forward,sample,smooth)+offset,measured-.45*self.c.mpp,measured+.45*self.c.mpp)
                 lane=replace(items[0][0]['lane'],points=np.column_stack([forward,lateral]),
                              confidence=max(a['lane'].confidence for a,_ in items))
                 pixels=(np.concatenate([a['pixels'][0] for a,_ in items]),np.concatenate([a['pixels'][1] for a,_ in items]))
@@ -306,8 +308,8 @@ class CarlaDetector(Detector):
         if voted is not None:
             # Section by section: the 3 m neighbour medians, interpolated along the spine.
             order=np.argsort(centers)
-            return np.interp(sample,centers[order],np.asarray(center)[order]),merged
-        return float(np.median(center)),merged
+            return interp(sample,centers[order],np.asarray(center)[order]),merged
+        return float(median(center)),merged
 
     def pair_vote(self,nodes,sample,smooth,side):
         """Centre offsets of a double line seen as one pair of rails a fixed gap apart.
@@ -321,7 +323,7 @@ class CarlaDetector(Detector):
         fragment is labelled (the caller falls back to its previous-frame rule)."""
         c=self.c;mpp=c.mpp
         remembered=self.strand_gap.get(side);gap=remembered[0] if remembered is not None else c.carla_strand_gap_m;half=gap/2
-        residual=[a['lane'].points[:,1]-np.interp(a['lane'].points[:,0],sample,smooth) for a in nodes]
+        residual=[a['lane'].points[:,1]-interp(a['lane'].points[:,0],sample,smooth) for a in nodes]
         forward=[a['lane'].points[:,0] for a in nodes]
         label=[None]*len(nodes);votes=[[] for _ in nodes];gaps=[];lines=[];overlap=0.
         for i,a in enumerate(nodes):
@@ -338,7 +340,7 @@ class CarlaDetector(Detector):
                 middle=(lo+hi)/2
                 if abs(abs((lines[i][0]-lines[j][0])*middle+lines[i][1]-lines[j][1])-gap)>.15:continue
                 common=(forward[i]>=lo)&(forward[i]<=hi)
-                d=float(np.median(nodes[i]['lane'].points[common,1]-np.interp(forward[i][common],forward[j],nodes[j]['lane'].points[:,1])))
+                d=float(median(nodes[i]['lane'].points[common,1]-interp(forward[i][common],forward[j],nodes[j]['lane'].points[:,1])))
                 if abs(abs(d)-gap)>.08:continue
                 votes[i].append(1. if d>0 else -1.);votes[j].append(-1. if d>0 else 1.);gaps.append(abs(d));overlap+=hi-lo
         # One short side by side pair or one wide blob is no double line (a curb, a chevron
@@ -348,7 +350,7 @@ class CarlaDetector(Detector):
         for i,v in enumerate(votes):
             if v and label[i] is None and abs(sum(v))==len(v):label[i]=v[0]
         if gaps:
-            measured=float(np.median(gaps))
+            measured=float(median(gaps))
             self.strand_gap[side]=(measured if remembered is None else .9*remembered[0]+.1*measured,self.frame_index)
         memory=c.carla_strand_memory_m>0
         fixed=self.recall_pairs(nodes,label,votes,half,side) if memory else set()
@@ -397,7 +399,7 @@ class CarlaDetector(Detector):
                 pts=a['lane'].points;cells=np.clip(np.floor(pts[:,0]/.2).astype(int),0,len(count)-1);seen=count[cells]>0
                 if seen.sum()<3:continue
                 # Remembered centre minus paint; the outer strand lies half a gap outside the centre.
-                d=float(np.median(total[cells[seen]]/count[cells[seen]]-pts[seen,1]))
+                d=float(median(total[cells[seen]]/count[cells[seen]]-pts[seen,1]))
                 if abs(abs(d)-half)<=half*.6:label[i]=-1. if d>0 else 1.;fixed.add(i)
         return fixed
 
@@ -471,7 +473,7 @@ class CarlaDetector(Detector):
             lo=max(5.,left[0][0],right[0][0]);hi=min(10.,left[0][-1],right[0][-1])
             if hi-lo>=2.:
                 f=np.linspace(lo,hi,11)
-                width=float(np.mean(np.interp(f,left[0],left[1])-np.interp(f,right[0],right[1])))
+                width=float(np.mean(interp(f,left[0],left[1])-interp(f,right[0],right[1])))
                 if 2.6<=width<=4.2:self.lane_width=.8*self.lane_width+.2*width
         for side,other in (('right','left'),('left','right')):
             reference=spines.get(other)
@@ -487,7 +489,7 @@ class CarlaDetector(Detector):
             for a in nodes:
                 pts=a['lane'].points
                 if id(a) in used or pts[0,0]<forward[0]-.15 or pts[-1,0]>forward[-1]+.15:continue
-                if float(np.median(np.abs(pts[:,1]-np.interp(pts[:,0],forward,lateral))))<=.35:band.append(a)
+                if float(median(np.abs(pts[:,1]-interp(pts[:,0],forward,lateral))))<=.35:band.append(a)
             if not band:continue
             extent=lambda flag:sum(float(np.ptp(a['lane'].points[:,0])) for a in band if a['yellow']==flag)
             color=extent(True)>extent(False);band=[a for a in band if a['yellow']==color]
@@ -526,7 +528,7 @@ class CarlaDetector(Detector):
             nx,ny=-slope/norm,1./norm
             dense=np.column_stack([sample,smooth])
             j=np.abs(pts[:,0][:,None]-sample[None,:]).argmin(1)
-            d=float(np.median((pts[:,0]-dense[j,0])*nx[j]+(pts[:,1]-dense[j,1])*ny[j]))
+            d=float(median((pts[:,0]-dense[j,0])*nx[j]+(pts[:,1]-dense[j,1])*ny[j]))
             forward=sample+d*nx;lateral=smooth+d*ny
             ext=c.carla_shared_extend_m
             keep=(forward>=pts[:,0].min()-ext)&(forward<=pts[:,0].max()+ext)
@@ -540,10 +542,10 @@ class CarlaDetector(Detector):
         """Rank down a jump outward from the last boundary or off the lane width."""
         if points is None:points=path_points(path)
         if not points[0,0]-2.<=8.<=points[-1,0]+4.:return 0.
-        lateral=float(np.interp(8.,points[:,0],points[:,1]));penalty=0.
+        lateral=float(interp(8.,points[:,0],points[:,1]));penalty=0.
         def at8(value):
             if value is None or not value[0][0]<=8.<=value[0][-1]:return None
-            return float(np.interp(8.,value[0],value[1]))
+            return float(interp(8.,value[0],value[1]))
         tracked=self.tracking_priors.get(side) if self.c.carla_tracking_enabled else None
         previous=at8((tracked[0][:,0],tracked[0][:,1])) if tracked is not None else at8(self.last_spines.get(side))
         jump=0. if previous is None else abs(lateral-previous) if tracked is not None else (lateral-previous if side=='left' else previous-lateral)
@@ -559,8 +561,8 @@ class CarlaDetector(Detector):
         if other is None:return None
         ref=other[0];lo=max(points[0,0],ref[0,0]);hi=min(points[-1,0],ref[-1,0],lo+4.)
         if hi<lo:return None
-        x=np.linspace(lo,hi,5);own=np.interp(x,points[:,0],points[:,1]);them=np.interp(x,ref[:,0],ref[:,1])
-        width=float(np.median(them-own if side=='right' else own-them))
+        x=np.linspace(lo,hi,5);own=interp(x,points[:,0],points[:,1]);them=interp(x,ref[:,0],ref[:,1])
+        width=float(median(them-own if side=='right' else own-them))
         return abs(width-self.lane_width)
 
     def turn_curvature(self):
@@ -605,7 +607,7 @@ class CarlaDetector(Detector):
             if np.ptp(before[:,0])<6.:continue
             fit=np.polyfit(before[:,0],before[:,1],2 if np.ptp(before[:,0])>=10. else 1)
             ahead=path[k]['lane'].points;ahead=ahead[ahead[:,0]<=start+2.]
-            if float(np.median(np.abs(ahead[:,1]-np.polyval(fit,ahead[:,0]))))<=c.carla_tail_offset_m:continue
+            if float(median(np.abs(ahead[:,1]-np.polyval(fit,ahead[:,0]))))<=c.carla_tail_offset_m:continue
             # A bar across the gap, within 1.5 m of where the near curve goes.
             rows=np.arange(max(0,round((c.forward_max-start)/c.mpp)),min(len(self.transverse),round((c.forward_max-end)/c.mpp)+1))
             x=c.forward_max-rows*c.mpp;cols=(-np.polyval(fit,x)-c.lateral_min)/c.mpp;half=round(1.5/c.mpp)
@@ -784,7 +786,7 @@ class CarlaDetector(Detector):
             points=np.vstack([a['lane'].points for a in group])
             forward,center=grouped_median(points)
             unique_paint=len(forward)*c.mpp
-            anchor=float(np.median([c.lateral_min+np.polyval(a['fit'],(c.forward_max-3.)/c.mpp)*c.mpp for a in group]))
+            anchor=float(median([c.lateral_min+np.polyval(a['fit'],(c.forward_max-3.)/c.mpp)*c.mpp for a in group]))
             yellow=float(np.mean([a['yellow'] for a in group]))
             side=group[0]['lane'].side
             score=.35*min(span,25.)+.60*min(unique_paint,15.)-1.2*abs(anchor)
@@ -812,8 +814,8 @@ class CarlaDetector(Detector):
                         if a['yellow']!=yellow_path or pts[0,0]<sample[0]-.15 or pts[-1,0]>sample[-1]+.15:continue
                     elif id(a) not in members:continue
                     # Cheap rejection before the robust median test.
-                    if abs(pts[middle,1]-np.interp(pts[middle,0],sample,smooth))>band+.30:continue
-                    error=float(np.median(np.abs(pts[:,1]-np.interp(pts[:,0],sample,smooth))))
+                    if abs(pts[middle,1]-interp(pts[middle,0],sample,smooth))>band+.30:continue
+                    error=float(median(np.abs(pts[:,1]-interp(pts[:,0],sample,smooth))))
                     if error<=band and (best is None or error<best[0]):best=(error,side)
                 if best is not None:support[best[1]].append(a)
             remembered={};offsets={}
@@ -828,9 +830,9 @@ class CarlaDetector(Detector):
                     # A shared shape follows the long side's strand correction along the
                     # road; its own paint already set its position, so only the change counts.
                     long,lo,hi=self.shared[side];source=spines[long][0]
-                    shift=np.interp(sample,source,np.broadcast_to(offsets[long][0],source.shape))
+                    shift=interp(sample,source,np.broadcast_to(offsets[long][0],source.shape))
                     own=(sample>=lo)&(sample<=hi)
-                    offset=offset+shift-(float(np.median(shift[own])) if own.any() else 0.)
+                    offset=offset+shift-(float(median(shift[own])) if own.any() else 0.)
                 spine=Lane(side,np.column_stack([sample,smooth+offset]),.8)
                 spine.corridor_m=band;remembered[side]=(sample,smooth+offset)
                 accepted_groups.append(merged);self.boundary_candidates.append(spine)

@@ -1,0 +1,44 @@
+[INFO] [launch]: All log files can be found below /home/jaehun/.ros/log/2026-11-17-00-00-52-577191-ros-47779
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [road_node-1]: process started with pid [47795]
+[INFO] [reference_pose-2]: process started with pid [47797]
+[INFO] [static_transform_publisher-3]: process started with pid [47799]
+[static_transform_publisher-3] [INFO] [1794841252.641218154] [static_transform_publisher_NCmCB8QQnsQJTqOB]: Spinning until stopped - publishing transform
+[static_transform_publisher-3] translation: ('2.200000', '0.000000', '1.400000')
+[static_transform_publisher-3] rotation: ('-0.500000', '0.500000', '-0.500000', '0.500000')
+[static_transform_publisher-3] from 'base_link' to 'dashcam_optical_link'
+[reference_pose-2] [WARN] [1794841252.913705856] [maploop_reference_pose]: Evaluation reference from CARLA truth; this is not estimated odometry
+[road_node-1] [INFO] [1794841253.395695918] [vision_road]: Learned lane mask: off
+[road_node-1] Traceback (most recent call last):
+[road_node-1]   File "/home/jaehun/Desktop/vision-road/install/vision_road/lib/vision_road/road_node", line 33, in <module>
+[road_node-1]     sys.exit(load_entry_point('vision-road', 'console_scripts', 'road_node')())
+[road_node-1]   File "/home/jaehun/Desktop/vision-road/build/vision_road/vision_road/node.py", line 526, in main
+[road_node-1]     node = RoadNode()
+[road_node-1]   File "/home/jaehun/Desktop/vision-road/build/vision_road/vision_road/node.py", line 132, in __init__
+[road_node-1]     self.display_stage=DisplayStage(settings_from(values),param('base_frame','base_link'))
+[road_node-1]   File "/home/jaehun/Desktop/vision-road/build/vision_road/vision_road/node.py", line 45, in param
+[road_node-1]     return self.declare_parameter(name, default).value
+[road_node-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/node.py", line 367, in declare_parameter
+[road_node-1]     return self.declare_parameters('', [args], ignore_override)[0]
+[road_node-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/node.py", line 489, in declare_parameters
+[road_node-1]     raise ParameterAlreadyDeclaredException(parameters_already_declared)
+[road_node-1] rclpy.exceptions.ParameterAlreadyDeclaredException: ('Parameter(s) already declared', ['base_frame'])
+[ERROR] [road_node-1]: process has died [pid 47795, exit code 1, cmd '/home/jaehun/Desktop/vision-road/install/vision_road/lib/vision_road/road_node --ros-args -r __node:=vision_road --params-file /home/jaehun/Desktop/vision-road/install/vision_road/share/vision_road/config/carla.yaml --params-file /tmp/launch_params_y7udg1co'].
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[INFO] [static_transform_publisher-3]: sending signal 'SIGINT' to process[static_transform_publisher-3]
+[INFO] [reference_pose-2]: sending signal 'SIGINT' to process[reference_pose-2]
+[static_transform_publisher-3] [INFO] [1794841282.086753091] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[reference_pose-2] Traceback (most recent call last):
+[reference_pose-2]   File "/home/jaehun/Desktop/vision-road/install/vision_road/lib/vision_road/reference_pose", line 33, in <module>
+[reference_pose-2]     sys.exit(load_entry_point('vision-road', 'console_scripts', 'reference_pose')())
+[reference_pose-2]   File "/home/jaehun/Desktop/vision-road/build/vision_road/vision_road/reference_pose.py", line 38, in main
+[reference_pose-2]     finally:node.destroy_node();rclpy.try_shutdown()
+[reference_pose-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/node.py", line 1691, in destroy_node
+[reference_pose-2]     self.destroy_service(self._services[0])
+[reference_pose-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/node.py", line 1615, in destroy_service
+[reference_pose-2]     service.destroy()
+[reference_pose-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/service.py", line 93, in destroy
+[reference_pose-2]     self.__service.destroy_when_not_in_use()
+[reference_pose-2] KeyboardInterrupt
+[ERROR] [static_transform_publisher-3]: process has died [pid 47799, exit code -2, cmd '/opt/ros/humble/lib/tf2_ros/static_transform_publisher --x 2.2 --y 0 --z 1.4 --qx -0.5 --qy 0.5 --qz -0.5 --qw 0.5 --frame-id base_link --child-frame-id dashcam_optical_link --ros-args'].
+[ERROR] [reference_pose-2]: process has died [pid 47797, exit code -2, cmd '/home/jaehun/Desktop/vision-road/install/vision_road/lib/vision_road/reference_pose --ros-args --params-file /tmp/launch_params_pmx54h5n'].

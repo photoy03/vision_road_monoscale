@@ -2,7 +2,7 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from ament_index_python.packages import get_package_share_directory
@@ -19,6 +19,8 @@ def generate_launch_description():
         DeclareLaunchArgument('debug_publish_hz',default_value='5.0'),
         DeclareLaunchArgument('display_simplify_error_m',default_value='0.025'),
         DeclareLaunchArgument('display_filter',default_value='true'),
+        # true: road_node runs the display filter itself (one ROS hop less), and no lane_display_filter node starts.
+        DeclareLaunchArgument('display_filter_inline',default_value='false'),
         # Learned lane mask (YOLOPv2, GPU) gating paint within 15 m, and road markings. Off by default;
         # with weights set but no GPU the node logs it and runs as without.
         DeclareLaunchArgument('learned_weights',default_value=''),
@@ -38,9 +40,11 @@ def generate_launch_description():
             'learned_weights':ParameterValue(LaunchConfiguration('learned_weights'),value_type=str),
             'carla_learned_gate':ParameterValue(LaunchConfiguration('learned_gate'),value_type=str),'carla_learned_gate_far_m':15.,
             'road_markings':ParameterValue(LaunchConfiguration('road_markings'),value_type=bool),
-            'learned_every':ParameterValue(LaunchConfiguration('learned_every'),value_type=int)}]),
+            'learned_every':ParameterValue(LaunchConfiguration('learned_every'),value_type=int),
+            'display_filter_inline':ParameterValue(LaunchConfiguration('display_filter_inline'),value_type=bool)}]),
         # HUD-only smoothing of the boundaries; road_node's own topics are unchanged.
-        Node(package='vision_road',executable='lane_display_filter',condition=IfCondition(LaunchConfiguration('display_filter')),
+        Node(package='vision_road',executable='lane_display_filter',
+             condition=IfCondition(PythonExpression(["'",LaunchConfiguration('display_filter'),"'=='true' and '",LaunchConfiguration('display_filter_inline'),"'!='true'"])),
              parameters=[share+'/config/carla.yaml',{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
         Node(package='vision_road',executable='reference_pose',condition=IfCondition(LaunchConfiguration('reference_pose')),
              parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
