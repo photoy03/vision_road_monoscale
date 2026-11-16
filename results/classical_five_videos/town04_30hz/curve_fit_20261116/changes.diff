@@ -1,0 +1,217 @@
+--- backups/before-curve-fit-20261116/carla.py	2026-11-16 23:01:00.073224021 +0900
++++ src/vision_road/vision_road/carla.py	2026-11-16 23:10:06.031901138 +0900
+@@ -408,7 +408,7 @@
+         self.strand_memory[side]=memory
+ 
+     def spine(self,group,forward=None,center=None):
+-        """Robust quadratic boundary of one selected chain, with its band."""
++        """Robust quadratic (or, for a long dense chain that needs it, cubic) boundary of one selected chain, with its band."""
+         c=self.c
+         if forward is None:forward,center=grouped_median(np.vstack([a['lane'].points for a in group]))
+         # Fit only the selected chain; nearby branches cannot steer
+@@ -417,11 +417,33 @@
+         # A robust quadratic within the selected connected chain avoids
+         # local polynomial oscillations across the actual dash gaps.
+         origin=float(np.mean(forward));x=forward-origin
+-        weights=np.ones(len(x))
+-        for _ in range(5):
+-            fit=np.polyfit(x,center,2,w=weights)
+-            residual=np.abs(center-np.polyval(fit,x))
+-            weights=np.minimum(1.,.20/np.maximum(residual,.001))
++        near=np.ones(len(x)) if c.carla_spine_near_m<=0 else np.minimum(1.,(c.carla_spine_near_m/np.maximum(forward,1.))**2)
++        def robust(degree,weights,ridge=0.):
++            # Least squares in x/10 m (rows scaled by the weight, as np.polyfit's w); ridge pulls the cubic term only.
++            t=x/10.;A=np.vander(t,degree+1)
++            for _ in range(5):
++                w=weights*near
++                lhs=A*w[:,None];rhs=center*w
++                if ridge>0:lhs=np.vstack([lhs,np.r_[math.sqrt(ridge),np.zeros(degree)]]);rhs=np.r_[rhs,0.]
++                coef=np.linalg.lstsq(lhs,rhs,rcond=None)[0]
++                residual=np.abs(center-A@coef)
++                weights=np.minimum(1.,.20/np.maximum(residual,.001))
++            return coef,residual,weights
++        coef,residual,weights=robust(2,np.ones(len(x)))
++        span=float(forward[-1]-forward[0])
++        if c.carla_spine_cubic_m>0 and span>=c.carla_spine_cubic_span_m and len(forward)*c.mpp>=c.carla_spine_cubic_cover*span:
++            # Straight then curving (a curve entry or exit): a quadratic bends the near straight part
++            # and flattens the far curve.  Dense paint only; dash gaps keep the quadratic.  The cubic's
++            # pull to 0 eases off smoothly as the quadratic misses more, so a gentle curve whose miss
++            # hovers near the threshold does not flip between the two from frame to frame.
++            # The miss is measured on 1 m means of the signed residual: a double line's row medians
++            # alternate between its strands, which is scatter, not a straight-then-curving shape.
++            signed=center-np.vander(x/10.,3)@coef;inlier=weights>=.5;bins=np.floor(forward[inlier]).astype(int)
++            count=np.bincount(bins-bins.min());total=np.bincount(bins-bins.min(),weights=signed[inlier])
++            miss=float(np.percentile(np.abs(total[count>=3]/count[count>=3]),90)) if (count>=3).any() else 0.
++            coef,residual,weights=robust(3,weights,c.carla_spine_cubic_ridge*(c.carla_spine_cubic_m/max(miss,1e-3))**4)
++            if hasattr(self,'diagnostics'):self.diagnostics['cubic_'+str(group[0]['lane'].side)]=round(float(coef[0]),4)
++        fit=coef/np.power(10.,np.arange(len(coef)-1,-1,-1))  # back to polyval in metres
+         yellow_path=sum(a['yellow'] for a in group)>len(group)/2
+         band=c.carla_chain_band_m
+         if c.carla_path_filter_enabled and yellow_path:band=max(band,.45)
+--- backups/before-curve-fit-20261116/core.py	2026-11-16 23:01:00.074223981 +0900
++++ src/vision_road/vision_road/core.py	2026-11-16 23:06:18.526300287 +0900
+@@ -56,6 +56,11 @@
+     carla_chain_filter_enabled: bool = True
+     carla_chain_confirm_frames: int = 3
+     carla_chain_band_m: float = 0.25
++    carla_spine_cubic_m: float = 0.0  # >0: a long, densely painted chain gets a cubic (straight-then-curving), held to 0 unless its quadratic misses the paint by about this (p90)
++    carla_spine_cubic_span_m: float = 12.0  # ... chain at least this long
++    carla_spine_cubic_cover: float = 0.6  # ... with paint along at least this share of it (dashes keep the quadratic)
++    carla_spine_cubic_ridge: float = 0.05  # pull of the cubic term towards 0 (x in units of 10 m) at that miss; x(threshold/miss)^4 otherwise
++    carla_spine_near_m: float = 0.0  # >0: paint beyond this counts less in the fit, (near/x)^2, so far paint cannot bend the near boundary
+     carla_tracking_enabled: bool = True
+     carla_tracking_keep_bonus: float = 2.0
+     carla_tracking_match_m: float = 0.35
+--- backups/before-curve-fit-20261116/display_filter.py	2026-11-16 23:06:39.352824259 +0900
++++ src/vision_road/vision_road/display_filter.py	2026-11-16 23:08:22.668695646 +0900
+@@ -21,6 +21,12 @@
+ # 1-euro parameters fits all three.
+ STATIONS=np.array([5.,10.,15.])
+ _V=np.vander(STATIONS,3,increasing=True)
++# With cubic_m set the curve is a cubic, carried as stations at 5/10/15/20 m (10 m stays index 1).
++STATIONS4=np.array([5.,10.,15.,20.])
++_V4=np.vander(STATIONS4,4,increasing=True)
++
++
++def _stations_matrix(n):return _V if n==3 else _V4
+ 
+ 
+ @dataclass
+@@ -49,28 +55,40 @@
+     memory_m:float=0.           # >0: keep seen paint this many metres of travel and fit it below the observation (0 = off)
+     memory_store_m:float=4.     # remember the observation's first metres only (the nearest look is the best)
+     memory_gate_m:float=.25     # remembered bins this far off the kept line are left out (stray paint)
++    fit_near_m:float=0.         # >0: boundary points beyond this count less in the fit, (near/x)^2 (sharp curves)
++    cubic_m:float=0.            # >0: the line is a cubic, its third-order term held to 0 unless a quadratic misses by about this (sharp curves)
++    cubic_ridge:float=1e-3      # pull of that term at that miss
+ 
+ 
+-def fit(points,ridge=1e-3,strength=None):
++def fit(points,ridge=1e-3,strength=None,near=0.,cubic=0.,cubic_ridge=1e-3):
+     """Quadratic through a polyline in base_link (x forward, y left), returned as station values.
+ 
+     The input is usually a simplified polyline with a handful of vertices, so it
+     is resampled along x first.  Short spans get a stronger pull toward zero
+     curvature so a 3 m piece does not bend the whole display.  strength, when given,
+-    replaces that two-step pull."""
++    replaces that two-step pull.  near>0: points beyond it count less, (near/x)^2, so the far end
++    of a sharp curve does not pull the near line.  cubic>0: a cubic (four stations) whose third-order
++    term is held to 0 unless the quadratic misses the line by about cubic (p90): its pull is
++    cubic_ridge*(cubic/miss)^4, and as strong as the curvature pull on short spans."""
+     p=np.asarray(points,float);p=p[np.argsort(p[:,0])]
+     x=np.arange(p[0,0],p[-1,0]+1e-6,.5)
+     if len(x)<2:x=p[[0,-1],0]
+     y=np.interp(x,p[:,0],p[:,1]);span=float(x[-1]-x[0])
+     A=np.column_stack([np.ones_like(x),x,x*x])
+     lam=len(x)*float(np.mean(x*x))**2*(strength if strength is not None else ridge if span>=8 else 10.)
+-    coeff=np.linalg.solve(A.T@A+np.diag([0.,0.,lam]),A.T@y)
+-    return _V@coeff,float(x[0]),float(x[-1])
++    w=np.ones_like(x) if near<=0 else np.minimum(1.,(near/np.maximum(x,1.))**2)
++    coeff=np.linalg.solve((A*w[:,None]).T@A+np.diag([0.,0.,lam]),(A*w[:,None]).T@y)
++    if cubic<=0:return _V@coeff,float(x[0]),float(x[-1])
++    miss=float(np.percentile(np.abs(A@coeff-y),90))
++    pull=10. if span<8 and strength is None else cubic_ridge*(cubic/max(miss,1e-3))**4
++    A=np.column_stack([A,x**3]);lam3=len(x)*float(np.mean(x*x))**3*pull
++    coeff=np.linalg.solve((A*w[:,None]).T@A+np.diag([0.,0.,lam,lam3]),(A*w[:,None]).T@y)
++    return _V4@coeff,float(x[0]),float(x[-1])
+ 
+ 
+ def evaluate(stations,x):
+-    coeff=np.linalg.solve(_V,stations)
+-    return coeff[0]+coeff[1]*x+coeff[2]*x*x
++    coeff=np.linalg.solve(_stations_matrix(len(stations)),stations)
++    return np.polyval(coeff[::-1],x)
+ 
+ 
+ def relative(previous,pose):
+@@ -85,7 +103,7 @@
+     dx,dy,dyaw=motion;x=np.arange(0.,25.01,.5)
+     c,s=math.cos(dyaw),math.sin(dyaw);px=x-dx;py=evaluate(stations,x)-dy
+     nx=c*px+s*py;ny=-s*px+c*py
+-    return _V@np.polyfit(nx,ny,2)[::-1]
++    return _stations_matrix(len(stations))@np.polyfit(nx,ny,len(stations)-1)[::-1]
+ 
+ 
+ class OneEuro:
+@@ -186,14 +204,14 @@
+     def update(self,t,observed,hold_s,paint=None,travel=None):
+         s=self.s;obs=None;accepted=False
+         if observed is not None:
+-            stations,near,far=fit(observed)
++            stations,near,far=fit(observed,near=s.fit_near_m,cubic=s.cubic_m,cubic_ridge=s.cubic_ridge)
+             if far-near>=s.update_span_m and near<=s.max_start_m:
+                 # What is seen now wins; remembered paint only fills below the seen near end.
+                 below=self.recall(near,stations) if travel is not None else None
+                 alone=stations
+                 # The curvature pull changes smoothly with the span: spans hover about 8 m, where the
+                 # two-step pull flipped the curvature from frame to frame in a curve.
+-                if below is not None:stations=fit(np.vstack([below,observed]),strength=10**np.interp(far-float(below[0,0]),[4.,12.],[1.,-3.]))[0]
++                if below is not None:stations=fit(np.vstack([below,observed]),strength=10**np.interp(far-float(below[0,0]),[4.,12.],[1.,-3.]),near=s.fit_near_m,cubic=s.cubic_m,cubic_ridge=s.cubic_ridge)[0]
+                 obs=(stations,near,far,alone)
+         if obs is not None:
+             stations,_,far,alone=obs
+--- backups/before-curve-fit-20261116/carla.yaml	2026-11-16 23:01:00.074223981 +0900
++++ src/vision_road/config/carla.yaml	2026-11-16 23:12:21.150960277 +0900
+@@ -53,9 +53,15 @@
+     carla_width_reject_m: 1.0
+     # Pale yellow paint (Town05: g-b ~13): yellow when (r+g)/2-b is 6 above the road around it and itself.
+     carla_yellow_relative_min: 6.0
++    # Sharp curves (Town04): a long dense chain that is straight then curving gets a cubic when the quadratic
++    # misses its paint by 5 cm (p90); paint beyond 15 m counts less, so far paint cannot bend the near boundary.
++    carla_spine_cubic_m: 0.05
++    carla_spine_near_m: 15.0
+ lane_display_filter:
+   ros__parameters:
+     # HUD line reaches the rear axle (HUD path start, bottom of the screen); paint seen in the last
+     # 10 m of travel fills below the first seen paint (~5.5 m), the fit's arc where there is none.
+     near_m: 0.0
+     memory_m: 10.0
++    # Sharp curves: the HUD line is a cubic too, its third-order term held to 0 unless a quadratic misses by ~5 cm.
++    cubic_m: 0.05
+--- backups/before-curve-fit-20261116/test_carla.py	2026-11-16 23:01:00.074223981 +0900
++++ tests/test_carla.py	2026-11-16 23:03:29.329875767 +0900
+@@ -219,3 +219,23 @@
+     d=CarlaDetector(replace(c,carla_yellow_relative_min=6.));d.binary(im,valid)
+     assert d.yellow[300,61] and d.raw_mask[300,61]
+     assert not d.yellow[300,141] and not d.yellow[300,216] and not d.yellow[300,30]
++
++
++def spine_of(c,forward,center):
++    group=[dict(lane=Lane('right',np.column_stack([forward,center]),.8),yellow=False)]
++    d=CarlaDetector(c);sample,smooth=d.spine(group,forward,center)[:2]
++    near=(sample>=6)&(sample<=20)  # the far end counts less by design
++    return float(np.max(np.abs(smooth-np.interp(sample,forward,center))[near]))
++
++
++def test_a_straight_then_curving_chain_gets_a_cubic_and_dashes_keep_the_quadratic():
++    c=Settings(mpp=.07)
++    forward=np.arange(5.5,30.,.07);center=-1.8+np.where(forward>11,.012*(forward-11)**2,0.)
++    on=replace(c,carla_spine_cubic_m=.05,carla_spine_near_m=15.)
++    assert spine_of(c,forward,center)>.10  # one quadratic misses the straight part and the bend
++    assert spine_of(on,forward,center)<.05
++    # A dashed chain (paint on a third of it) keeps its quadratic: the same as with the setting off.
++    dashes=(forward-5.5)%3<1.
++    assert abs(spine_of(on,forward[dashes],center[dashes])-spine_of(replace(c,carla_spine_near_m=15.),forward[dashes],center[dashes]))<1e-9
++    # A straight line is unchanged.
++    assert spine_of(on,forward,np.full_like(forward,-1.8))<1e-6
+--- backups/before-curve-fit-20261116/test_display_filter.py	2026-11-16 23:12:54.911535223 +0900
++++ tests/test_display_filter.py	2026-11-16 23:13:07.372383701 +0900
+@@ -246,3 +246,18 @@
+     p={side:q for side,q,_,_ in f.output()}['right']
+     # The new line is drawn flat down to the rear axle, not tilted toward the old one.
+     assert np.abs(p[:,1]+3.6).max()<.03
++
++
++def test_cubic_display_follows_a_straight_then_curving_line_and_is_off_by_default():
++    x=np.arange(3.,25.,.5);y=-1.8+np.where(x>11,.012*(x-11)**2,0.);line=np.column_stack([x,y])
++    def miss(stations):
++        near=(x>=6)&(x<=20);return float(np.max(np.abs(evaluate(stations,x[near])-y[near])))
++    quadratic=fit(line)[0];cubic=fit(line,cubic=.05)[0]
++    assert len(quadratic)==3 and len(cubic)==4
++    assert miss(quadratic)>.08 and miss(cubic)<.05
++    # A straight or evenly curving line keeps its quadratic shape.
++    arc=np.column_stack([x,-1.8+.004*x*x])
++    assert np.allclose(evaluate(fit(arc,cubic=.05)[0],x),evaluate(fit(arc)[0],x),atol=.01)
++    # Motion keeps a cubic a cubic.
++    moved=shift(cubic,(1.,0.,.02))
++    assert len(moved)==4 and abs(evaluate(moved,np.array([9.]))[0]-evaluate(cubic,np.array([10.]))[0])<.3

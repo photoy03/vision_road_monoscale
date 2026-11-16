@@ -21,6 +21,12 @@ import numpy as np
 # 1-euro parameters fits all three.
 STATIONS=np.array([5.,10.,15.])
 _V=np.vander(STATIONS,3,increasing=True)
+# With cubic_m set the curve is a cubic, carried as stations at 5/10/15/20 m (10 m stays index 1).
+STATIONS4=np.array([5.,10.,15.,20.])
+_V4=np.vander(STATIONS4,4,increasing=True)
+
+
+def _stations_matrix(n):return _V if n==3 else _V4
 
 
 @dataclass
@@ -49,28 +55,40 @@ class FilterSettings:
     memory_m:float=0.           # >0: keep seen paint this many metres of travel and fit it below the observation (0 = off)
     memory_store_m:float=4.     # remember the observation's first metres only (the nearest look is the best)
     memory_gate_m:float=.25     # remembered bins this far off the kept line are left out (stray paint)
+    fit_near_m:float=0.         # >0: boundary points beyond this count less in the fit, (near/x)^2 (sharp curves)
+    cubic_m:float=0.            # >0: the line is a cubic, its third-order term held to 0 unless a quadratic misses by about this (sharp curves)
+    cubic_ridge:float=1e-3      # pull of that term at that miss
 
 
-def fit(points,ridge=1e-3,strength=None):
+def fit(points,ridge=1e-3,strength=None,near=0.,cubic=0.,cubic_ridge=1e-3):
     """Quadratic through a polyline in base_link (x forward, y left), returned as station values.
 
     The input is usually a simplified polyline with a handful of vertices, so it
     is resampled along x first.  Short spans get a stronger pull toward zero
     curvature so a 3 m piece does not bend the whole display.  strength, when given,
-    replaces that two-step pull."""
+    replaces that two-step pull.  near>0: points beyond it count less, (near/x)^2, so the far end
+    of a sharp curve does not pull the near line.  cubic>0: a cubic (four stations) whose third-order
+    term is held to 0 unless the quadratic misses the line by about cubic (p90): its pull is
+    cubic_ridge*(cubic/miss)^4, and as strong as the curvature pull on short spans."""
     p=np.asarray(points,float);p=p[np.argsort(p[:,0])]
     x=np.arange(p[0,0],p[-1,0]+1e-6,.5)
     if len(x)<2:x=p[[0,-1],0]
     y=np.interp(x,p[:,0],p[:,1]);span=float(x[-1]-x[0])
     A=np.column_stack([np.ones_like(x),x,x*x])
     lam=len(x)*float(np.mean(x*x))**2*(strength if strength is not None else ridge if span>=8 else 10.)
-    coeff=np.linalg.solve(A.T@A+np.diag([0.,0.,lam]),A.T@y)
-    return _V@coeff,float(x[0]),float(x[-1])
+    w=np.ones_like(x) if near<=0 else np.minimum(1.,(near/np.maximum(x,1.))**2)
+    coeff=np.linalg.solve((A*w[:,None]).T@A+np.diag([0.,0.,lam]),(A*w[:,None]).T@y)
+    if cubic<=0:return _V@coeff,float(x[0]),float(x[-1])
+    miss=float(np.percentile(np.abs(A@coeff-y),90))
+    pull=10. if span<8 and strength is None else cubic_ridge*(cubic/max(miss,1e-3))**4
+    A=np.column_stack([A,x**3]);lam3=len(x)*float(np.mean(x*x))**3*pull
+    coeff=np.linalg.solve((A*w[:,None]).T@A+np.diag([0.,0.,lam,lam3]),(A*w[:,None]).T@y)
+    return _V4@coeff,float(x[0]),float(x[-1])
 
 
 def evaluate(stations,x):
-    coeff=np.linalg.solve(_V,stations)
-    return coeff[0]+coeff[1]*x+coeff[2]*x*x
+    coeff=np.linalg.solve(_stations_matrix(len(stations)),stations)
+    return np.polyval(coeff[::-1],x)
 
 
 def relative(previous,pose):
@@ -85,7 +103,7 @@ def shift(stations,motion):
     dx,dy,dyaw=motion;x=np.arange(0.,25.01,.5)
     c,s=math.cos(dyaw),math.sin(dyaw);px=x-dx;py=evaluate(stations,x)-dy
     nx=c*px+s*py;ny=-s*px+c*py
-    return _V@np.polyfit(nx,ny,2)[::-1]
+    return _stations_matrix(len(stations))@np.polyfit(nx,ny,len(stations)-1)[::-1]
 
 
 class OneEuro:
@@ -186,14 +204,14 @@ class SideTrack:
     def update(self,t,observed,hold_s,paint=None,travel=None):
         s=self.s;obs=None;accepted=False
         if observed is not None:
-            stations,near,far=fit(observed)
+            stations,near,far=fit(observed,near=s.fit_near_m,cubic=s.cubic_m,cubic_ridge=s.cubic_ridge)
             if far-near>=s.update_span_m and near<=s.max_start_m:
                 # What is seen now wins; remembered paint only fills below the seen near end.
                 below=self.recall(near,stations) if travel is not None else None
                 alone=stations
                 # The curvature pull changes smoothly with the span: spans hover about 8 m, where the
                 # two-step pull flipped the curvature from frame to frame in a curve.
-                if below is not None:stations=fit(np.vstack([below,observed]),strength=10**np.interp(far-float(below[0,0]),[4.,12.],[1.,-3.]))[0]
+                if below is not None:stations=fit(np.vstack([below,observed]),strength=10**np.interp(far-float(below[0,0]),[4.,12.],[1.,-3.]),near=s.fit_near_m,cubic=s.cubic_m,cubic_ridge=s.cubic_ridge)[0]
                 obs=(stations,near,far,alone)
         if obs is not None:
             stations,_,far,alone=obs

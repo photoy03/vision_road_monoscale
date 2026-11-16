@@ -219,3 +219,23 @@ def test_pale_yellow_paint_is_yellow_against_the_road_and_white_stays_white():
     d=CarlaDetector(replace(c,carla_yellow_relative_min=6.));d.binary(im,valid)
     assert d.yellow[300,61] and d.raw_mask[300,61]
     assert not d.yellow[300,141] and not d.yellow[300,216] and not d.yellow[300,30]
+
+
+def spine_of(c,forward,center):
+    group=[dict(lane=Lane('right',np.column_stack([forward,center]),.8),yellow=False)]
+    d=CarlaDetector(c);sample,smooth=d.spine(group,forward,center)[:2]
+    near=(sample>=6)&(sample<=20)  # the far end counts less by design
+    return float(np.max(np.abs(smooth-np.interp(sample,forward,center))[near]))
+
+
+def test_a_straight_then_curving_chain_gets_a_cubic_and_dashes_keep_the_quadratic():
+    c=Settings(mpp=.07)
+    forward=np.arange(5.5,30.,.07);center=-1.8+np.where(forward>11,.012*(forward-11)**2,0.)
+    on=replace(c,carla_spine_cubic_m=.05,carla_spine_near_m=15.)
+    assert spine_of(c,forward,center)>.10  # one quadratic misses the straight part and the bend
+    assert spine_of(on,forward,center)<.05
+    # A dashed chain (paint on a third of it) keeps its quadratic: the same as with the setting off.
+    dashes=(forward-5.5)%3<1.
+    assert abs(spine_of(on,forward[dashes],center[dashes])-spine_of(replace(c,carla_spine_near_m=15.),forward[dashes],center[dashes]))<1e-9
+    # A straight line is unchanged.
+    assert spine_of(on,forward,np.full_like(forward,-1.8))<1e-6

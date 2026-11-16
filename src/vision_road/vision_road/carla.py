@@ -408,7 +408,7 @@ class CarlaDetector(Detector):
         self.strand_memory[side]=memory
 
     def spine(self,group,forward=None,center=None):
-        """Robust quadratic boundary of one selected chain, with its band."""
+        """Robust quadratic (or, for a long dense chain that needs it, cubic) boundary of one selected chain, with its band."""
         c=self.c
         if forward is None:forward,center=grouped_median(np.vstack([a['lane'].points for a in group]))
         # Fit only the selected chain; nearby branches cannot steer
@@ -417,11 +417,33 @@ class CarlaDetector(Detector):
         # A robust quadratic within the selected connected chain avoids
         # local polynomial oscillations across the actual dash gaps.
         origin=float(np.mean(forward));x=forward-origin
-        weights=np.ones(len(x))
-        for _ in range(5):
-            fit=np.polyfit(x,center,2,w=weights)
-            residual=np.abs(center-np.polyval(fit,x))
-            weights=np.minimum(1.,.20/np.maximum(residual,.001))
+        near=np.ones(len(x)) if c.carla_spine_near_m<=0 else np.minimum(1.,(c.carla_spine_near_m/np.maximum(forward,1.))**2)
+        def robust(degree,weights,ridge=0.):
+            # Least squares in x/10 m (rows scaled by the weight, as np.polyfit's w); ridge pulls the cubic term only.
+            t=x/10.;A=np.vander(t,degree+1)
+            for _ in range(5):
+                w=weights*near
+                lhs=A*w[:,None];rhs=center*w
+                if ridge>0:lhs=np.vstack([lhs,np.r_[math.sqrt(ridge),np.zeros(degree)]]);rhs=np.r_[rhs,0.]
+                coef=np.linalg.lstsq(lhs,rhs,rcond=None)[0]
+                residual=np.abs(center-A@coef)
+                weights=np.minimum(1.,.20/np.maximum(residual,.001))
+            return coef,residual,weights
+        coef,residual,weights=robust(2,np.ones(len(x)))
+        span=float(forward[-1]-forward[0])
+        if c.carla_spine_cubic_m>0 and span>=c.carla_spine_cubic_span_m and len(forward)*c.mpp>=c.carla_spine_cubic_cover*span:
+            # Straight then curving (a curve entry or exit): a quadratic bends the near straight part
+            # and flattens the far curve.  Dense paint only; dash gaps keep the quadratic.  The cubic's
+            # pull to 0 eases off smoothly as the quadratic misses more, so a gentle curve whose miss
+            # hovers near the threshold does not flip between the two from frame to frame.
+            # The miss is measured on 1 m means of the signed residual: a double line's row medians
+            # alternate between its strands, which is scatter, not a straight-then-curving shape.
+            signed=center-np.vander(x/10.,3)@coef;inlier=weights>=.5;bins=np.floor(forward[inlier]).astype(int)
+            count=np.bincount(bins-bins.min());total=np.bincount(bins-bins.min(),weights=signed[inlier])
+            miss=float(np.percentile(np.abs(total[count>=3]/count[count>=3]),90)) if (count>=3).any() else 0.
+            coef,residual,weights=robust(3,weights,c.carla_spine_cubic_ridge*(c.carla_spine_cubic_m/max(miss,1e-3))**4)
+            if hasattr(self,'diagnostics'):self.diagnostics['cubic_'+str(group[0]['lane'].side)]=round(float(coef[0]),4)
+        fit=coef/np.power(10.,np.arange(len(coef)-1,-1,-1))  # back to polyval in metres
         yellow_path=sum(a['yellow'] for a in group)>len(group)/2
         band=c.carla_chain_band_m
         if c.carla_path_filter_enabled and yellow_path:band=max(band,.45)

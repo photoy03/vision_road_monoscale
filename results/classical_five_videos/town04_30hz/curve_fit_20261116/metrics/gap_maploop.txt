@@ -1,0 +1,8 @@
+before   straight 5-20  L 14/12/11/1/1 R 7/6/9/2/2
+before   curve 22-35    L 15/13/13/14/13 R 9/7/5/6/3
+before   straight2 35-42 L 16/12/2/2/2 R 10/10/4/3/5
+before   island 48-53   L 6/3/4/3/3 R 13/11/6/4/10
+after    straight 5-20  L 14/12/11/1/1 R 8/5/7/2/4
+after    curve 22-35    L 15/13/13/14/13 R 11/7/4/6/3
+after    straight2 35-42 L 14/12/2/2/2 R 6/4/3/2/6
+after    island 48-53   L 3/4/4/2/2 R 12/10/5/4/11

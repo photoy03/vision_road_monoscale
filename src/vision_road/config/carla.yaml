@@ -53,9 +53,15 @@ vision_road:
     carla_width_reject_m: 1.0
     # Pale yellow paint (Town05: g-b ~13): yellow when (r+g)/2-b is 6 above the road around it and itself.
     carla_yellow_relative_min: 6.0
+    # Sharp curves (Town04): a long dense chain that is straight then curving gets a cubic when the quadratic
+    # misses its paint by 5 cm (p90); paint beyond 15 m counts less, so far paint cannot bend the near boundary.
+    carla_spine_cubic_m: 0.05
+    carla_spine_near_m: 15.0
 lane_display_filter:
   ros__parameters:
     # HUD line reaches the rear axle (HUD path start, bottom of the screen); paint seen in the last
     # 10 m of travel fills below the first seen paint (~5.5 m), the fit's arc where there is none.
     near_m: 0.0
     memory_m: 10.0
+    # Sharp curves: the HUD line is a cubic too, its third-order term held to 0 unless a quadratic misses by ~5 cm.
+    cubic_m: 0.05

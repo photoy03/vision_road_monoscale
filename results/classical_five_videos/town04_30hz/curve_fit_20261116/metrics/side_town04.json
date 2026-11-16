@@ -1,0 +1,512 @@
+{
+ "before": {
+  "junction 0-10": {
+   "left": {
+    "y10_std_cm": 4.56,
+    "j5": 7,
+    "obs": 0.617,
+    "near8": 0.117,
+    "reach": 30.9,
+    "styles": {
+     "none": 115,
+     "unknown": 101,
+     "dashed": 20,
+     "solid": 64
+    }
+   },
+   "right": {
+    "y10_std_cm": 3.39,
+    "j5": 16,
+    "obs": 0.827,
+    "near8": 0.383,
+    "reach": 35.0,
+    "styles": {
+     "none": 52,
+     "unknown": 32,
+     "solid": 216
+    }
+   }
+  },
+  "curve 15-20": {
+   "left": {
+    "y10_std_cm": 2.54,
+    "j5": 10,
+    "obs": 0.987,
+    "near8": 0.433,
+    "reach": 26.9,
+    "styles": {
+     "dashed": 148,
+     "none": 2
+    }
+   },
+   "right": {
+    "y10_std_cm": 1.34,
+    "j5": 2,
+    "obs": 1.0,
+    "near8": 1.0,
+    "reach": 33.4,
+    "styles": {
+     "solid": 140,
+     "unknown": 10
+    }
+   }
+  },
+  "curve 20-25": {
+   "left": {
+    "y10_std_cm": 0.63,
+    "j5": 0,
+    "obs": 0.24,
+    "near8": 0.007,
+    "reach": 26.4,
+    "styles": {
+     "dashed": 30,
+     "none": 114,
+     "unknown": 6
+    }
+   },
+   "right": {
+    "y10_std_cm": 4.2,
+    "j5": 32,
+    "obs": 0.88,
+    "near8": 0.86,
+    "reach": 15.9,
+    "styles": {
+     "unknown": 37,
+     "solid": 82,
+     "dashed": 13,
+     "none": 18
+    }
+   }
+  },
+  "junction 25-30": {
+   "left": {
+    "y10_std_cm": 2.37,
+    "j5": 30,
+    "obs": 0.8,
+    "near8": 0.173,
+    "reach": 28.9,
+    "styles": {
+     "none": 30,
+     "unknown": 78,
+     "dashed": 42
+    }
+   },
+   "right": {
+    "y10_std_cm": 2.64,
+    "j5": 35,
+    "obs": 0.94,
+    "near8": 0.507,
+    "reach": 22.8,
+    "styles": {
+     "solid": 138,
+     "none": 9,
+     "unknown": 3
+    }
+   }
+  },
+  "straight 30-35": {
+   "left": {
+    "y10_std_cm": 1.16,
+    "j5": 0,
+    "obs": 1.0,
+    "near8": 0.407,
+    "reach": 30.9,
+    "styles": {
+     "dashed": 150
+    }
+   },
+   "right": {
+    "y10_std_cm": 0.1,
+    "j5": 0,
+    "obs": 1.0,
+    "near8": 0.847,
+    "reach": 35.0,
+    "styles": {
+     "solid": 150
+    }
+   }
+  },
+  "turn 35-40": {
+   "left": {
+    "y10_std_cm": 2.17,
+    "j5": 2,
+    "obs": 0.54,
+    "near8": 0.16,
+    "reach": 19.5,
+    "styles": {
+     "dashed": 57,
+     "none": 69,
+     "unknown": 24
+    }
+   },
+   "right": {
+    "y10_std_cm": 9.54,
+    "j5": 32,
+    "obs": 0.88,
+    "near8": 0.713,
+    "reach": 14.7,
+    "styles": {
+     "solid": 129,
+     "none": 18,
+     "unknown": 3
+    }
+   }
+  },
+  "straight 40-45": {
+   "left": {
+    "y10_std_cm": 4.09,
+    "j5": 33,
+    "obs": 0.9,
+    "near8": 0.453,
+    "reach": 28.9,
+    "styles": {
+     "unknown": 8,
+     "none": 15,
+     "dashed": 127
+    }
+   },
+   "right": {
+    "y10_std_cm": 3.97,
+    "j5": 27,
+    "obs": 0.867,
+    "near8": 0.847,
+    "reach": 32.4,
+    "styles": {
+     "solid": 126,
+     "none": 20,
+     "unknown": 4
+    }
+   }
+  },
+  "junction 45-50": {
+   "left": {
+    "y10_std_cm": 2.05,
+    "j5": 4,
+    "obs": 0.533,
+    "near8": 0.28,
+    "reach": 16.3,
+    "styles": {
+     "dashed": 74,
+     "none": 70,
+     "unknown": 6
+    }
+   },
+   "right": {
+    "y10_std_cm": 2.04,
+    "j5": 4,
+    "obs": 0.647,
+    "near8": 0.513,
+    "reach": 16.7,
+    "styles": {
+     "solid": 80,
+     "none": 53,
+     "unknown": 11,
+     "dashed": 6
+    }
+   }
+  },
+  "curve 50-55": {
+   "left": {
+    "y10_std_cm": 6.23,
+    "j5": 32,
+    "obs": 0.953,
+    "near8": 0.413,
+    "reach": 18.8,
+    "styles": {
+     "none": 7,
+     "unknown": 7,
+     "dashed": 136
+    }
+   },
+   "right": {
+    "y10_std_cm": 6.7,
+    "j5": 39,
+    "obs": 0.953,
+    "near8": 0.94,
+    "reach": 18.8,
+    "styles": {
+     "solid": 137,
+     "none": 7,
+     "unknown": 6
+    }
+   }
+  },
+  "curve 55-58": {
+   "left": {
+    "y10_std_cm": 1.25,
+    "j5": 0,
+    "obs": 0.967,
+    "near8": 0.411,
+    "reach": 18.5,
+    "styles": {
+     "dashed": 87,
+     "none": 3
+    }
+   },
+   "right": {
+    "y10_std_cm": 1.11,
+    "j5": 0,
+    "obs": 1.0,
+    "near8": 1.0,
+    "reach": 14.0,
+    "styles": {
+     "solid": 90
+    }
+   }
+  }
+ },
+ "after": {
+  "junction 0-10": {
+   "left": {
+    "y10_std_cm": 4.66,
+    "j5": 7,
+    "obs": 0.617,
+    "near8": 0.117,
+    "reach": 30.9,
+    "styles": {
+     "none": 115,
+     "unknown": 101,
+     "dashed": 20,
+     "solid": 64
+    }
+   },
+   "right": {
+    "y10_std_cm": 3.41,
+    "j5": 17,
+    "obs": 0.827,
+    "near8": 0.383,
+    "reach": 35.0,
+    "styles": {
+     "none": 52,
+     "unknown": 32,
+     "solid": 216
+    }
+   }
+  },
+  "curve 15-20": {
+   "left": {
+    "y10_std_cm": 1.47,
+    "j5": 2,
+    "obs": 1.0,
+    "near8": 0.473,
+    "reach": 26.9,
+    "styles": {
+     "dashed": 150
+    }
+   },
+   "right": {
+    "y10_std_cm": 0.79,
+    "j5": 0,
+    "obs": 1.0,
+    "near8": 1.0,
+    "reach": 32.3,
+    "styles": {
+     "solid": 150
+    }
+   }
+  },
+  "curve 20-25": {
+   "left": {
+    "y10_std_cm": 0.37,
+    "j5": 0,
+    "obs": 0.307,
+    "near8": 0.047,
+    "reach": 26.9,
+    "styles": {
+     "dashed": 30,
+     "none": 104,
+     "unknown": 16
+    }
+   },
+   "right": {
+    "y10_std_cm": 3.85,
+    "j5": 28,
+    "obs": 0.893,
+    "near8": 0.893,
+    "reach": 15.6,
+    "styles": {
+     "solid": 111,
+     "dashed": 2,
+     "none": 16,
+     "unknown": 21
+    }
+   }
+  },
+  "junction 25-30": {
+   "left": {
+    "y10_std_cm": 2.37,
+    "j5": 30,
+    "obs": 0.8,
+    "near8": 0.173,
+    "reach": 28.9,
+    "styles": {
+     "none": 30,
+     "unknown": 79,
+     "dashed": 41
+    }
+   },
+   "right": {
+    "y10_std_cm": 2.73,
+    "j5": 34,
+    "obs": 0.94,
+    "near8": 0.507,
+    "reach": 22.8,
+    "styles": {
+     "solid": 135,
+     "none": 9,
+     "unknown": 6
+    }
+   }
+  },
+  "straight 30-35": {
+   "left": {
+    "y10_std_cm": 1.14,
+    "j5": 0,
+    "obs": 1.0,
+    "near8": 0.407,
+    "reach": 30.9,
+    "styles": {
+     "dashed": 150
+    }
+   },
+   "right": {
+    "y10_std_cm": 0.1,
+    "j5": 0,
+    "obs": 1.0,
+    "near8": 0.847,
+    "reach": 35.0,
+    "styles": {
+     "solid": 150
+    }
+   }
+  },
+  "turn 35-40": {
+   "left": {
+    "y10_std_cm": 1.77,
+    "j5": 2,
+    "obs": 0.6,
+    "near8": 0.2,
+    "reach": 18.7,
+    "styles": {
+     "dashed": 66,
+     "none": 60,
+     "unknown": 24
+    }
+   },
+   "right": {
+    "y10_std_cm": 9.21,
+    "j5": 30,
+    "obs": 0.9,
+    "near8": 0.733,
+    "reach": 14.7,
+    "styles": {
+     "solid": 132,
+     "none": 15,
+     "unknown": 3
+    }
+   }
+  },
+  "straight 40-45": {
+   "left": {
+    "y10_std_cm": 4.1,
+    "j5": 33,
+    "obs": 0.9,
+    "near8": 0.453,
+    "reach": 28.9,
+    "styles": {
+     "unknown": 8,
+     "none": 15,
+     "dashed": 127
+    }
+   },
+   "right": {
+    "y10_std_cm": 3.98,
+    "j5": 27,
+    "obs": 0.867,
+    "near8": 0.847,
+    "reach": 32.4,
+    "styles": {
+     "solid": 126,
+     "none": 20,
+     "unknown": 4
+    }
+   }
+  },
+  "junction 45-50": {
+   "left": {
+    "y10_std_cm": 1.83,
+    "j5": 2,
+    "obs": 0.533,
+    "near8": 0.28,
+    "reach": 16.3,
+    "styles": {
+     "dashed": 74,
+     "none": 70,
+     "unknown": 6
+    }
+   },
+   "right": {
+    "y10_std_cm": 1.91,
+    "j5": 4,
+    "obs": 0.633,
+    "near8": 0.513,
+    "reach": 16.7,
+    "styles": {
+     "solid": 80,
+     "none": 55,
+     "unknown": 13,
+     "dashed": 2
+    }
+   }
+  },
+  "curve 50-55": {
+   "left": {
+    "y10_std_cm": 5.79,
+    "j5": 28,
+    "obs": 0.94,
+    "near8": 0.413,
+    "reach": 18.8,
+    "styles": {
+     "none": 9,
+     "unknown": 7,
+     "dashed": 134
+    }
+   },
+   "right": {
+    "y10_std_cm": 6.5,
+    "j5": 37,
+    "obs": 0.953,
+    "near8": 0.94,
+    "reach": 18.8,
+    "styles": {
+     "solid": 137,
+     "none": 7,
+     "unknown": 6
+    }
+   }
+  },
+  "curve 55-58": {
+   "left": {
+    "y10_std_cm": 1.23,
+    "j5": 0,
+    "obs": 0.967,
+    "near8": 0.411,
+    "reach": 18.5,
+    "styles": {
+     "dashed": 87,
+     "none": 3
+    }
+   },
+   "right": {
+    "y10_std_cm": 1.11,
+    "j5": 0,
+    "obs": 1.0,
+    "near8": 1.0,
+    "reach": 14.0,
+    "styles": {
+     "solid": 90
+    }
+   }
+  }
+ }
+}

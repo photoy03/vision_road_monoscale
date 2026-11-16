@@ -1,0 +1,20 @@
+before   junction 0-10   L std 4.56 j5   7 obs 0.62 near8 0.12 reach 30.9 {'none': 115, 'unknown': 101, 'dashed': 20, 'solid': 64} | R std 3.39 j5  16 obs 0.83 near8 0.38 reach 35.0 {'none': 52, 'unknown': 32, 'solid': 216}
+before   curve 15-20     L std 2.54 j5  10 obs 0.99 near8 0.43 reach 26.9 {'dashed': 148, 'none': 2} | R std 1.34 j5   2 obs 1.00 near8 1.00 reach 33.4 {'solid': 140, 'unknown': 10}
+before   curve 20-25     L std 0.63 j5   0 obs 0.24 near8 0.01 reach 26.4 {'dashed': 30, 'none': 114, 'unknown': 6} | R std 4.2 j5  32 obs 0.88 near8 0.86 reach 15.9 {'unknown': 37, 'solid': 82, 'dashed': 13, 'none': 18}
+before   junction 25-30  L std 2.37 j5  30 obs 0.80 near8 0.17 reach 28.9 {'none': 30, 'unknown': 78, 'dashed': 42} | R std 2.64 j5  35 obs 0.94 near8 0.51 reach 22.8 {'solid': 138, 'none': 9, 'unknown': 3}
+before   straight 30-35  L std 1.16 j5   0 obs 1.00 near8 0.41 reach 30.9 {'dashed': 150} | R std 0.1 j5   0 obs 1.00 near8 0.85 reach 35.0 {'solid': 150}
+before   turn 35-40      L std 2.17 j5   2 obs 0.54 near8 0.16 reach 19.5 {'dashed': 57, 'none': 69, 'unknown': 24} | R std 9.54 j5  32 obs 0.88 near8 0.71 reach 14.7 {'solid': 129, 'none': 18, 'unknown': 3}
+before   straight 40-45  L std 4.09 j5  33 obs 0.90 near8 0.45 reach 28.9 {'unknown': 8, 'none': 15, 'dashed': 127} | R std 3.97 j5  27 obs 0.87 near8 0.85 reach 32.4 {'solid': 126, 'none': 20, 'unknown': 4}
+before   junction 45-50  L std 2.05 j5   4 obs 0.53 near8 0.28 reach 16.3 {'dashed': 74, 'none': 70, 'unknown': 6} | R std 2.04 j5   4 obs 0.65 near8 0.51 reach 16.7 {'solid': 80, 'none': 53, 'unknown': 11, 'dashed': 6}
+before   curve 50-55     L std 6.23 j5  32 obs 0.95 near8 0.41 reach 18.8 {'none': 7, 'unknown': 7, 'dashed': 136} | R std 6.7 j5  39 obs 0.95 near8 0.94 reach 18.8 {'solid': 137, 'none': 7, 'unknown': 6}
+before   curve 55-58     L std 1.25 j5   0 obs 0.97 near8 0.41 reach 18.5 {'dashed': 87, 'none': 3} | R std 1.11 j5   0 obs 1.00 near8 1.00 reach 14.0 {'solid': 90}
+after    junction 0-10   L std 4.66 j5   7 obs 0.62 near8 0.12 reach 30.9 {'none': 115, 'unknown': 101, 'dashed': 20, 'solid': 64} | R std 3.41 j5  17 obs 0.83 near8 0.38 reach 35.0 {'none': 52, 'unknown': 32, 'solid': 216}
+after    curve 15-20     L std 1.47 j5   2 obs 1.00 near8 0.47 reach 26.9 {'dashed': 150} | R std 0.79 j5   0 obs 1.00 near8 1.00 reach 32.3 {'solid': 150}
+after    curve 20-25     L std 0.37 j5   0 obs 0.31 near8 0.05 reach 26.9 {'dashed': 30, 'none': 104, 'unknown': 16} | R std 3.85 j5  28 obs 0.89 near8 0.89 reach 15.6 {'solid': 111, 'dashed': 2, 'none': 16, 'unknown': 21}
+after    junction 25-30  L std 2.37 j5  30 obs 0.80 near8 0.17 reach 28.9 {'none': 30, 'unknown': 79, 'dashed': 41} | R std 2.73 j5  34 obs 0.94 near8 0.51 reach 22.8 {'solid': 135, 'none': 9, 'unknown': 6}
+after    straight 30-35  L std 1.14 j5   0 obs 1.00 near8 0.41 reach 30.9 {'dashed': 150} | R std 0.1 j5   0 obs 1.00 near8 0.85 reach 35.0 {'solid': 150}
+after    turn 35-40      L std 1.77 j5   2 obs 0.60 near8 0.20 reach 18.7 {'dashed': 66, 'none': 60, 'unknown': 24} | R std 9.21 j5  30 obs 0.90 near8 0.73 reach 14.7 {'solid': 132, 'none': 15, 'unknown': 3}
+after    straight 40-45  L std 4.1 j5  33 obs 0.90 near8 0.45 reach 28.9 {'unknown': 8, 'none': 15, 'dashed': 127} | R std 3.98 j5  27 obs 0.87 near8 0.85 reach 32.4 {'solid': 126, 'none': 20, 'unknown': 4}
+after    junction 45-50  L std 1.83 j5   2 obs 0.53 near8 0.28 reach 16.3 {'dashed': 74, 'none': 70, 'unknown': 6} | R std 1.91 j5   4 obs 0.63 near8 0.51 reach 16.7 {'solid': 80, 'none': 55, 'unknown': 13, 'dashed': 2}
+after    curve 50-55     L std 5.79 j5  28 obs 0.94 near8 0.41 reach 18.8 {'none': 9, 'unknown': 7, 'dashed': 134} | R std 6.5 j5  37 obs 0.95 near8 0.94 reach 18.8 {'solid': 137, 'none': 7, 'unknown': 6}
+after    curve 55-58     L std 1.23 j5   0 obs 0.97 near8 0.41 reach 18.5 {'dashed': 87, 'none': 3} | R std 1.11 j5   0 obs 1.00 near8 1.00 reach 14.0 {'solid': 90}

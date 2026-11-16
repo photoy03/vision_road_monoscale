@@ -1,0 +1,148 @@
+{
+ "settings": {
+  "confirm_window": 8,
+  "confirm_hits": 5,
+  "start_span_m": 6.0,
+  "update_span_m": 3.0,
+  "max_start_m": 12.0,
+  "min_cutoff_hz": 0.3,
+  "beta": 0.5,
+  "d_cutoff_hz": 1.0,
+  "gate_m": 0.3,
+  "gate_frames": 3,
+  "near_m": 0.0,
+  "far_m": 20.0,
+  "step_m": 0.5,
+  "extend_m": 3.0,
+  "hold_s": 1.0,
+  "odom_timeout_s": 0.2,
+  "odom_lost_hold_s": 0.2,
+  "style_stable_s": 0.5,
+  "restart_s": 0.5,
+  "style_memory_s": 10.0,
+  "dashed_min_confidence": 0.6,
+  "memory_m": 10.0,
+  "memory_store_m": 4.0,
+  "memory_gate_m": 0.25
+ },
+ "curve_window_s": [
+  15.0,
+  25.0
+ ],
+ "sides": {
+  "left": {
+   "jitter_cm": {
+    "raw": {
+     "std": 4.18,
+     "p90_abs": 7.15,
+     "jumps": 4
+    },
+    "filtered": {
+     "std": 3.38,
+     "p90_abs": 4.83,
+     "jumps": 0
+    }
+   },
+   "jitter_straight_cm": {
+    "raw": {
+     "std": 3.73,
+     "p90_abs": 5.97,
+     "jumps": 0
+    },
+    "filtered": {
+     "std": 3.07,
+     "p90_abs": 4.76,
+     "jumps": 0
+    }
+   },
+   "shake_cm": {
+    "raw": 2.39,
+    "filtered": 1.33,
+    "filtered_where_raw": 1.45
+   },
+   "shake_straight_cm": {
+    "raw": 1.92,
+    "filtered": 1.42
+   },
+   "toggles": {
+    "raw": 30,
+    "filtered": 6
+   },
+   "shown_frames": {
+    "raw": 980,
+    "filtered": 1153
+   },
+   "curve_lag_m": {
+    "mean_abs": 0.028,
+    "p95_abs": 0.092,
+    "frames": 237
+   },
+   "observed_mismatch_frames": 0,
+   "reacquire_m": {
+    "mean": 0.095,
+    "max": 0.357,
+    "events": 9,
+    "mean_after_5_frames": 0.01,
+    "events_after_5_frames": 1
+   },
+   "style_switches": 1
+  },
+  "right": {
+   "jitter_cm": {
+    "raw": {
+     "std": 4.81,
+     "p90_abs": 7.47,
+     "jumps": 4
+    },
+    "filtered": {
+     "std": 4.22,
+     "p90_abs": 6.35,
+     "jumps": 25
+    }
+   },
+   "jitter_straight_cm": {
+    "raw": {
+     "std": 4.51,
+     "p90_abs": 8.29,
+     "jumps": 0
+    },
+    "filtered": {
+     "std": 4.03,
+     "p90_abs": 7.25,
+     "jumps": 2
+    }
+   },
+   "shake_cm": {
+    "raw": 2.46,
+    "filtered": 2.09,
+    "filtered_where_raw": 2.09
+   },
+   "shake_straight_cm": {
+    "raw": 1.86,
+    "filtered": 1.77
+   },
+   "toggles": {
+    "raw": 13,
+    "filtered": 8
+   },
+   "shown_frames": {
+    "raw": 1317,
+    "filtered": 1459
+   },
+   "curve_lag_m": {
+    "mean_abs": 0.046,
+    "p95_abs": 0.173,
+    "frames": 300
+   },
+   "observed_mismatch_frames": 4,
+   "reacquire_m": {
+    "mean": 0.289,
+    "max": 1.912,
+    "events": 8,
+    "mean_after_5_frames": 0.678,
+    "events_after_5_frames": 3
+   },
+   "style_switches": 1
+  }
+ }
+}

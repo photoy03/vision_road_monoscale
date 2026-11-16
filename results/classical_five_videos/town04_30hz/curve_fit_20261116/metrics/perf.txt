@@ -1,0 +1,15 @@
+== town04
+off 15.25 ms/frame
+on 15.54 ms/frame
+off2 15.28 ms/frame
+on2 15.58 ms/frame
+== maploop
+off 16.44 ms/frame
+on 16.80 ms/frame
+off2 16.41 ms/frame
+on2 16.73 ms/frame
+== town05
+off 18.55 ms/frame
+on 18.87 ms/frame
+off2 18.42 ms/frame
+on2 18.81 ms/frame

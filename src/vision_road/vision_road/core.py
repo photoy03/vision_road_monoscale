@@ -56,6 +56,11 @@ class Settings:
     carla_chain_filter_enabled: bool = True
     carla_chain_confirm_frames: int = 3
     carla_chain_band_m: float = 0.25
+    carla_spine_cubic_m: float = 0.0  # >0: a long, densely painted chain gets a cubic (straight-then-curving), held to 0 unless its quadratic misses the paint by about this (p90)
+    carla_spine_cubic_span_m: float = 12.0  # ... chain at least this long
+    carla_spine_cubic_cover: float = 0.6  # ... with paint along at least this share of it (dashes keep the quadratic)
+    carla_spine_cubic_ridge: float = 0.05  # pull of the cubic term towards 0 (x in units of 10 m) at that miss; x(threshold/miss)^4 otherwise
+    carla_spine_near_m: float = 0.0  # >0: paint beyond this counts less in the fit, (near/x)^2, so far paint cannot bend the near boundary
     carla_tracking_enabled: bool = True
     carla_tracking_keep_bonus: float = 2.0
     carla_tracking_match_m: float = 0.35

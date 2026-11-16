@@ -246,3 +246,18 @@ def test_a_line_switch_forgets_the_old_line():
     p={side:q for side,q,_,_ in f.output()}['right']
     # The new line is drawn flat down to the rear axle, not tilted toward the old one.
     assert np.abs(p[:,1]+3.6).max()<.03
+
+
+def test_cubic_display_follows_a_straight_then_curving_line_and_is_off_by_default():
+    x=np.arange(3.,25.,.5);y=-1.8+np.where(x>11,.012*(x-11)**2,0.);line=np.column_stack([x,y])
+    def miss(stations):
+        near=(x>=6)&(x<=20);return float(np.max(np.abs(evaluate(stations,x[near])-y[near])))
+    quadratic=fit(line)[0];cubic=fit(line,cubic=.05)[0]
+    assert len(quadratic)==3 and len(cubic)==4
+    assert miss(quadratic)>.08 and miss(cubic)<.05
+    # A straight or evenly curving line keeps its quadratic shape.
+    arc=np.column_stack([x,-1.8+.004*x*x])
+    assert np.allclose(evaluate(fit(arc,cubic=.05)[0],x),evaluate(fit(arc)[0],x),atol=.01)
+    # Motion keeps a cubic a cubic.
+    moved=shift(cubic,(1.,0.,.02))
+    assert len(moved)==4 and abs(evaluate(moved,np.array([9.]))[0]-evaluate(cubic,np.array([10.]))[0])<.3
