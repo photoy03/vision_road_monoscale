@@ -1,0 +1,9 @@
+before     straight  L y6  0.54 j6   1 y10  0.43 j10   0 both6 0.54 one6 0.25 both10 0.83 mid3_6 1.0 mid3_10 1.0 med6 0.08 3@15 0.00 | R y6  3.50 j6   8 y10  2.19
+before     curve     L y6  1.73 j6   3 y10  1.42 j10   1 both6 0.20 one6 0.34 both10 0.67 mid3_6 0.975 mid3_10 1.0 med6 0.88 3@15 0.00 | R y6  2.56 j6   6 y10  2.15
+before     island    L y6  1.54 j6   0 y10  2.98 j10  38 both6 0.00 one6 0.57 both10 0.00 mid3_6 None mid3_10 None med6 None 3@15 0.00 | R y6  2.39 j6   4 y10  3.56
+cubic_all  straight  L y6  0.58 j6   1 y10  0.51 j10   1 both6 0.54 one6 0.25 both10 0.83 mid3_6 1.0 mid3_10 1.0 med6 0.09 3@15 0.00 | R y6  3.34 j6   8 y10  1.90
+cubic_all  curve     L y6  1.98 j6   7 y10  1.46 j10   2 both6 0.20 one6 0.34 both10 0.67 mid3_6 1.0 mid3_10 0.992 med6 0.73 3@15 0.00 | R y6  3.00 j6   7 y10  2.25
+cubic_all  island    L y6  1.46 j6   0 y10  2.99 j10  37 both6 0.00 one6 0.57 both10 0.00 mid3_6 None mid3_10 None med6 None 3@15 0.00 | R y6  2.35 j6   2 y10  3.53
+nodouble   straight  L y6  0.55 j6   1 y10  0.46 j10   0 both6 0.54 one6 0.25 both10 0.83 mid3_6 1.0 mid3_10 1.0 med6 0.09 3@15 0.00 | R y6  3.34 j6   8 y10  1.90
+nodouble   curve     L y6  1.72 j6   3 y10  1.41 j10   2 both6 0.20 one6 0.34 both10 0.67 mid3_6 0.987 mid3_10 0.996 med6 0.82 3@15 0.00 | R y6  2.63 j6   7 y10  2.09
+nodouble   island    L y6  1.46 j6   0 y10  2.99 j10  37 both6 0.00 one6 0.57 both10 0.00 mid3_6 None mid3_10 None med6 None 3@15 0.00 | R y6  2.35 j6   2 y10  3.53

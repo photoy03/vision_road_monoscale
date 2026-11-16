@@ -431,7 +431,12 @@ class CarlaDetector(Detector):
             return coef,residual,weights
         coef,residual,weights=robust(2,np.ones(len(x)))
         span=float(forward[-1]-forward[0])
-        if c.carla_spine_cubic_m>0 and span>=c.carla_spine_cubic_span_m and len(forward)*c.mpp>=c.carla_spine_cubic_cover*span:
+        yellow_path=sum(a['yellow'] for a in group)>len(group)/2
+        # A double line (a pair of strands measured on this side within 30 frames) keeps its quadratic:
+        # the cubic followed the strand scatter and doubled the near jumps (maploop curve).
+        paired=self.strand_gap.get(group[0]['lane'].side) if yellow_path else None
+        double=c.carla_spine_cubic_double is False and paired is not None and self.frame_index-paired[1]<=30
+        if c.carla_spine_cubic_m>0 and not double and span>=c.carla_spine_cubic_span_m and len(forward)*c.mpp>=c.carla_spine_cubic_cover*span:
             # Straight then curving (a curve entry or exit): a quadratic bends the near straight part
             # and flattens the far curve.  Dense paint only; dash gaps keep the quadratic.  The cubic's
             # pull to 0 eases off smoothly as the quadratic misses more, so a gentle curve whose miss
@@ -444,7 +449,6 @@ class CarlaDetector(Detector):
             coef,residual,weights=robust(3,weights,c.carla_spine_cubic_ridge*(c.carla_spine_cubic_m/max(miss,1e-3))**4)
             if hasattr(self,'diagnostics'):self.diagnostics['cubic_'+str(group[0]['lane'].side)]=round(float(coef[0]),4)
         fit=coef/np.power(10.,np.arange(len(coef)-1,-1,-1))  # back to polyval in metres
-        yellow_path=sum(a['yellow'] for a in group)>len(group)/2
         band=c.carla_chain_band_m
         if c.carla_path_filter_enabled and yellow_path:band=max(band,.45)
         return sample,np.polyval(fit,sample-origin),band,yellow_path,group

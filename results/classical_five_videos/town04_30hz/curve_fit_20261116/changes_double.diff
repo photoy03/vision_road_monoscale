@@ -1,0 +1,65 @@
+--- backups/before-double-quadratic-20261116/carla.py	2026-11-16 23:20:11.445519605 +0900
++++ src/vision_road/vision_road/carla.py	2026-11-16 23:20:11.463519481 +0900
+@@ -431,7 +431,12 @@
+             return coef,residual,weights
+         coef,residual,weights=robust(2,np.ones(len(x)))
+         span=float(forward[-1]-forward[0])
+-        if c.carla_spine_cubic_m>0 and span>=c.carla_spine_cubic_span_m and len(forward)*c.mpp>=c.carla_spine_cubic_cover*span:
++        yellow_path=sum(a['yellow'] for a in group)>len(group)/2
++        # A double line (a pair of strands measured on this side within 30 frames) keeps its quadratic:
++        # the cubic followed the strand scatter and doubled the near jumps (maploop curve).
++        paired=self.strand_gap.get(group[0]['lane'].side) if yellow_path else None
++        double=c.carla_spine_cubic_double is False and paired is not None and self.frame_index-paired[1]<=30
++        if c.carla_spine_cubic_m>0 and not double and span>=c.carla_spine_cubic_span_m and len(forward)*c.mpp>=c.carla_spine_cubic_cover*span:
+             # Straight then curving (a curve entry or exit): a quadratic bends the near straight part
+             # and flattens the far curve.  Dense paint only; dash gaps keep the quadratic.  The cubic's
+             # pull to 0 eases off smoothly as the quadratic misses more, so a gentle curve whose miss
+@@ -444,7 +449,6 @@
+             coef,residual,weights=robust(3,weights,c.carla_spine_cubic_ridge*(c.carla_spine_cubic_m/max(miss,1e-3))**4)
+             if hasattr(self,'diagnostics'):self.diagnostics['cubic_'+str(group[0]['lane'].side)]=round(float(coef[0]),4)
+         fit=coef/np.power(10.,np.arange(len(coef)-1,-1,-1))  # back to polyval in metres
+-        yellow_path=sum(a['yellow'] for a in group)>len(group)/2
+         band=c.carla_chain_band_m
+         if c.carla_path_filter_enabled and yellow_path:band=max(band,.45)
+         return sample,np.polyval(fit,sample-origin),band,yellow_path,group
+--- backups/before-double-quadratic-20261116/core.py	2026-11-16 23:20:11.445519605 +0900
++++ src/vision_road/vision_road/core.py	2026-11-16 23:20:11.463519481 +0900
+@@ -60,6 +60,7 @@
+     carla_spine_cubic_span_m: float = 12.0  # ... chain at least this long
+     carla_spine_cubic_cover: float = 0.6  # ... with paint along at least this share of it (dashes keep the quadratic)
+     carla_spine_cubic_ridge: float = 0.05  # pull of the cubic term towards 0 (x in units of 10 m) at that miss; x(threshold/miss)^4 otherwise
++    carla_spine_cubic_double: bool = True  # False: a double line (strand pair measured) keeps the quadratic
+     carla_spine_near_m: float = 0.0  # >0: paint beyond this counts less in the fit, (near/x)^2, so far paint cannot bend the near boundary
+     carla_tracking_enabled: bool = True
+     carla_tracking_keep_bonus: float = 2.0
+--- backups/before-double-quadratic-20261116/carla.yaml	2026-11-16 23:20:11.445519605 +0900
++++ src/vision_road/config/carla.yaml	2026-11-16 23:20:11.463519481 +0900
+@@ -57,6 +57,8 @@
+     # misses its paint by 5 cm (p90); paint beyond 15 m counts less, so far paint cannot bend the near boundary.
+     carla_spine_cubic_m: 0.05
+     carla_spine_near_m: 15.0
++    # ... but not on a double line: there the cubic followed the strand scatter (maploop curve jumps 3 -> 7).
++    carla_spine_cubic_double: false
+ lane_display_filter:
+   ros__parameters:
+     # HUD line reaches the rear axle (HUD path start, bottom of the screen); paint seen in the last
+--- backups/before-double-quadratic-20261116/test_carla.py	2026-11-16 23:20:11.445519605 +0900
++++ tests/test_carla.py	2026-11-16 23:20:21.860448350 +0900
+@@ -239,3 +239,17 @@
+     assert abs(spine_of(on,forward[dashes],center[dashes])-spine_of(replace(c,carla_spine_near_m=15.),forward[dashes],center[dashes]))<1e-9
+     # A straight line is unchanged.
+     assert spine_of(on,forward,np.full_like(forward,-1.8))<1e-6
++
++
++def test_a_double_line_keeps_its_quadratic_when_asked():
++    c=replace(Settings(mpp=.07),carla_spine_cubic_m=.05,carla_spine_near_m=15.)
++    forward=np.arange(5.5,30.,.07);center=1.8+np.where(forward>11,.012*(forward-11)**2,0.)
++    def fitted(cfg,paired):
++        d=CarlaDetector(cfg);d.frame_index=40
++        if paired:d.strand_gap['left']=(.27,35)
++        group=[dict(lane=Lane('left',np.column_stack([forward,center]),.8),yellow=True)]
++        return d.spine(group,forward,center)[1]
++    quadratic=fitted(replace(c,carla_spine_cubic_m=0.),False)
++    assert np.abs(fitted(c,True)-quadratic).max()>.03  # by default a double line gets the cubic too
++    assert np.allclose(fitted(replace(c,carla_spine_cubic_double=False),True),quadratic)
++    assert np.abs(fitted(replace(c,carla_spine_cubic_double=False),False)-quadratic).max()>.03  # no pair measured

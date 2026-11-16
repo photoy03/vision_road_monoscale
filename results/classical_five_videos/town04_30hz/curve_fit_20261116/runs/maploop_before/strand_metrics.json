@@ -190,7 +190,7 @@
    }
   }
  },
- "after": {
+ "cubic_all": {
   "junction": {
    "left": {
     "y6_step_cm": null,
@@ -381,7 +381,7 @@
    }
   }
  },
- "near_only": {
+ "nodouble": {
   "junction": {
    "left": {
     "y6_step_cm": null,
@@ -519,15 +519,15 @@
   },
   "island": {
    "left": {
-    "y6_step_cm": 1.49,
+    "y6_step_cm": 1.46,
     "y6_jumps5": 0,
     "covered6": 0.567,
     "both6": 0.0,
     "one6": 0.567,
     "mid3_6": null,
     "mid_med_cm_6": null,
-    "y10_step_cm": 3.09,
-    "y10_jumps5": 38,
+    "y10_step_cm": 2.99,
+    "y10_jumps5": 37,
     "covered10": 0.893,
     "both10": 0.0,
     "one10": 0.84,
@@ -536,11 +536,11 @@
     "three15": 0.0
    },
    "right": {
-    "y6_step_cm": 2.19,
-    "y6_jumps5": 3,
-    "covered6": 0.487,
-    "y10_step_cm": 3.55,
-    "y10_jumps5": 30,
+    "y6_step_cm": 2.35,
+    "y6_jumps5": 2,
+    "covered6": 0.48,
+    "y10_step_cm": 3.53,
+    "y10_jumps5": 31,
     "covered10": 0.707
    }
   },

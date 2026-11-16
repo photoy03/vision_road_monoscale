@@ -239,3 +239,17 @@ def test_a_straight_then_curving_chain_gets_a_cubic_and_dashes_keep_the_quadrati
     assert abs(spine_of(on,forward[dashes],center[dashes])-spine_of(replace(c,carla_spine_near_m=15.),forward[dashes],center[dashes]))<1e-9
     # A straight line is unchanged.
     assert spine_of(on,forward,np.full_like(forward,-1.8))<1e-6
+
+
+def test_a_double_line_keeps_its_quadratic_when_asked():
+    c=replace(Settings(mpp=.07),carla_spine_cubic_m=.05,carla_spine_near_m=15.)
+    forward=np.arange(5.5,30.,.07);center=1.8+np.where(forward>11,.012*(forward-11)**2,0.)
+    def fitted(cfg,paired):
+        d=CarlaDetector(cfg);d.frame_index=40
+        if paired:d.strand_gap['left']=(.27,35)
+        group=[dict(lane=Lane('left',np.column_stack([forward,center]),.8),yellow=True)]
+        return d.spine(group,forward,center)[1]
+    quadratic=fitted(replace(c,carla_spine_cubic_m=0.),False)
+    assert np.abs(fitted(c,True)-quadratic).max()>.03  # by default a double line gets the cubic too
+    assert np.allclose(fitted(replace(c,carla_spine_cubic_double=False),True),quadratic)
+    assert np.abs(fitted(replace(c,carla_spine_cubic_double=False),False)-quadratic).max()>.03  # no pair measured

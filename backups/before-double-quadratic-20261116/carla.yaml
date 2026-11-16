@@ -1,0 +1,67 @@
+vision_road:
+  ros__parameters:
+    detector_backend: carla
+    opencv_threads: 2
+    image_reliability: reliable
+    image_queue_depth: 10
+    image_topic: /carla/ego_vehicle/rgb_front/image
+    odom_topic: /carla/ego_vehicle/odometry
+    world_frame: map
+    base_frame: ego_vehicle
+    image_roi_bottom: 0.86
+    map_enabled: false
+    lateral_min: -6.0
+    lateral_max: 6.0
+    forward_min: 3.0
+    forward_max: 35.0
+    mpp: 0.05
+    min_span_m: 0.40
+    min_pixels: 20
+    windows: 24
+    margin_m: 0.50
+    segment_m: 0.10
+    carla_stage: 3
+    carla_ridge_min: 3.0
+    carla_relative_min: 0.025
+    carla_grid_enabled: true
+    temporal_enabled: true
+    temporal_max_frames: 2
+    temporal_max_age_sec: 0.15
+    temporal_max_distance_m: 3.0
+    temporal_match_m: 0.30
+    style_temporal_enabled: true
+    style_history_sec: 0.8
+    style_history_frames: 8
+    style_hold_sec: 1.0
+    # Curve: a dashed side seen one dash at a time is judged from 12 m of paint gathered along the road.
+    style_accumulate_m: 12.0
+
+    # Motion-compensated preference for the confirmed lane; raw paint stays observed.
+    carla_tracking_enabled: true
+    carla_tracking_keep_bonus: 2.0
+    carla_tracking_match_m: 0.35
+    carla_tracking_switch_margin: 1.5
+    carla_tracking_switch_frames: 3
+    carla_tracking_memory_sec: 0.25
+    # Curve: a short boundary takes the long side's shape (normal offset), up to 6 m past its own paint.
+    carla_shared_shape: true
+    carla_shared_extend_m: 6.0
+    # Left double line: one pair of rails; centres of seen pairs kept 25 m of travel label a single near strand.
+    carla_strand_pair: true
+    carla_strand_memory_m: 25.0
+    # Intersection approach: a new line ~1.75 m beyond the ended one (lane 3.5 -> 5.3 m wide) is not taken.
+    carla_width_reject_m: 1.0
+    # Pale yellow paint (Town05: g-b ~13): yellow when (r+g)/2-b is 6 above the road around it and itself.
+    carla_yellow_relative_min: 6.0
+    # Sharp curves (Town04): a long dense chain that is straight then curving gets a cubic when the quadratic
+    # misses its paint by 5 cm (p90); paint beyond 15 m counts less, so far paint cannot bend the near boundary.
+    carla_spine_cubic_m: 0.05
+    carla_spine_near_m: 15.0
+lane_display_filter:
+  ros__parameters:
+    # HUD line reaches the rear axle (HUD path start, bottom of the screen); paint seen in the last
+    # 10 m of travel fills below the first seen paint (~5.5 m), the fit's arc where there is none.
+    near_m: 0.0
+    memory_m: 10.0
+    # Sharp curves: the HUD line is a cubic too, its third-order term held to 0 unless a quadratic misses by ~5 cm.
+    cubic_m: 0.05
