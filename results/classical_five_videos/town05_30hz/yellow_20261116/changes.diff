@@ -1,0 +1,58 @@
+--- backups/before-yellow-relative-20261116/carla.py	2026-11-16 22:39:15.218342976 +0900
++++ src/vision_road/vision_road/carla.py	2026-11-16 22:39:15.240343049 +0900
+@@ -75,6 +75,12 @@
+         b,g,r=cv2.split(bev.astype(np.float32))
+         white=(s<120)&(l>c.carla_white_light_min)
+         self.yellow=(h>=16)&(h<=42)&(s>20)&((g-b)>18)&((g-b)>.09*np.maximum(g,1))&((g-b)>1.25*(r-g))
++        if c.carla_yellow_relative_min>0:
++            # Faint yellow (a pale map, or washed out by light): blue below red and green, measured against
++            # the road around it, so a uniformly warm or bluish road is not yellow.
++            yellowness=(r+g)/2-b;size=2*round(c.carla_yellow_relative_window_m/c.mpp/2)+1
++            road=cv2.medianBlur(np.clip(yellowness+128,0,255).astype(np.uint8),size).astype(np.float32)-128
++            self.yellow|=(yellowness>=c.carla_yellow_relative_min)&(yellowness-road>=c.carla_yellow_relative_min)
+         color=white|self.yellow
+         response=np.zeros_like(gray)
+         # Average both flanks at multiple paint widths. Preserve weak ridges;
+--- backups/before-yellow-relative-20261116/core.py	2026-11-16 22:39:15.218342976 +0900
++++ src/vision_road/vision_road/core.py	2026-11-16 22:39:15.240343049 +0900
+@@ -80,6 +80,8 @@
+     carla_learned_gate_far_m: float = 20.0  # gate only this close; the mask thins out and misses far paint
+     carla_learned_penalty: float = 0.8  # penalize: fraction of an outside fragment's length removed from its score
+     carla_width_reject_m: float = 0.0  # >0: a candidate this far off the lane width from the other side's tracked boundary is not taken
++    carla_yellow_relative_min: float = 0.0  # >0: paint whose yellowness (r+g)/2-b is this much above the local road level (and itself) is yellow
++    carla_yellow_relative_window_m: float = 1.5  # square window of the local road level (median)
+ 
+ 
+ class Projector:
+--- backups/before-yellow-relative-20261116/carla.yaml	2026-11-16 22:39:15.218342976 +0900
++++ src/vision_road/config/carla.yaml	2026-11-16 22:39:15.241343052 +0900
+@@ -51,6 +51,8 @@
+     carla_strand_memory_m: 25.0
+     # Intersection approach: a new line ~1.75 m beyond the ended one (lane 3.5 -> 5.3 m wide) is not taken.
+     carla_width_reject_m: 1.0
++    # Pale yellow paint (Town05: g-b ~13): yellow when (r+g)/2-b is 6 above the road around it and itself.
++    carla_yellow_relative_min: 6.0
+ lane_display_filter:
+   ros__parameters:
+     # HUD line reaches the rear axle (HUD path start, bottom of the screen); paint seen in the last
+--- backups/before-yellow-relative-20261116/test_carla.py	2026-11-16 22:39:15.219342979 +0900
++++ tests/test_carla.py	2026-11-16 22:39:41.746432401 +0900
+@@ -204,3 +204,18 @@
+     assert right_found(replace(c,carla_width_reject_m=1.),im,prior)[0]
+     c,im,_=width_scene(-3.55)
+     assert right_found(replace(c,carla_width_reject_m=1.),im,{})[0]
++
++
++def test_pale_yellow_paint_is_yellow_against_the_road_and_white_stays_white():
++    c=Settings(forward_min=3,forward_max=35,lateral_min=-6,lateral_max=6,mpp=.05,min_span_m=.4)
++    im=np.full((640,240,3),(217,219,223),np.uint8)  # bright Town05 road, BGR
++    im[:,200:240]=(235,215,205)  # a bluish (shaded) patch
++    im[100:500,60:63]=(229,245,246)  # pale yellow: g-b 16, fails the fixed colour test
++    im[100:500,140:143]=(240,240,240)  # white on the road
++    im[100:500,215:218]=(250,250,250)  # white on the bluish patch: warmer than its surroundings
++    valid=np.full(im.shape[:2],255,np.uint8)
++    d=CarlaDetector(c);d.binary(im,valid)
++    assert not d.yellow[300,61]  # off by default
++    d=CarlaDetector(replace(c,carla_yellow_relative_min=6.));d.binary(im,valid)
++    assert d.yellow[300,61] and d.raw_mask[300,61]
++    assert not d.yellow[300,141] and not d.yellow[300,216] and not d.yellow[300,30]

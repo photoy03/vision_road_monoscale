@@ -51,6 +51,8 @@ vision_road:
     carla_strand_memory_m: 25.0
     # Intersection approach: a new line ~1.75 m beyond the ended one (lane 3.5 -> 5.3 m wide) is not taken.
     carla_width_reject_m: 1.0
+    # Pale yellow paint (Town05: g-b ~13): yellow when (r+g)/2-b is 6 above the road around it and itself.
+    carla_yellow_relative_min: 6.0
 lane_display_filter:
   ros__parameters:
     # HUD line reaches the rear axle (HUD path start, bottom of the screen); paint seen in the last

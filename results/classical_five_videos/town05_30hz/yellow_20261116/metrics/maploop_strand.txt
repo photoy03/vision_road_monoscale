@@ -1,0 +1,14 @@
+before     junction  L y6  0.00 j6   0 y10  1.10 j10   0 both6 0.00 one6 0.01 both10 0.00 mid3_6 None mid3_10 None med6 None 3@15 0.00 | R y6  0.00 j6   0 y10  2.39
+before     straight  L y6  0.54 j6   1 y10  0.43 j10   0 both6 0.54 one6 0.25 both10 0.83 mid3_6 1.0 mid3_10 1.0 med6 0.09 3@15 0.00 | R y6  3.50 j6   8 y10  2.19
+before     curve     L y6  1.73 j6   3 y10  1.38 j10   1 both6 0.20 one6 0.34 both10 0.67 mid3_6 0.975 mid3_10 1.0 med6 0.86 3@15 0.00 | R y6  2.58 j6   7 y10  2.12
+before     straight2 L y6  1.18 j6   0 y10  0.91 j10   0 both6 0.45 one6 0.36 both10 0.93 mid3_6 0.937 mid3_10 1.0 med6 0.43 3@15 0.00 | R y6  2.06 j6   5 y10  1.81
+before     crosswalk L y6  1.27 j6   1 y10  1.21 j10   1 both6 0.19 one6 0.21 both10 0.29 mid3_6 1.0 mid3_10 1.0 med6 0.33 3@15 0.00 | R y6  2.08 j6   1 y10  2.37
+before     island    L y6  1.53 j6   0 y10  3.00 j10  38 both6 0.00 one6 0.57 both10 0.00 mid3_6 None mid3_10 None med6 None 3@15 0.00 | R y6  2.39 j6   4 y10  3.56
+before     junction2 L y6  0.58 j6   0 y10  0.53 j10   0 both6 0.00 one6 0.15 both10 0.00 mid3_6 None mid3_10 None med6 None 3@15 0.00 | R y6  0.25 j6   0 y10  2.34
+after      junction  L y6  0.00 j6   0 y10  1.10 j10   0 both6 0.00 one6 0.01 both10 0.00 mid3_6 None mid3_10 None med6 None 3@15 0.00 | R y6  0.00 j6   0 y10  2.39
+after      straight  L y6  0.54 j6   1 y10  0.43 j10   0 both6 0.54 one6 0.25 both10 0.83 mid3_6 1.0 mid3_10 1.0 med6 0.08 3@15 0.00 | R y6  3.50 j6   8 y10  2.19
+after      curve     L y6  1.73 j6   3 y10  1.42 j10   1 both6 0.20 one6 0.34 both10 0.67 mid3_6 0.975 mid3_10 1.0 med6 0.88 3@15 0.00 | R y6  2.56 j6   6 y10  2.15
+after      straight2 L y6  1.18 j6   0 y10  0.91 j10   0 both6 0.45 one6 0.37 both10 0.93 mid3_6 0.936 mid3_10 1.0 med6 0.43 3@15 0.00 | R y6  1.75 j6   3 y10  1.63
+after      crosswalk L y6  1.27 j6   1 y10  1.21 j10   1 both6 0.19 one6 0.21 both10 0.29 mid3_6 1.0 mid3_10 1.0 med6 0.33 3@15 0.00 | R y6  1.42 j6   0 y10  2.02
+after      island    L y6  1.54 j6   0 y10  2.98 j10  38 both6 0.00 one6 0.57 both10 0.00 mid3_6 None mid3_10 None med6 None 3@15 0.00 | R y6  2.39 j6   4 y10  3.56
+after      junction2 L y6  0.58 j6   0 y10  0.53 j10   0 both6 0.00 one6 0.15 both10 0.00 mid3_6 None mid3_10 None med6 None 3@15 0.00 | R y6  0.25 j6   0 y10  2.34

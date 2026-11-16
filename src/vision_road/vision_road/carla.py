@@ -75,6 +75,12 @@ class CarlaDetector(Detector):
         b,g,r=cv2.split(bev.astype(np.float32))
         white=(s<120)&(l>c.carla_white_light_min)
         self.yellow=(h>=16)&(h<=42)&(s>20)&((g-b)>18)&((g-b)>.09*np.maximum(g,1))&((g-b)>1.25*(r-g))
+        if c.carla_yellow_relative_min>0:
+            # Faint yellow (a pale map, or washed out by light): blue below red and green, measured against
+            # the road around it, so a uniformly warm or bluish road is not yellow.
+            yellowness=(r+g)/2-b;size=2*round(c.carla_yellow_relative_window_m/c.mpp/2)+1
+            road=cv2.medianBlur(np.clip(yellowness+128,0,255).astype(np.uint8),size).astype(np.float32)-128
+            self.yellow|=(yellowness>=c.carla_yellow_relative_min)&(yellowness-road>=c.carla_yellow_relative_min)
         color=white|self.yellow
         response=np.zeros_like(gray)
         # Average both flanks at multiple paint widths. Preserve weak ridges;

@@ -204,3 +204,18 @@ def test_a_line_far_off_the_lane_width_is_not_taken_as_the_other_side():
     assert right_found(replace(c,carla_width_reject_m=1.),im,prior)[0]
     c,im,_=width_scene(-3.55)
     assert right_found(replace(c,carla_width_reject_m=1.),im,{})[0]
+
+
+def test_pale_yellow_paint_is_yellow_against_the_road_and_white_stays_white():
+    c=Settings(forward_min=3,forward_max=35,lateral_min=-6,lateral_max=6,mpp=.05,min_span_m=.4)
+    im=np.full((640,240,3),(217,219,223),np.uint8)  # bright Town05 road, BGR
+    im[:,200:240]=(235,215,205)  # a bluish (shaded) patch
+    im[100:500,60:63]=(229,245,246)  # pale yellow: g-b 16, fails the fixed colour test
+    im[100:500,140:143]=(240,240,240)  # white on the road
+    im[100:500,215:218]=(250,250,250)  # white on the bluish patch: warmer than its surroundings
+    valid=np.full(im.shape[:2],255,np.uint8)
+    d=CarlaDetector(c);d.binary(im,valid)
+    assert not d.yellow[300,61]  # off by default
+    d=CarlaDetector(replace(c,carla_yellow_relative_min=6.));d.binary(im,valid)
+    assert d.yellow[300,61] and d.raw_mask[300,61]
+    assert not d.yellow[300,141] and not d.yellow[300,216] and not d.yellow[300,30]

@@ -80,6 +80,8 @@ class Settings:
     carla_learned_gate_far_m: float = 20.0  # gate only this close; the mask thins out and misses far paint
     carla_learned_penalty: float = 0.8  # penalize: fraction of an outside fragment's length removed from its score
     carla_width_reject_m: float = 0.0  # >0: a candidate this far off the lane width from the other side's tracked boundary is not taken
+    carla_yellow_relative_min: float = 0.0  # >0: paint whose yellowness (r+g)/2-b is this much above the local road level (and itself) is yellow
+    carla_yellow_relative_window_m: float = 1.5  # square window of the local road level (median)
 
 
 class Projector:

@@ -1,0 +1,10 @@
+== maploop_offline
+off 15.70 ms/frame
+on 17.02 ms/frame
+off2 15.65 ms/frame
+on2 17.02 ms/frame
+== town05_offline
+off 13.81 ms/frame
+on 18.82 ms/frame
+off2 14.37 ms/frame
+on2 18.86 ms/frame
