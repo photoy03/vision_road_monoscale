@@ -1,0 +1,14 @@
+before     straight 0-9    L mc 0.7/0/0        raw 0.72/0/0       | R mc 0.38/0/0       raw 0.38/0/0
+before     turn 10-15      L mc 0.8/0/0        raw 1.77/42/0      | R mc 1.32/0/0       raw 2.05/35/0
+before     curve 15-30     L mc 0.78/1/0       raw 1.12/1/0       | R mc 0.76/0/0       raw 1.1/0/0
+before     turn 35-40      L mc 1.76/1/0       raw 2.26/37/1      | R mc 0.5/0/0        raw 1.31/39/0
+before     straight 40-45  L mc 1.03/0/0       raw 1.42/0/0       | R mc 0.72/0/0       raw 1.22/1/0
+before     junction 45-50  L mc 0.65/0/0       raw 0.66/0/0       | R mc 1.2/0/0        raw 1.21/0/0
+before     straight 55-60  L mc 0.93/0/0       raw 0.95/0/0       | R mc 0.46/0/0       raw 0.47/0/0
+after      straight 0-9    L mc 0.7/0/0        raw 0.72/0/0       | R mc 0.38/0/0       raw 0.38/0/0
+after      turn 10-15      L mc 0.8/0/0        raw 1.77/42/0      | R mc 1.32/0/0       raw 2.05/35/0
+after      curve 15-30     L mc 0.78/1/0       raw 1.12/1/0       | R mc 0.76/0/0       raw 1.1/0/0
+after      turn 35-40      L mc 1.76/1/0       raw 2.26/37/1      | R mc 0.5/0/0        raw 1.31/39/0
+after      straight 40-45  L mc 1.03/0/0       raw 1.42/0/0       | R mc 0.72/0/0       raw 1.22/1/0
+after      junction 45-50  L mc 0.65/0/0       raw 0.66/0/0       | R mc 1.2/0/0        raw 1.21/0/0
+after      straight 55-60  L mc 0.93/0/0       raw 0.95/0/0       | R mc 0.46/0/0       raw 0.47/0/0

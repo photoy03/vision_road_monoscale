@@ -115,6 +115,12 @@ class CarlaDetector(Detector):
                     if 1.5<=(b-a)*c.mpp<=12.:
                         self.grid_mask[max(0,a-round(.5/c.mpp)):min(len(raw),b+round(.5/c.mpp)+1)]=255
             raw[self.grid_mask>0]=0
+        self.transverse=None
+        if c.carla_tail_gap_m>0:
+            # Paint brighter than the rows just before and after it, at least carla_tail_bar_m wide: a stop line.
+            step=max(2,round(.25/c.mpp))
+            across=(gray-np.maximum(shifted(smooth,-step,0),shifted(smooth,step,0))>=4)&color&safe
+            self.transverse=cv2.morphologyEx(across.astype(np.uint8),cv2.MORPH_OPEN,np.ones((1,max(3,round(c.carla_tail_bar_m/c.mpp))),np.uint8))
             # Geometry is filtered once in paint_fragments, after the box mask.
         removed=self.learned_gate(raw)
         self.style_mask=raw.copy();self.style_valid=valid.copy()
@@ -557,10 +563,63 @@ class CarlaDetector(Detector):
         width=float(np.median(them-own if side=='right' else own-them))
         return abs(width-self.lane_width)
 
+    def turn_curvature(self):
+        """Vehicle path curvature (1/m, + left) over about the last metre of travel, from self.pose."""
+        if getattr(self,'pose',None) is None:self.turn_history=[];return 0.
+        history=getattr(self,'turn_history',[])
+        odometer,yaw=self.pose[0],self.pose[3]
+        if history and odometer<history[-1][0]-1e-6:history=[]  # a reset or replay restart
+        if not history or odometer-history[-1][0]>.05:history=(history+[(odometer,yaw)])[-60:]
+        self.turn_history=history
+        old=[h for h in history if odometer-h[0]>=1.]
+        if not old:return 0.
+        o,y=old[-1];return float(math.atan2(math.sin(yaw-y),math.cos(yaw-y))/(odometer-o))
+
+    def crossing(self,side,points):
+        """While turning, a line is compared with the vehicle's own arc (its current curvature): this lane's
+        line runs along the arc on its own side, even where a sharp curve takes it across the heading,
+        while a crossing road's line sweeps across the arc, heading against the turn.  Near end only
+        (first 2 m, within 15 m)."""
+        c=self.c;k=self.curvature_now;x0=float(points[0,0])
+        if abs(k)<c.carla_turn_curvature or x0>15.:return False
+        near=points[points[:,0]<=x0+2.]
+        if len(near)<2 or np.ptp(near[:,0])<.5:return False
+        slope,y0=np.polyfit(near[:,0]-x0,near[:,1],1)
+        across=math.degrees(math.atan(slope)-k*x0);offset=y0-k*x0*x0/2
+        # Only a line heading against the turn: where the turn eases off, this lane's line bends less
+        # than the arc of the last metre but still the same way.
+        if abs(across)>=c.carla_turn_angle_deg and np.sign(slope)!=np.sign(k):return True
+        return (offset>c.carla_turn_wrong_side_m) if side=='right' else (offset<-c.carla_turn_wrong_side_m)
+
+    def cut_tail(self,side,path):
+        """A line ending at a junction can chain on, across the junction, to the crossing road's edge:
+        after a gap of at least carla_tail_gap_m with a transverse bar (stop line) in it, paint more than
+        carla_tail_offset_m off the curve of the paint before the gap (6 m of it at least) starts a cut.
+        Without the bar a sharp curve looks the same (its far paint off the near curve after a gap)."""
+        c=self.c
+        if getattr(self,'transverse',None) is None:return path
+        for k in range(1,len(path)):
+            start=path[k]['lane'].points[0,0];end=max(a['lane'].points[-1,0] for a in path[:k])
+            if start-end<c.carla_tail_gap_m:continue
+            before=np.vstack([a['lane'].points for a in path[:k]])
+            if np.ptp(before[:,0])<6.:continue
+            fit=np.polyfit(before[:,0],before[:,1],2 if np.ptp(before[:,0])>=10. else 1)
+            ahead=path[k]['lane'].points;ahead=ahead[ahead[:,0]<=start+2.]
+            if float(np.median(np.abs(ahead[:,1]-np.polyval(fit,ahead[:,0]))))<=c.carla_tail_offset_m:continue
+            # A bar across the gap, within 1.5 m of where the near curve goes.
+            rows=np.arange(max(0,round((c.forward_max-start)/c.mpp)),min(len(self.transverse),round((c.forward_max-end)/c.mpp)+1))
+            x=c.forward_max-rows*c.mpp;cols=(-np.polyval(fit,x)-c.lateral_min)/c.mpp;half=round(1.5/c.mpp)
+            bar=any(self.transverse[r,max(0,round(q)-half):max(0,round(q)+half+1)].any() for r,q in zip(rows,cols))
+            if bar:
+                self.diagnostics['tail_cut_'+side]=round(float(start),1)
+                return path[:k]
+        return path
+
     def forget(self):
         """Drop frame-to-frame memory after a time jump or reset."""
         self.last_spines={};self.lane_width=3.3;self.strand_gap={};self.strand_memory={}
         self.tracking_priors={};self.path_tracking.reset()
+        self.turn_history=[]
 
     def coherent_paths(self,nodes):
         """DAG maximum-support paths; an attached branch cannot pull the fit.
@@ -569,6 +628,7 @@ class CarlaDetector(Detector):
         them, and must agree in color, tangent and lateral prediction.
         """
         c=self.c;chosen={};scored={}
+        self.curvature_now=self.turn_curvature() if c.carla_turn_curvature>0 else 0.
         candidates=sorted(nodes,key=lambda a:a['lane'].points[0,0]);n=len(candidates)
         if not n:return chosen
         first=np.array([a['lane'].points[0,0] for a in candidates]);last=np.array([a['lane'].points[-1,0] for a in candidates])
@@ -621,6 +681,8 @@ class CarlaDetector(Detector):
                 span=path[-1]['lane'].points[-1,0]-path[0]['lane'].points[0,0]
                 if (len(path)>=2 and span>=2.5) or (len(path)==1 and span>=1.2 and path[0]['lane'].points[0,0]<=14.):
                     points=path_points(path)
+                    if c.carla_turn_curvature>0 and self.crossing(side,points):
+                        self.diagnostics['turn_rejected_'+side]=self.diagnostics.get('turn_rejected_'+side,0)+1;continue
                     if c.carla_width_reject_m>0:
                         off=self.width_error(side,points)
                         if off is not None and off>c.carla_width_reject_m:
@@ -690,6 +752,7 @@ class CarlaDetector(Detector):
                     nodes.append(dict(lane=lane,fit=line,lo=float(y.min()),hi=float(y.max()),yellow=yellow,pixels=(y,x),parent=len(nodes),anchor=anchor))
         if c.carla_path_filter_enabled and c.carla_chain_filter_enabled:
             groups=self.coherent_paths(nodes)
+            if c.carla_tail_gap_m>0:groups={side:self.cut_tail(side,path) for side,path in groups.items()}
         else:
             def parent(i):
                 while nodes[i]['parent']!=i:

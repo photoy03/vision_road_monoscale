@@ -1,0 +1,14 @@
+before   straight 30-35 L 5/6/6/3/3 R 0/0/1/1/1
+before   curve 15-20    L 4/5/5/6/7 R 2/3/2/3/9
+before   curve 20-25    L 3/-/6/4/8 R 7/6/5/8/17
+before   curve 50-55    L 2/2/2/3/4 R 3/2/2/4/5
+before   curve 55-58    L 2/2/2/3/2 R 2/2/2/2/-
+before   turn 35-40     L 8/1/7/18/1 R 2/2/2/5/1
+before   straight 40-45 L 2/3/3/2/2 R 1/1/2/2/3
+after    straight 30-35 L 5/6/6/3/3 R 0/0/1/1/1
+after    curve 15-20    L 4/5/5/6/7 R 2/3/2/3/9
+after    curve 20-25    L 3/-/6/-/1 R 7/5/5/8/17
+after    curve 50-55    L 2/2/2/3/4 R 3/2/2/4/5
+after    curve 55-58    L 2/2/2/3/2 R 2/2/2/2/-
+after    turn 35-40     L 8/1/2/1/1 R 1/1/1/1/1
+after    straight 40-45 L 2/3/3/1/2 R 1/1/2/2/3

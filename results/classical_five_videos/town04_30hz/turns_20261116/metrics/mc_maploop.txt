@@ -1,0 +1,16 @@
+before     junction 0-5    L mc 1.74/0/0       raw 1.75/0/0       | R mc 2.12/0/0       raw 2.17/0/0
+before     straight 5-20   L mc 0.46/0/0       raw 0.46/0/0       | R mc 1.81/9/0       raw 1.9/12/0
+before     turn 20-22      L mc -              raw -              | R mc -              raw -
+before     curve 22-35     L mc 0.91/0/0       raw 1.41/2/0       | R mc 1.74/8/0       raw 2.09/14/0
+before     straight2 35-42 L mc 0.59/0/0       raw 0.72/0/0       | R mc 1.37/1/0       raw 1.43/1/0
+before     crosswalk 42-48 L mc 1.27/1/0       raw 1.2/1/0        | R mc 2.0/2/0        raw 2.03/2/0
+before     island 48-53    L mc 1.0/0/0        raw 2.99/37/0      | R mc 1.82/3/0       raw 3.53/31/0
+before     junction2 53-61 L mc 0.47/0/0       raw 0.52/0/0       | R mc 2.07/1/0       raw 2.14/1/0
+after      junction 0-5    L mc 1.74/0/0       raw 1.75/0/0       | R mc 2.12/0/0       raw 2.17/0/0
+after      straight 5-20   L mc 0.46/0/0       raw 0.46/0/0       | R mc 1.81/9/0       raw 1.9/12/0
+after      turn 20-22      L mc -              raw -              | R mc -              raw -
+after      curve 22-35     L mc 0.91/0/0       raw 1.42/2/0       | R mc 1.74/8/0       raw 2.09/14/0
+after      straight2 35-42 L mc 0.59/0/0       raw 0.72/0/0       | R mc 1.37/1/0       raw 1.43/1/0
+after      crosswalk 42-48 L mc 1.27/1/0       raw 1.2/1/0        | R mc 2.0/2/0        raw 2.03/2/0
+after      island 48-53    L mc 1.0/0/0        raw 2.99/37/0      | R mc 1.81/3/0       raw 3.51/30/0
+after      junction2 53-61 L mc 0.47/0/0       raw 0.52/0/0       | R mc 2.07/1/0       raw 2.14/1/0

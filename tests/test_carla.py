@@ -253,3 +253,30 @@ def test_a_double_line_keeps_its_quadratic_when_asked():
     assert np.abs(fitted(c,True)-quadratic).max()>.03  # by default a double line gets the cubic too
     assert np.allclose(fitted(replace(c,carla_spine_cubic_double=False),True),quadratic)
     assert np.abs(fitted(replace(c,carla_spine_cubic_double=False),False)-quadratic).max()>.03  # no pair measured
+
+
+def test_a_line_ending_at_a_stop_line_does_not_chain_on_to_the_crossing_road():
+    c=replace(Settings(forward_min=3,forward_max=35,lateral_min=-6,lateral_max=6,mpp=.05),carla_tail_gap_m=4.)
+    def node(x0,x1,y0,y1):
+        x=np.arange(x0,x1,.05);return dict(lane=Lane('right',np.column_stack([x,np.interp(x,[x0,x1],[y0,y1])]),.8),yellow=False)
+    path=[node(5.5,12.7,-1.88,-1.88),node(19.6,20.8,-3.56,-3.7),node(24.9,30.9,-4.75,-4.82)]
+    d=CarlaDetector(c);d.diagnostics={};d.transverse=np.zeros((640,240),np.uint8)
+    assert len(d.cut_tail('right',path))==3  # no bar in the gap: a sharp curve looks the same
+    d.transverse[round((35-16.5)/.05),round((6+1.9)/.05)-10:round((6+1.9)/.05)+10]=1  # a stop line at 16.5 m
+    assert len(d.cut_tail('right',path))==1
+    assert len(d.cut_tail('right',[node(5.5,12.7,-1.88,-1.88),node(19.6,24.,-1.9,-1.9)]))==2  # the line itself resumes
+
+
+def test_while_turning_a_crossing_line_is_not_this_lanes_line():
+    c=replace(Settings(),carla_turn_curvature=.03);d=CarlaDetector(c)
+    def line(x0,y0,angle_deg,k):
+        d.curvature_now=k;x=np.arange(x0,x0+8,.1);return np.column_stack([x,y0+np.tan(np.radians(angle_deg))*(x-x0)])
+    # Turning right (k<0): a line heading left across the arc is a crossing road's line (Town04 39 s).
+    assert d.crossing('right',line(5.3,-2.45,17.,-.086))
+    # A sharp left curve's right line bends with the turn (Town04 hairpin) and is kept.
+    assert not d.crossing('right',line(6.7,-1.09,27.4,.048))
+    # Turning left, a right line ahead of the car that follows the arc on its right side is kept (Town05 13 s).
+    assert not d.crossing('right',line(9.5,1.37,39.8,.077))
+    # A left line on the right side of the arc is not (maploop 23 s); nor anything while driving straight.
+    assert d.crossing('left',line(6.7,-2.30,-42.5,-.061))
+    assert not d.crossing('left',line(6.7,-2.30,-42.5,0.))

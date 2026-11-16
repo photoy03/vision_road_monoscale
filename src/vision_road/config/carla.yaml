@@ -59,6 +59,11 @@ vision_road:
     carla_spine_near_m: 15.0
     # ... but not on a double line: there the cubic followed the strand scatter (maploop curve jumps 3 -> 7).
     carla_spine_cubic_double: false
+    # A line ending at a stop line does not chain on, across the junction, to the crossing road's edge (Town04 36 s).
+    carla_tail_gap_m: 4.0
+    # While turning (1/m), a crossing road's line sweeping across the vehicle's arc, or a line on the
+    # other side of that arc, is not taken (Town04 39 s; maploop 23 s); a curve's own line bends with the turn.
+    carla_turn_curvature: 0.03
 lane_display_filter:
   ros__parameters:
     # HUD line reaches the rear axle (HUD path start, bottom of the screen); paint seen in the last

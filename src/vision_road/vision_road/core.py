@@ -62,6 +62,12 @@ class Settings:
     carla_spine_cubic_ridge: float = 0.05  # pull of the cubic term towards 0 (x in units of 10 m) at that miss; x(threshold/miss)^4 otherwise
     carla_spine_cubic_double: bool = True  # False: a double line (strand pair measured) keeps the quadratic
     carla_spine_near_m: float = 0.0  # >0: paint beyond this counts less in the fit, (near/x)^2, so far paint cannot bend the near boundary
+    carla_tail_gap_m: float = 0.0  # >0: after a paint gap this long that holds a transverse bar (stop line), a chain is cut where it continues off its own near shape
+    carla_tail_offset_m: float = 0.5  # ... by more than this (a line ending at a junction picks up the crossing road's edge)
+    carla_tail_bar_m: float = 1.0  # transverse paint at least this wide counts as a bar
+    carla_turn_curvature: float = 0.0  # >0: while the vehicle turns this sharply (1/m, over its last metre), a candidate starting within 15 m is not taken
+    carla_turn_angle_deg: float = 25.0  # ... when its first 2 m head against the turn and cross the vehicle's own arc at this angle (a crossing road's line)
+    carla_turn_wrong_side_m: float = 0.3  # ... or when it starts this far on the other side of that arc
     carla_tracking_enabled: bool = True
     carla_tracking_keep_bonus: float = 2.0
     carla_tracking_match_m: float = 0.35
