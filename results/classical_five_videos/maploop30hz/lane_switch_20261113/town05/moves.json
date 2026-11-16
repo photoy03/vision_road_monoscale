@@ -1,0 +1,160 @@
+{
+ "before": {
+  "moves": [
+   {
+    "side": "right",
+    "frame": 391,
+    "t": 13.03,
+    "seg": "straight",
+    "y_from": -5.72,
+    "y_to": 5.69,
+    "gap": 5,
+    "x": 14.7
+   },
+   {
+    "side": "right",
+    "frame": 1146,
+    "t": 38.2,
+    "seg": "straight2",
+    "y_from": -8.32,
+    "y_to": 5.58,
+    "gap": 10,
+    "x": 14.7
+   },
+   {
+    "side": "right",
+    "frame": 1423,
+    "t": 47.43,
+    "seg": "crosswalk",
+    "y_from": -0.94,
+    "y_to": -4.46,
+    "gap": 3,
+    "x": 30.4
+   },
+   {
+    "side": "right",
+    "frame": 1431,
+    "t": 47.7,
+    "seg": "crosswalk",
+    "y_from": -4.49,
+    "y_to": -0.96,
+    "gap": 5,
+    "x": 28.4
+   }
+  ],
+  "display_switches": [],
+  "coverage": {
+   "junction": {
+    "left": 0.973,
+    "right": 0.987
+   },
+   "straight": {
+    "left": 0.744,
+    "right": 0.773
+   },
+   "turn": {
+    "left": 1.0,
+    "right": 1.0
+   },
+   "curve": {
+    "left": 0.949,
+    "right": 0.964
+   },
+   "straight2": {
+    "left": 0.524,
+    "right": 0.671
+   },
+   "crosswalk": {
+    "left": 0.833,
+    "right": 0.872
+   },
+   "island": {
+    "left": 0.287,
+    "right": 0.52
+   },
+   "junction2": {
+    "left": 0.995,
+    "right": 1.0
+   }
+  }
+ },
+ "after": {
+  "moves": [
+   {
+    "side": "left",
+    "frame": 1138,
+    "t": 37.93,
+    "seg": "straight2",
+    "y_from": -5.61,
+    "y_to": 0.4,
+    "gap": 10,
+    "x": 29.0
+   },
+   {
+    "side": "right",
+    "frame": 391,
+    "t": 13.03,
+    "seg": "straight",
+    "y_from": -5.72,
+    "y_to": 5.69,
+    "gap": 5,
+    "x": 14.7
+   },
+   {
+    "side": "right",
+    "frame": 1423,
+    "t": 47.43,
+    "seg": "crosswalk",
+    "y_from": -0.94,
+    "y_to": -4.46,
+    "gap": 3,
+    "x": 30.4
+   },
+   {
+    "side": "right",
+    "frame": 1431,
+    "t": 47.7,
+    "seg": "crosswalk",
+    "y_from": -4.49,
+    "y_to": -0.96,
+    "gap": 5,
+    "x": 28.4
+   }
+  ],
+  "display_switches": [],
+  "coverage": {
+   "junction": {
+    "left": 0.973,
+    "right": 0.987
+   },
+   "straight": {
+    "left": 0.731,
+    "right": 0.74
+   },
+   "turn": {
+    "left": 1.0,
+    "right": 1.0
+   },
+   "curve": {
+    "left": 0.949,
+    "right": 0.964
+   },
+   "straight2": {
+    "left": 0.614,
+    "right": 0.671
+   },
+   "crosswalk": {
+    "left": 0.833,
+    "right": 0.872
+   },
+   "island": {
+    "left": 0.3,
+    "right": 0.573
+   },
+   "junction2": {
+    "left": 0.995,
+    "right": 1.0
+   }
+  }
+ }
+}

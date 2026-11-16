@@ -1,0 +1,22 @@
+[WARN] [1794836151.816014739] [hero_hud]: 표지판 자산 경로를 못 찾았다: package 'hero_hud' not found, searching: [/home/jaehun/Desktop/vision-road/install/vision_road, /home/jaehun/Desktop/vision-road/install/monoscale_tracker, /home/jaehun/Desktop/vision-road/install/monoscale_pose, /home/jaehun/Desktop/vision-road/install/vision_lane_interfaces, /home/jaehun/Desktop/vision-road/install/monoscale_ublox, /home/jaehun/Desktop/vision-road/install/monoscale_odometry, /home/jaehun/Desktop/vision-road/install/monoscale_core, /opt/ros/humble]
+[INFO] [1794836151.816563979] [hero_hud]: 표시: 10.0인치 16:10 패널, 광로 1.00 m → 화각 12.3도 (가독성 매핑)
+[INFO] [1794836151.816590729] [hero_hud]: 시각 예산: 시력 0.10 · 0.578 arcmin/px · 분해 17.3 px · 분해 셀 74 x 46 · 획 34.6 px · 표식 207 px · 글자 259 px (예산 초과 — 글자 생략, 음성과 도형이 나른다)
+[WARN] [1794836151.816607421] [hero_hud]: 화각 12도에서 시력 0.10 사용자에게 읽히는 글자 높이는 259 px 이고 이는 화면 높이 800 px 의 32% 다. 글자를 그리지 않는다.
+
+>>> [rcutils|error_handling.c:108] rcutils_set_error_state()
+This error state is being overwritten:
+
+  'Type support not from this implementation. Got:
+    Handle's typesupport identifier (rosidl_typesupport_cpp) is not supported by this library, at ./src/type_support_dispatch.hpp:111
+    Could not load library libhero_hud__rosidl_typesupport_fastrtps_cpp.so: dlopen error: libhero_hud__rosidl_typesupport_fastrtps_cpp.so: 동적 오브젝트 파일을 열 수 없습니다: 그런 파일이나 디렉터리가 없습니다, at ./src/shared_library.c:99, at ./src/type_support_dispatch.hpp:76
+while fetching it, at ./src/subscription.cpp:116, at ./src/rcl/subscription.c:109'
+
+with this new error message:
+
+  'invalid allocator, at ./src/rcl/subscription.c:219'
+
+rcutils_reset_error() should be called after error handling to avoid this.
+<<<
+invalid allocator, at ./src/rcl/subscription.c:219
+terminate called after throwing an instance of 'rclcpp::exceptions::RCLError'
+  what():  could not create subscription: invalid allocator, at ./src/rcl/subscription.c:219

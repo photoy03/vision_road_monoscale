@@ -1,0 +1,9 @@
+{
+  "source_frames": 360,
+  "overlay_frames": 59,
+  "hud_frames": 160,
+  "hud_subscribers_at_start": 2,
+  "synchronized_seconds": 11.5,
+  "video": "results/classical_five_videos/maploop30hz/lane_switch_20261113/hud_runs/after2/road_and_hud.mp4",
+  "note": "Two live ROS outputs from the same replay, aligned by capture wall time. HUD is a separate ground-coordinate display; CARLA recorded reference pose is used."
+}

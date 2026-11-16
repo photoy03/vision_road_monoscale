@@ -514,6 +514,17 @@ class CarlaDetector(Detector):
         if opposite is not None and abs(abs(lateral-opposite)-self.lane_width)>.6:penalty+=1.5
         return penalty
 
+    def width_error(self,side,points):
+        """How far a candidate's distance to the other side's tracked boundary is from the lane width,
+        over its first 4 m that both cover (signed: a candidate across the other side is far off)."""
+        other=self.tracking_priors.get('right' if side=='left' else 'left') if self.c.carla_tracking_enabled else None
+        if other is None:return None
+        ref=other[0];lo=max(points[0,0],ref[0,0]);hi=min(points[-1,0],ref[-1,0],lo+4.)
+        if hi<lo:return None
+        x=np.linspace(lo,hi,5);own=np.interp(x,points[:,0],points[:,1]);them=np.interp(x,ref[:,0],ref[:,1])
+        width=float(np.median(them-own if side=='right' else own-them))
+        return abs(width-self.lane_width)
+
     def forget(self):
         """Drop frame-to-frame memory after a time jump or reset."""
         self.last_spines={};self.lane_width=3.3;self.strand_gap={};self.strand_memory={}
@@ -578,6 +589,10 @@ class CarlaDetector(Detector):
                 span=path[-1]['lane'].points[-1,0]-path[0]['lane'].points[0,0]
                 if (len(path)>=2 and span>=2.5) or (len(path)==1 and span>=1.2 and path[0]['lane'].points[0,0]<=14.):
                     points=path_points(path)
+                    if c.carla_width_reject_m>0:
+                        off=self.width_error(side,points)
+                        if off is not None and off>c.carla_width_reject_m:
+                            self.diagnostics['width_rejected_'+side]=round(off,2);continue
                     valid.append((float(adjusted[end])-self.prior_penalty(side,path,points),path,points))
             # Penalties only reorder supported candidates; none is removed.
             return self.path_tracking.select(side,valid,self.tracking_priors.get(side),self.frame_index)

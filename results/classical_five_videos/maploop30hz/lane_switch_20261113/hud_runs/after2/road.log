@@ -1,0 +1,74 @@
+[INFO] [launch]: All log files can be found below /home/jaehun/.ros/log/2026-11-16-22-36-30-969585-ros-22359
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [road_node-1]: process started with pid [22360]
+[INFO] [lane_display_filter-2]: process started with pid [22362]
+[INFO] [reference_pose-3]: process started with pid [22364]
+[INFO] [static_transform_publisher-4]: process started with pid [22366]
+[static_transform_publisher-4] [INFO] [1794836191.040956732] [static_transform_publisher_BIDXOhyy2e7hgZcN]: Spinning until stopped - publishing transform
+[static_transform_publisher-4] translation: ('2.200000', '0.000000', '1.400000')
+[static_transform_publisher-4] rotation: ('-0.500000', '0.500000', '-0.500000', '0.500000')
+[static_transform_publisher-4] from 'base_link' to 'dashcam_optical_link'
+[reference_pose-3] [WARN] [1794836191.325096724] [maploop_reference_pose]: Evaluation reference from CARLA truth; this is not estimated odometry
+[road_node-1] [INFO] [1794836191.496084981] [vision_road]: Learned lane mask: off
+[road_node-1] [INFO] [1794836191.760113867] [vision_road]: Road detector ready: carla; image processing only, no learned model
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[INFO] [static_transform_publisher-4]: sending signal 'SIGINT' to process[static_transform_publisher-4]
+[INFO] [reference_pose-3]: sending signal 'SIGINT' to process[reference_pose-3]
+[INFO] [lane_display_filter-2]: sending signal 'SIGINT' to process[lane_display_filter-2]
+[INFO] [road_node-1]: sending signal 'SIGINT' to process[road_node-1]
+[static_transform_publisher-4] [INFO] [1794836213.672774519] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[road_node-1] Process SpawnProcess-1:
+[road_node-1] Traceback (most recent call last):
+[road_node-1]   File "/usr/lib/python3.10/multiprocessing/process.py", line 314, in _bootstrap
+[road_node-1]     self.run()
+[road_node-1]   File "/usr/lib/python3.10/multiprocessing/process.py", line 108, in run
+[road_node-1]     self._target(*self._args, **self._kwargs)
+[road_node-1]   File "/home/jaehun/Desktop/vision-road/build/vision_road/vision_road/rt_worker.py", line 71, in compute_loop
+[road_node-1]     command=connection.recv()
+[road_node-1]   File "/usr/lib/python3.10/multiprocessing/connection.py", line 250, in recv
+[road_node-1]     buf = self._recv_bytes()
+[road_node-1]   File "/usr/lib/python3.10/multiprocessing/connection.py", line 414, in _recv_bytes
+[road_node-1]     buf = self._recv(4)
+[road_node-1]   File "/usr/lib/python3.10/multiprocessing/connection.py", line 379, in _recv
+[road_node-1]     chunk = read(handle, remaining)
+[road_node-1] KeyboardInterrupt
+[lane_display_filter-2] Traceback (most recent call last):
+[lane_display_filter-2]   File "/home/jaehun/Desktop/vision-road/install/vision_road/lib/vision_road/lane_display_filter", line 33, in <module>
+[lane_display_filter-2]     sys.exit(load_entry_point('vision-road', 'console_scripts', 'lane_display_filter')())
+[lane_display_filter-2]   File "/home/jaehun/Desktop/vision-road/build/vision_road/vision_road/display_filter.py", line 375, in main
+[lane_display_filter-2]     node.destroy_node()
+[lane_display_filter-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/node.py", line 1691, in destroy_node
+[road_node-1] Traceback (most recent call last):
+[road_node-1]   File "/home/jaehun/Desktop/vision-road/install/vision_road/lib/vision_road/road_node", line 33, in <module>
+[road_node-1]     sys.exit(load_entry_point('vision-road', 'console_scripts', 'road_node')())
+[road_node-1]   File "/home/jaehun/Desktop/vision-road/build/vision_road/vision_road/node.py", line 456, in main
+[ERROR] [static_transform_publisher-4]: process has died [pid 22366, exit code -2, cmd '/opt/ros/humble/lib/tf2_ros/static_transform_publisher --x 2.2 --y 0 --z 1.4 --qx -0.5 --qy 0.5 --qz -0.5 --qw 0.5 --frame-id base_link --child-frame-id dashcam_optical_link --ros-args'].
+[lane_display_filter-2]     self.destroy_service(self._services[0])
+[lane_display_filter-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/node.py", line 1618, in destroy_service
+[lane_display_filter-2]     self._wake_executor()
+[lane_display_filter-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/node.py", line 289, in _wake_executor
+[lane_display_filter-2]     executor.wake()
+[lane_display_filter-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 313, in wake
+[lane_display_filter-2]     self._guard.trigger()
+[lane_display_filter-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/guard_condition.py", line 34, in trigger
+[lane_display_filter-2]     self.__gc.trigger_guard_condition()
+[lane_display_filter-2] KeyboardInterrupt
+[road_node-1]     node.stop_processing();node.save_performance();node.destroy_node(); rclpy.try_shutdown()
+[road_node-1]   File "/home/jaehun/Desktop/vision-road/build/vision_road/vision_road/node.py", line 196, in stop_processing
+[road_node-1]     if self.worker is not None:self.worker.join(timeout=8)
+[road_node-1]   File "/usr/lib/python3.10/threading.py", line 1100, in join
+[road_node-1]     self._wait_for_tstate_lock(timeout=max(timeout, 0))
+[road_node-1]   File "/usr/lib/python3.10/threading.py", line 1116, in _wait_for_tstate_lock
+[road_node-1]     if lock.acquire(block, timeout):
+[road_node-1] KeyboardInterrupt
+[reference_pose-3] Traceback (most recent call last):
+[reference_pose-3]   File "/home/jaehun/Desktop/vision-road/install/vision_road/lib/vision_road/reference_pose", line 33, in <module>
+[reference_pose-3]     sys.exit(load_entry_point('vision-road', 'console_scripts', 'reference_pose')())
+[reference_pose-3]   File "/home/jaehun/Desktop/vision-road/build/vision_road/vision_road/reference_pose.py", line 38, in main
+[reference_pose-3]     finally:node.destroy_node();rclpy.try_shutdown()
+[reference_pose-3]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/node.py", line 1696, in destroy_node
+[reference_pose-3]     self.__node.destroy_when_not_in_use()
+[reference_pose-3] KeyboardInterrupt
+[ERROR] [reference_pose-3]: process has died [pid 22364, exit code -2, cmd '/home/jaehun/Desktop/vision-road/install/vision_road/lib/vision_road/reference_pose --ros-args --params-file /tmp/launch_params_l60s_dly'].
+[ERROR] [lane_display_filter-2]: process has died [pid 22362, exit code -2, cmd '/home/jaehun/Desktop/vision-road/install/vision_road/lib/vision_road/lane_display_filter --ros-args --params-file /home/jaehun/Desktop/vision-road/install/vision_road/share/vision_road/config/carla.yaml --params-file /tmp/launch_params_fex4vpb0'].
+[ERROR] [road_node-1]: process has died [pid 22360, exit code -2, cmd '/home/jaehun/Desktop/vision-road/install/vision_road/lib/vision_road/road_node --ros-args -r __node:=vision_road --params-file /home/jaehun/Desktop/vision-road/install/vision_road/share/vision_road/config/carla.yaml --params-file /tmp/launch_params_s0bzlm4z'].

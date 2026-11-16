@@ -1,0 +1,43 @@
+run 0
+run 300
+run 600
+run 900
+run 1200
+run 1500
+run 1800
+frames with a reference pose: 1807/1807
+{
+ "left": {
+  "observed": 0.819,
+  "lateral10_step_std_cm": 1.59,
+  "spine_rough_cm": 0.053,
+  "predicted_only": 0.005,
+  "median_reach_m": 32.97,
+  "median_boundary_reach_m": 32.69,
+  "paint_jag_m": 0.0019,
+  "paint_jag_p90_m": 0.0,
+  "strands_at_10m": 1.78,
+  "styles": {
+   "none": 318,
+   "unknown": 144,
+   "solid": 1345
+  }
+ },
+ "right": {
+  "observed": 0.732,
+  "lateral10_step_std_cm": 2.52,
+  "spine_rough_cm": 0.08,
+  "predicted_only": 0.015,
+  "median_reach_m": 28.49,
+  "median_boundary_reach_m": 30.1,
+  "paint_jag_m": 0.0058,
+  "paint_jag_p90_m": 0.0198,
+  "strands_at_10m": 1.0,
+  "styles": {
+   "none": 456,
+   "unknown": 147,
+   "dashed": 1201,
+   "solid": 3
+  }
+ }
+}

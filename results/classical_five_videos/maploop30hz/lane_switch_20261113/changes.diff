@@ -1,0 +1,88 @@
+--- backups/before-lane-width-20261116/carla.py	2026-11-16 22:23:11.957799585 +0900
++++ src/vision_road/vision_road/carla.py	2026-11-16 22:23:33.682705070 +0900
+@@ -516,6 +516,17 @@
+         if opposite is not None and abs(abs(lateral-opposite)-self.lane_width)>.6:penalty+=1.5
+         return penalty
+ 
++    def width_error(self,side,points):
++        """How far a candidate's distance to the other side's tracked boundary is from the lane width,
++        over its first 4 m that both cover (signed: a candidate across the other side is far off)."""
++        other=self.tracking_priors.get('right' if side=='left' else 'left') if self.c.carla_tracking_enabled else None
++        if other is None:return None
++        ref=other[0];lo=max(points[0,0],ref[0,0]);hi=min(points[-1,0],ref[-1,0],lo+4.)
++        if hi<lo:return None
++        x=np.linspace(lo,hi,5);own=np.interp(x,points[:,0],points[:,1]);them=np.interp(x,ref[:,0],ref[:,1])
++        width=float(np.median(them-own if side=='right' else own-them))
++        return abs(width-self.lane_width)
++
+     def forget(self):
+         """Drop frame-to-frame memory after a time jump or reset."""
+         self.last_spines={};self.lane_width=3.3;self.strand_gap={};self.strand_memory={}
+@@ -580,6 +591,10 @@
+                 span=path[-1]['lane'].points[-1,0]-path[0]['lane'].points[0,0]
+                 if (len(path)>=2 and span>=2.5) or (len(path)==1 and span>=1.2 and path[0]['lane'].points[0,0]<=14.):
+                     points=path_points(path)
++                    if c.carla_width_reject_m>0:
++                        off=self.width_error(side,points)
++                        if off is not None and off>c.carla_width_reject_m:
++                            self.diagnostics['width_rejected_'+side]=round(off,2);continue
+                     valid.append((float(adjusted[end])-self.prior_penalty(side,path,points),path,points))
+             # Penalties only reorder supported candidates; none is removed.
+             return self.path_tracking.select(side,valid,self.tracking_priors.get(side),self.frame_index)
+--- backups/before-lane-width-20261116/core.py	2026-11-16 22:23:11.957799585 +0900
++++ src/vision_road/vision_road/core.py	2026-11-16 22:23:33.682705070 +0900
+@@ -79,6 +79,7 @@
+     carla_learned_gate_along_m: float = 1.0  # forward/backward widening, bridges dash gaps
+     carla_learned_gate_far_m: float = 20.0  # gate only this close; the mask thins out and misses far paint
+     carla_learned_penalty: float = 0.8  # penalize: fraction of an outside fragment's length removed from its score
++    carla_width_reject_m: float = 0.0  # >0: a candidate this far off the lane width from the other side's tracked boundary is not taken
+ 
+ 
+ class Projector:
+--- backups/before-lane-width-20261116/carla.yaml	2026-11-16 22:23:11.957799585 +0900
++++ src/vision_road/config/carla.yaml	2026-11-16 22:23:38.044687093 +0900
+@@ -49,6 +49,8 @@
+     # Left double line: one pair of rails; centres of seen pairs kept 25 m of travel label a single near strand.
+     carla_strand_pair: true
+     carla_strand_memory_m: 25.0
++    # Intersection approach: a new line ~1.75 m beyond the ended one (lane 3.5 -> 5.3 m wide) is not taken.
++    carla_width_reject_m: 1.0
+ lane_display_filter:
+   ros__parameters:
+     # HUD line reaches the rear axle (HUD path start, bottom of the screen); paint seen in the last
+diff --git a/tests/test_carla.py b/tests/test_carla.py
+index a4eea4a..8a747e6 100644
+--- a/tests/test_carla.py
++++ b/tests/test_carla.py
+@@ -176,3 +176,31 @@ def test_native_and_python_preserve_curved_dash_geometry_and_prediction():
+         for x,y in zip(a,b):
+             assert (x.side,x.style,x.reprojected)==(y.side,y.style,y.reprojected)
+             assert np.allclose(x.points,y.points,rtol=0,atol=1e-10)
++
++
++def width_scene(right):
++    c=Settings(forward_min=3,forward_max=35,lateral_min=-6,lateral_max=6,mpp=.05,min_span_m=.4)
++    im=np.full((640,240,3),100,np.uint8)
++    col=lambda y:round((6-y)/.05)
++    im[round((35-20)/.05):round((35-4)/.05),col(1.75):col(1.75)+3]=(60,200,220)  # yellow, left
++    for lo in range(4,20,4):im[round((35-lo-2)/.05):round((35-lo)/.05),col(right):col(right)+3]=220  # white dashes
++    x=np.linspace(4,20,17);prior={'left':(np.column_stack([x,np.full_like(x,1.75)]),1.)}
++    return c,im,prior
++
++
++def right_found(c,im,prior):
++    d=CarlaDetector(c);d.lane_width=3.4;d.tracking_priors=prior
++    d.detect(d.binary(im,np.full(im.shape[:2],255,np.uint8)))
++    return any(b.side=='right' for b in d.boundary_candidates),d
++
++
++def test_a_line_far_off_the_lane_width_is_not_taken_as_the_other_side():
++    c,im,prior=width_scene(-3.55)
++    assert right_found(c,im,prior)[0]  # off by default
++    found,d=right_found(replace(c,carla_width_reject_m=1.),im,prior)
++    assert not found and d.diagnostics['width_rejected_right']>1.5
++    # The real lane width, or no tracked other side, still takes the line.
++    c,im,prior=width_scene(-1.65)
++    assert right_found(replace(c,carla_width_reject_m=1.),im,prior)[0]
++    c,im,_=width_scene(-3.55)
++    assert right_found(replace(c,carla_width_reject_m=1.),im,{})[0]

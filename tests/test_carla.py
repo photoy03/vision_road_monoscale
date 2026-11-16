@@ -176,3 +176,31 @@ def test_native_and_python_preserve_curved_dash_geometry_and_prediction():
         for x,y in zip(a,b):
             assert (x.side,x.style,x.reprojected)==(y.side,y.style,y.reprojected)
             assert np.allclose(x.points,y.points,rtol=0,atol=1e-10)
+
+
+def width_scene(right):
+    c=Settings(forward_min=3,forward_max=35,lateral_min=-6,lateral_max=6,mpp=.05,min_span_m=.4)
+    im=np.full((640,240,3),100,np.uint8)
+    col=lambda y:round((6-y)/.05)
+    im[round((35-20)/.05):round((35-4)/.05),col(1.75):col(1.75)+3]=(60,200,220)  # yellow, left
+    for lo in range(4,20,4):im[round((35-lo-2)/.05):round((35-lo)/.05),col(right):col(right)+3]=220  # white dashes
+    x=np.linspace(4,20,17);prior={'left':(np.column_stack([x,np.full_like(x,1.75)]),1.)}
+    return c,im,prior
+
+
+def right_found(c,im,prior):
+    d=CarlaDetector(c);d.lane_width=3.4;d.tracking_priors=prior
+    d.detect(d.binary(im,np.full(im.shape[:2],255,np.uint8)))
+    return any(b.side=='right' for b in d.boundary_candidates),d
+
+
+def test_a_line_far_off_the_lane_width_is_not_taken_as_the_other_side():
+    c,im,prior=width_scene(-3.55)
+    assert right_found(c,im,prior)[0]  # off by default
+    found,d=right_found(replace(c,carla_width_reject_m=1.),im,prior)
+    assert not found and d.diagnostics['width_rejected_right']>1.5
+    # The real lane width, or no tracked other side, still takes the line.
+    c,im,prior=width_scene(-1.65)
+    assert right_found(replace(c,carla_width_reject_m=1.),im,prior)[0]
+    c,im,_=width_scene(-3.55)
+    assert right_found(replace(c,carla_width_reject_m=1.),im,{})[0]

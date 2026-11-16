@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/home/jaehun/Desktop/vision-road/results/classical_five_videos/maploop30hz/lane_switch_20261113/scripts/record_hud.py", line 147, in <module>
+    if __name__ == '__main__': main()
+  File "/home/jaehun/Desktop/vision-road/results/classical_five_videos/maploop30hz/lane_switch_20261113/scripts/record_hud.py", line 73, in main
+    if hud.poll() is not None: raise RuntimeError('HUD exited before replay')
+RuntimeError: HUD exited before replay

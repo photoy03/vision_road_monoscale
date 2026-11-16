@@ -1,0 +1,15 @@
+diff --git a/src/vision_road/vision_road/carla.py b/src/vision_road/vision_road/carla.py
+index f028549..d1ac4a9 100644
+--- a/src/vision_road/vision_road/carla.py
++++ b/src/vision_road/vision_road/carla.py
+@@ -510,7 +510,9 @@ class CarlaDetector(Detector):
+         previous=at8((tracked[0][:,0],tracked[0][:,1])) if tracked is not None else at8(self.last_spines.get(side))
+         jump=0. if previous is None else abs(lateral-previous) if tracked is not None else (lateral-previous if side=='left' else previous-lateral)
+         if previous is not None and jump>.5:penalty+=2.
+-        opposite=at8(self.last_spines.get('right' if side=='left' else 'left'))
++        opposite_side='right' if side=='left' else 'left'
++        opposite_track=self.tracking_priors.get(opposite_side) if self.c.carla_tracking_enabled else None
++        opposite=at8((opposite_track[0][:,0],opposite_track[0][:,1])) if opposite_track is not None else at8(self.last_spines.get(opposite_side))
+         if opposite is not None and abs(abs(lateral-opposite)-self.lane_width)>.6:penalty+=1.5
+         return penalty
+ 
