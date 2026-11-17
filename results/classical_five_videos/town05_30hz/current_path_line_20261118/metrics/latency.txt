@@ -1,0 +1,3 @@
+judge1_town05    processed 1.0 p95 30.93 mean 24.81 max 51.04 drift 0.41 gaps>100 0 detect 13.9/18.76 display 2.91/3.74 extra 3.19/5.11 markers 2.79/6.02
+judge2_town05    processed 1.0 p95 31.78 mean 25.0 max 49.83 drift -0.86 gaps>100 0 detect 13.98/18.86 display 2.89/3.73 extra 3.35/5.79 markers 2.89/6.47
+judge3_town05    processed 1.0 p95 31.73 mean 25.37 max 51.09 drift -0.25 gaps>100 0 detect 14.11/19.12 display 2.92/3.73 extra 3.25/5.23 markers 2.81/6.04

@@ -1,0 +1,54 @@
+{
+ "style": "centre",
+ "length_m": 6.0,
+ "scripts": {
+  "wobble": {
+   "frames": 124,
+   "lit_mean": 0.0261,
+   "lit_p95": 0.0355,
+   "states": {
+    "none": 15,
+    "keep": 135,
+    "return": 210,
+    "change": 0,
+    "forbidden": 0
+   }
+  },
+  "yellow": {
+   "frames": 88,
+   "lit_mean": 0.0263,
+   "lit_p95": 0.0413,
+   "states": {
+    "none": 15,
+    "keep": 104,
+    "return": 32,
+    "change": 0,
+    "forbidden": 104
+   }
+  },
+  "dashed": {
+   "frames": 93,
+   "lit_mean": 0.0217,
+   "lit_p95": 0.0353,
+   "states": {
+    "none": 15,
+    "keep": 144,
+    "return": 111,
+    "change": 0,
+    "forbidden": 0
+   }
+  },
+  "change": {
+   "frames": 144,
+   "lit_mean": 0.0166,
+   "lit_p95": 0.0341,
+   "states": {
+    "none": 15,
+    "keep": 294,
+    "return": 44,
+    "change": 67,
+    "forbidden": 0
+   }
+  }
+ }
+}

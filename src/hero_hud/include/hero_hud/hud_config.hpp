@@ -70,6 +70,19 @@ struct HudConfig {
   bool road_lane_only{false};
   // 점선 경계를 그리기 시작하는 x (base_link). 3 m 도색/3 m 공백 무늬도 여기서 시작한다.
   float road_dash_near_m{3.0f};
+  // 차선 전용 모드에서 차량 상태가 있을 때 그리는 "지금 핸들로 갈 길"(현재 진행 호).
+  //   fill   일반 모드의 코리도 그대로(채운 띠, 계획 23)
+  //   edges  차폭 양쪽 가장자리의 얇은 두 줄
+  //   centre 가운데 한 줄
+  //   dots   가운데 점선(0.5 m 점, 1.5 m 주기; 차선 점선 3 m/3 m 와 다른 무늬)
+  //   none   그리지 않는다 ("off" 는 YAML 에서 불로 읽혀 쓰지 않는다)
+  // 코드 기본값은 fill(계획 23 그대로). 고른 모양은 config/hud.yaml 에서 켠다.
+  std::string road_current_path_style{"fill"};
+  // 얇은 선(edges/centre/dots)의 길이(m, 후륜축부터 호를 따라). 0 이면 화면 범위 끝까지.
+  float road_current_path_m{0.0f};
+  // 얇은 선의 월드 반폭(m)과 화면 두께 하한(분해 한계의 배수).
+  float road_current_path_half_m{0.03f};
+  float road_current_path_min_detail{1.0f};
 
   // 시각 예산. 모든 표시 크기가 여기서 유도된다. docs/HUD_전략.md 4절.
   AcuityDesign acuity;

@@ -106,6 +106,14 @@ void RosBridge::declareParameters() {
       "road.lane_only", config_.road_lane_only);
   config_.road_dash_near_m = static_cast<float>(node_->declare_parameter<double>(
       "road.dash_near_m", config_.road_dash_near_m));
+  config_.road_current_path_style = node_->declare_parameter<std::string>(
+      "road.current_path.style", config_.road_current_path_style);
+  config_.road_current_path_m = static_cast<float>(node_->declare_parameter<double>(
+      "road.current_path.length_m", config_.road_current_path_m));
+  config_.road_current_path_half_m = static_cast<float>(node_->declare_parameter<double>(
+      "road.current_path.half_width_m", config_.road_current_path_half_m));
+  config_.road_current_path_min_detail = static_cast<float>(node_->declare_parameter<double>(
+      "road.current_path.min_detail_multiple", config_.road_current_path_min_detail));
 
   d.width_px  = node_->declare_parameter<int>("display.width_px", d.width_px);
   d.height_px = node_->declare_parameter<int>("display.height_px", d.height_px);

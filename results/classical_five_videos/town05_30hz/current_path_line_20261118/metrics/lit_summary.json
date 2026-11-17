@@ -1,0 +1,72 @@
+{
+ "centre": {
+  "wobble": 0.0311,
+  "yellow": 0.0312,
+  "dashed": 0.0269,
+  "change": 0.0221,
+  "mean": 0.0278
+ },
+ "centre_10m": {
+  "wobble": 0.028,
+  "yellow": 0.028,
+  "dashed": 0.0238,
+  "change": 0.0186,
+  "mean": 0.0246
+ },
+ "centre_6m": {
+  "wobble": 0.0261,
+  "yellow": 0.0263,
+  "dashed": 0.0217,
+  "change": 0.0166,
+  "mean": 0.0227
+ },
+ "dots": {
+  "wobble": 0.0249,
+  "yellow": 0.0247,
+  "dashed": 0.0204,
+  "change": 0.0155,
+  "mean": 0.0214
+ },
+ "dots_6m": {
+  "wobble": 0.0226,
+  "yellow": 0.0232,
+  "dashed": 0.0185,
+  "change": 0.0133,
+  "mean": 0.0194
+ },
+ "dots_8m": {
+  "wobble": 0.0232,
+  "yellow": 0.0233,
+  "dashed": 0.0189,
+  "change": 0.0138,
+  "mean": 0.0198
+ },
+ "edges": {
+  "wobble": 0.0382,
+  "yellow": 0.0388,
+  "dashed": 0.0346,
+  "change": 0.0313,
+  "mean": 0.0357
+ },
+ "edges_6m": {
+  "wobble": 0.0278,
+  "yellow": 0.0282,
+  "dashed": 0.0242,
+  "change": 0.02,
+  "mean": 0.025
+ },
+ "fill": {
+  "wobble": 0.1492,
+  "yellow": 0.1476,
+  "dashed": 0.1443,
+  "change": 0.1477,
+  "mean": 0.1472
+ },
+ "none": {
+  "wobble": 0.0207,
+  "yellow": 0.0208,
+  "dashed": 0.0166,
+  "change": 0.0112,
+  "mean": 0.0173
+ }
+}

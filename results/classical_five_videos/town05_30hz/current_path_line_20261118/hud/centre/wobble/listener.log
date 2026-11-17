@@ -1,0 +1,1 @@
+{"messages": 360, "scene": 360, "scene_ideal": 210, "compute_ms": {"mean": 1.047, "p95": 1.277, "max": 1.388}, "shown": 0.5833, "states": {"none": 15, "keep": 135, "return": 210, "change": 0, "forbidden": 0}, "changes": 0}

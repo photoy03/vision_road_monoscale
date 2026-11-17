@@ -143,6 +143,11 @@ class WorldItem : public QQuickItem {
   void drawRoadMarkings(VertexBuffer& out, const RoadPaint& paint, double now) const;
   // Lane-only mode: the lane guidance path (hero_coach lane_guidance_node, SceneOverlay.ideal).
   void drawLaneGuidance(VertexBuffer& out, const SceneModel& scene, double now) const;
+  // Lane-only mode: the current path (road.current_path.style edges/centre/dots) as thin lines.
+  void drawCurrentPathLine(VertexBuffer& out, const VehicleState& v) const;
+  // A ground line of world half width half_m, widened where it would be thinner than floor_px on screen.
+  void addWorldLine(VertexBuffer& out, const std::vector<Vec2>& center, float half_m,
+                    float floor_px, const std::vector<Rgba>& colors) const;
   void addWorldRibbon(VertexBuffer& out, const std::vector<Vec2>& center,
                       float half_m, const std::vector<Rgba>& colors) const;
 

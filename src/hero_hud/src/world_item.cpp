@@ -1016,6 +1016,92 @@ void WorldItem::drawLaneGuidance(VertexBuffer& out, const SceneModel& scene, dou
   addWorldRibbon(out, chevron, thick * 1.2f, std::vector<Rgba>(chevron.size(), base));
 }
 
+// 차선 전용 모드의 현재 진행 호 — **차선을 덮지 않는 얇은 선.**
+//
+// 계획 23 은 일반 모드의 코리도(차폭만 한 채운 띠)를 그대로 그렸고, 차선이 주인공인 화면에서 띠가
+// 차선을 덮었다(켜진 면적 0.7% → 8–10%). 여기서는 같은 호(predictPath, 같은 차량 모형)를 선으로만
+// 그린다. 차선(흰색, 밝기 0.65–0.95, 실선 또는 3 m/3 m 점선)과도, 안내 경로(호박색·빨강 두 줄과
+// 화살촉)와도 헷갈리지 않게:
+//   - 색은 회색(흰색을 어둡게), 가까이 0.50 에서 끝 0.10 으로 옅어진다 — 예측 신뢰도가 거리에 따라
+//     죽는 것(코리도와 같은 어법). 차선보다 어둡고, 안내의 색이 없다.
+//   - 화살촉이 없다. 안내만 "이리로 가라"를 가리킨다.
+//   - 두께는 월드 반폭(기본 3 cm, 차선 4.5 cm·안내 7 cm 보다 얇다)에 화면 하한(분해 한계 x1)을 둔다.
+//     13-4: 검은 바탕의 밝은 선은 분해 한계 부근에서도 "있다"가 검출된다. 획 규칙(x2, 34.6 px)을
+//     그대로 걸면 이 선이 화면에서 가장 굵은 것이 된다 — 차선 전용 모드의 차선도 안내도 그 규칙
+//     아래로 그려지고 있다.
+//   - 길이는 road.current_path.length_m. 호가 맞는 구간(계획 23·24 측정)까지만 그릴 수 있다.
+//     먼 끝은 코리도와 같이 가장자리 두 줄 간격이 분해 한계 x3 밑으로 떨어지는 곳(legibleRange)에서 자른다.
+void WorldItem::addWorldLine(VertexBuffer& out, const std::vector<Vec2>& c, float half_m,
+                             float floor_px, const std::vector<Rgba>& colors) const {
+  const size_t n = std::min(c.size(), colors.size());
+  if (n < 2 || !projector_) return;
+  std::vector<Vec2> a(n), b(n);
+  for (size_t i = 0; i < n; ++i) {
+    const Vec2& p = c[i > 0 ? i - 1 : 0];
+    const Vec2& q = c[std::min(i + 1, n - 1)];
+    float tx = q.x - p.x, ty = q.y - p.y;
+    const float len = std::hypot(tx, ty);
+    if (len < 1e-6f) { tx = 1.0f; ty = 0.0f; } else { tx /= len; ty /= len; }
+    const float nx = -ty, ny = tx;
+    float h = half_m;
+    for (int iter = 0; iter < 3 && floor_px > 0.0f; ++iter) {
+      float x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f;
+      if (!projector_->project(Vec2{c[i].x + nx * h, c[i].y + ny * h}, x0, y0) ||
+          !projector_->project(Vec2{c[i].x - nx * h, c[i].y - ny * h}, x1, y1)) break;
+      const float px = std::hypot(x1 - x0, y1 - y0);
+      if (px < 1e-3f || px >= floor_px * 0.98f) break;
+      h *= std::min(floor_px / px, 4.0f);
+    }
+    a[i] = Vec2{c[i].x + nx * h, c[i].y + ny * h};
+    b[i] = Vec2{c[i].x - nx * h, c[i].y - ny * h};
+  }
+  addFilledStripShaded(out, a, b, colors);
+}
+
+void WorldItem::drawCurrentPathLine(VertexBuffer& out, const VehicleState& v) const {
+  const std::string& style = config_.road_current_path_style;
+  const bool reverse = (v.gear == Gear::Reverse);
+  const float range = projector_->range();
+  const float length = config_.road_current_path_m > 0.0f
+                           ? std::min(config_.road_current_path_m, range) : range;
+  const int samples = std::max(16, static_cast<int>(std::ceil(length / 0.15f)) + 1);
+  const std::vector<Vec2> center =
+      predictPath(config_.vehicle, v.steering_angle_rad, reverse, length, samples);
+  if (center.size() < 2) return;
+  std::vector<Vec2> left, right;
+  offsetPath(center, config_.vehicle.width_m * 0.5f, left, right);
+  const size_t last = legibleRange(left, right);
+  if (last < 1) return;
+  const size_t n = last + 1;
+  std::vector<Rgba> colors;
+  colors.reserve(n);
+  for (size_t i = 0; i < n; ++i) {
+    const float t = static_cast<float>(i) / static_cast<float>(center.size() - 1);
+    colors.push_back(dim(kWhite, adapt(0.50f * (1.0f - t) + 0.10f * t)));
+  }
+  const float half = config_.road_current_path_half_m;
+  const float floor_px = budget_.detail_px * config_.road_current_path_min_detail;
+  const float step = length / static_cast<float>(center.size() - 1);
+  const auto cut = [n](std::vector<Vec2> p) { p.resize(std::min(p.size(), n)); return p; };
+  if (style == "edges") {
+    addWorldLine(out, cut(left), half, floor_px, colors);
+    addWorldLine(out, cut(right), half, floor_px, colors);
+  } else if (style == "centre") {
+    addWorldLine(out, cut(center), half, floor_px, colors);
+  } else if (style == "dots") {
+    // 0.5 m 점, 1.5 m 주기. 차선 점선(3 m 칠 / 3 m 빈칸)과 다른 무늬.
+    constexpr float kDot = 0.5f, kPeriod = 1.5f;
+    for (float s0 = 0.0f; s0 < step * static_cast<float>(n - 1); s0 += kPeriod) {
+      const size_t i0 = static_cast<size_t>(s0 / step);
+      const size_t i1 = std::min(n - 1, static_cast<size_t>((s0 + kDot) / step));
+      if (i1 <= i0) continue;
+      std::vector<Vec2> dot(center.begin() + static_cast<long>(i0), center.begin() + static_cast<long>(i1) + 1);
+      std::vector<Rgba> dc(colors.begin() + static_cast<long>(i0), colors.begin() + static_cast<long>(i1) + 1);
+      addWorldLine(out, dot, half, floor_px, dc);
+    }
+  }
+}
+
 void WorldItem::buildFrame(VertexBuffer& out, double now) {
   if (!state_ || !projector_) {
     return;
@@ -1047,7 +1133,13 @@ void WorldItem::buildFrame(VertexBuffer& out, double now) {
     {
       const VehicleState vs = state_->vehicle();
       if (vs.stamp > 0.0 && now - vs.stamp >= 0.0 && now - vs.stamp < config_.vehicle_timeout_sec)
-        drawCorridor(world, vs, nullptr, HudMode::Normal, now, false);  // Normal: the plain corridor (Basic would stripe it as degraded); no scene, so no blockage
+      {
+        const std::string& style = config_.road_current_path_style;
+        if (style == "fill")
+          drawCorridor(world, vs, nullptr, HudMode::Normal, now, false);  // Normal: the plain corridor (Basic would stripe it as degraded); no scene, so no blockage
+        else if (style != "none")
+          drawCurrentPathLine(world, vs);
+      }
     }
     // The lane guidance, over the lanes; only while it is fresh (the node sends it every frame).
     if (scene && now - scene->stamp >= 0.0 && now - scene->stamp < 0.35) drawLaneGuidance(world, *scene, now);

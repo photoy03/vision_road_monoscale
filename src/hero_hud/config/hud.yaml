@@ -84,6 +84,14 @@ hero_hud:
       # 점선 경계를 그리기 시작하는 x (base_link, 후륜축). lane_display_filter 가 기억한 칠로
       # 차까지 이어 주므로 0 (궤적 시작점, 화면 아래). 코드 기본값은 3.0.
       dash_near_m: 0.0
+      # 차선 전용 모드에서 차량 상태(/hero/vehicle_state)가 있을 때 그리는 "지금 핸들로 갈 길".
+      # 코드 기본값은 fill(일반 모드의 코리도, 계획 23). 여기서는 차선을 덮지 않는 가운데 점선(dots)을
+      # 8 m 까지만 그린다(계획 24): 점 무늬는 차선(실선, 3 m/3 m 점선)과 다르고, 한 줄이라 안내 경로의
+      # 차폭 두 줄과 겹치지 않는다. 8 m 를 넘으면 일정 조향의 호가 실제 진행과 크게 어긋난다
+      # (원본 녹화 RMS 8 m 31 cm, 10 m 62 cm). 다른 값: fill, edges, centre, none. length_m 0 은 화면 끝까지.
+      current_path:
+        style: dots
+        length_m: 8.0
 
     timeout:
       # 이 시간을 넘도록 안 오면 저하 단계를 내린다. docs/HUD_전략.md 6절.
