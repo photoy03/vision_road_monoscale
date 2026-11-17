@@ -9,16 +9,19 @@
 #   --loop          replay again and again until Ctrl+C
 #   --frames N      replay only N frames
 #   --learned       YOLOPv2 lane mask gate (GPU; off by default)
+#   --no-guidance   no lane return / lane change guidance on the HUD (hero_coach lane_guidance)
+# The HUD is this workspace's copy (src/hero_hud), built into install/.
 set -euo pipefail
 ROAD="$(cd "$(dirname "$0")" && pwd)"
-HUD_ROOT=/home/jaehun/Desktop/hero-hud-main
+HUD_CONFIG=$ROAD/src/hero_hud/config/hud.yaml
 DISK=/media/jaehun/38F7-677B
 VIDEO=${1:-}; shift || true
-HUD=1; LOOP=0; FRAMES=0; LEARNED=""
+HUD=1; LOOP=0; FRAMES=0; LEARNED=""; GUIDANCE=true
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-hud) HUD=0;; --loop) LOOP=1;; --frames) FRAMES=$2; shift;;
     --learned) LEARNED="learned_weights:=$ROAD/data/models/yolopv2/yolopv2.pt";;
+    --no-guidance) GUIDANCE=false;;
     *) echo "unknown option $1"; exit 2;;
   esac; shift
 done
@@ -27,7 +30,7 @@ case "$VIDEO" in
   town04)  BAG=$DISK/rosbag/town04_30hz;  CACHE=$DISK/vision-road-cache/town04_30hz_native.cdrz;;
   town05)  BAG=$DISK/rosbag/town05_30hz;  CACHE=$DISK/vision-road-cache/town05_30hz_native.cdrz;;
   live)    BAG=;;
-  *) sed -n '2,13p' "$0"; exit 2;;
+  *) sed -n '2,15p' "$0"; exit 2;;
 esac
 set +u; source /opt/ros/humble/setup.bash; source "$ROAD/install/setup.bash"; set -u
 PIDS=()
@@ -38,7 +41,7 @@ cleanup() { for p in "${PIDS[@]}"; do kill -INT "$p" 2>/dev/null || true; done; 
 trap cleanup EXIT INT TERM
 
 # Detector with the display filter inside it (carla.yaml settings), reference pose adapter, TF.
-( exec "${SIGINT_EXEC[@]}" ros2 launch vision_road maploop.launch.py display_filter_inline:=true $LEARNED ) &
+( exec "${SIGINT_EXEC[@]}" ros2 launch vision_road maploop.launch.py display_filter_inline:=true lane_guidance:=$GUIDANCE $LEARNED ) &
 PIDS+=($!)
 /usr/bin/python3 - <<'PY'
 import time,rclpy
@@ -48,8 +51,8 @@ rclpy.shutdown()
 PY
 
 if [ "$HUD" = 1 ]; then
-  ( set +u; source "$HUD_ROOT/install/setup.bash"; unset QT_QPA_PLATFORM_PLUGIN_PATH QT_QPA_FONTDIR
-    exec "${SIGINT_EXEC[@]}" "$HUD_ROOT/install/hero_hud/lib/hero_hud/hud_node" --ros-args --params-file "$HUD_ROOT/config/hud.yaml" \
+  ( set +u; unset QT_QPA_PLATFORM_PLUGIN_PATH QT_QPA_FONTDIR
+    exec "${SIGINT_EXEC[@]}" "$ROAD/install/hero_hud/lib/hero_hud/hud_node" --ros-args --params-file "$HUD_CONFIG" \
       -p display.mirror_horizontal:=false -p road.lane_only:=true ) &
   PIDS+=($!)
   sleep 2

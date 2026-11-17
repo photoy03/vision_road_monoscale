@@ -1,0 +1,1 @@
+{"messages": 1808, "scene": 1808, "scene_ideal": 32, "compute_ms": {"mean": 1.032, "p95": 1.486, "max": 2.165}, "shown": 0.0177, "states": {"none": 512, "keep": 1264, "return": 32, "change": 0, "forbidden": 0}, "changes": 0}

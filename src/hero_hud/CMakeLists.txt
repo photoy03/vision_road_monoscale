@@ -15,7 +15,10 @@ find_package(geometry_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(vision_lane_interfaces REQUIRED)
 find_package(ament_index_cpp REQUIRED)
-find_package(Qt5 REQUIRED COMPONENTS Core Gui Quick Svg)
+find_package(Qt5 REQUIRED COMPONENTS Core Gui Quick)
+# Qt5Svg draws the sign icons (signs/*.svg).  Without its development files (libqt5svg5-dev) the HUD
+# still builds and the sign slot draws nothing (the lane-only mode shows no signs).
+find_package(Qt5 QUIET COMPONENTS Svg)
 
 # ---------------------------------------------------------------- 표시 계약
 rosidl_generate_interfaces(${PROJECT_NAME}
@@ -65,8 +68,14 @@ set_target_properties(hud_node PROPERTIES AUTOMOC ON)
 target_include_directories(hud_node PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(hud_node
   hero_hud_core
-  Qt5::Core Qt5::Gui Qt5::Quick Qt5::Svg
+  Qt5::Core Qt5::Gui Qt5::Quick
   "${msgs_target}")
+if(Qt5Svg_FOUND)
+  target_link_libraries(hud_node Qt5::Svg)
+  target_compile_definitions(hud_node PRIVATE HERO_HUD_HAVE_SVG=1)
+else()
+  message(WARNING "Qt5Svg development files not found: sign icons are not drawn")
+endif()
 ament_target_dependencies(hud_node rclcpp std_msgs geometry_msgs visualization_msgs vision_lane_interfaces ament_index_cpp)
 
 # ------------------------------------------------- 테스트 시나리오 발행 노드

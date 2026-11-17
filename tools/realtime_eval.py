@@ -21,7 +21,8 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile,ReliabilityPolicy
 from visualization_msgs.msg import MarkerArray
 ROOT=Path(__file__).resolve().parents[1]
-HUD=Path('/home/jaehun/Desktop/hero-hud-main')
+HUD=ROOT  # the HUD copy in this workspace (src/hero_hud), built into ROOT/install
+HUD_CONFIG=ROOT/'src/hero_hud/config/hud.yaml'
 DISK=Path('/media/jaehun/38F7-677B')
 VIDEOS=dict(maploop=(DISK/'rosbag/maploop_30hz',ROOT/'data/maploop30hz_native.cdrz'),
             town04=(DISK/'rosbag/town04_30hz',DISK/'vision-road-cache/town04_30hz_native.cdrz'),
@@ -106,7 +107,7 @@ def main():
                 (a.output/'hud_frames').mkdir(exist_ok=True)
                 env.update(HERO_HUD_RECORD=str(a.output/'hud_frames'),HERO_HUD_RECORD_FPS='10',HERO_HUD_RECORD_SECONDS=str(frames//30+8),HERO_HUD_SCREENSHOT_DELAY_MS='2500')
             hud=subprocess.Popen(['bash','-c','source /opt/ros/humble/setup.bash && source "$0/install/setup.bash" && exec "$0/install/hero_hud/lib/hero_hud/hud_node" "$@"',
-                                  str(HUD),'--ros-args','--params-file',str(HUD/'config/hud.yaml'),'-p','display.mirror_horizontal:=false','-p','road.lane_only:=true'],
+                                  str(HUD),'--ros-args','--params-file',str(HUD_CONFIG),'-p','display.mirror_horizontal:=false','-p','road.lane_only:=true'],
                                  env=env,stdout=logs['hud'],stderr=subprocess.STDOUT,start_new_session=True);procs.append(hud)
             end=time.monotonic()+3
             while time.monotonic()<end:rclpy.spin_once(node,timeout_sec=.05)

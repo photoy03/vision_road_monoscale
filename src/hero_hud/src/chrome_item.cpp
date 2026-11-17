@@ -4,7 +4,9 @@
 #include <QFont>
 #include <QPainter>
 #include <QPolygonF>
+#ifdef HERO_HUD_HAVE_SVG
 #include <QSvgRenderer>
+#endif
 #include <QQuickWindow>
 #include <QSGSimpleTextureNode>
 
@@ -90,6 +92,11 @@ QString gearGlyph(Gear g) {
 // 자산을 코드가 아니라 파일로 둔 이유는 나중에 공식 표지판 SVG 를 같은
 // 디렉터리에 넣으면 그대로 동작하게 하려는 것이다.
 QImage renderSignInk(const QString& path, int side, const QColor& ink) {
+#ifndef HERO_HUD_HAVE_SVG
+  // Built without Qt5Svg: no icon (the caller then draws nothing in the sign slot).
+  (void)path;(void)side;(void)ink;
+  return QImage();
+#else
   QSvgRenderer renderer(path);
   if (!renderer.isValid() || side < 4) {
     return QImage();
@@ -127,6 +134,7 @@ QImage renderSignInk(const QString& path, int side, const QColor& ink) {
     }
   }
   return out;
+#endif
 }
 
 QString signAsset(uint8_t kind) {

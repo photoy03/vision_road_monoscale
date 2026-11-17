@@ -29,6 +29,9 @@ def generate_launch_description():
         DeclareLaunchArgument('learned_gate',default_value='remove'),
         DeclareLaunchArgument('road_markings',default_value='false'),
         DeclareLaunchArgument('learned_every',default_value='2'),
+        # Lane return / lane change guidance for the HUD (hero_coach lane_guidance, its own process):
+        # reads /road/lane_centres and /road/reference_odom, sends /hero/scene_overlay and /hero/lane_guidance.
+        DeclareLaunchArgument('lane_guidance',default_value='false'),
         Node(package='vision_road',executable='road_node',name='vision_road',output='screen',parameters=[share+'/config/carla.yaml',{
             'use_sim_time':LaunchConfiguration('use_sim_time'),
             'image_topic':'/sensing/camera/dashcam/image_raw','image_reliability':LaunchConfiguration('image_reliability'),'image_queue_depth':10,
@@ -49,6 +52,9 @@ def generate_launch_description():
         Node(package='vision_road',executable='lane_display_filter',
              condition=IfCondition(PythonExpression(["'",LaunchConfiguration('display_filter'),"'=='true' and '",LaunchConfiguration('display_filter_inline'),"'!='true'"])),
              parameters=[share+'/config/carla.yaml',{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
+        Node(package='hero_coach',executable='lane_guidance',name='lane_guidance',output='screen',
+             condition=IfCondition(LaunchConfiguration('lane_guidance')),
+             parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
         Node(package='vision_road',executable='reference_pose',condition=IfCondition(LaunchConfiguration('reference_pose')),
              parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
         Node(package='tf2_ros',executable='static_transform_publisher',arguments=[

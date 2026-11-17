@@ -1,0 +1,797 @@
+diff --git a/run_lane_hud.sh b/run_lane_hud.sh
+index 1093dde..ad07bb6 100755
+--- a/run_lane_hud.sh
++++ b/run_lane_hud.sh
+@@ -9,16 +9,19 @@
+ #   --loop          replay again and again until Ctrl+C
+ #   --frames N      replay only N frames
+ #   --learned       YOLOPv2 lane mask gate (GPU; off by default)
++#   --no-guidance   no lane return / lane change guidance on the HUD (hero_coach lane_guidance)
++# The HUD is this workspace's copy (src/hero_hud), built into install/.
+ set -euo pipefail
+ ROAD="$(cd "$(dirname "$0")" && pwd)"
+-HUD_ROOT=/home/jaehun/Desktop/hero-hud-main
++HUD_CONFIG=$ROAD/src/hero_hud/config/hud.yaml
+ DISK=/media/jaehun/38F7-677B
+ VIDEO=${1:-}; shift || true
+-HUD=1; LOOP=0; FRAMES=0; LEARNED=""
++HUD=1; LOOP=0; FRAMES=0; LEARNED=""; GUIDANCE=true
+ while [ $# -gt 0 ]; do
+   case "$1" in
+     --no-hud) HUD=0;; --loop) LOOP=1;; --frames) FRAMES=$2; shift;;
+     --learned) LEARNED="learned_weights:=$ROAD/data/models/yolopv2/yolopv2.pt";;
++    --no-guidance) GUIDANCE=false;;
+     *) echo "unknown option $1"; exit 2;;
+   esac; shift
+ done
+@@ -27,7 +30,7 @@ case "$VIDEO" in
+   town04)  BAG=$DISK/rosbag/town04_30hz;  CACHE=$DISK/vision-road-cache/town04_30hz_native.cdrz;;
+   town05)  BAG=$DISK/rosbag/town05_30hz;  CACHE=$DISK/vision-road-cache/town05_30hz_native.cdrz;;
+   live)    BAG=;;
+-  *) sed -n '2,13p' "$0"; exit 2;;
++  *) sed -n '2,15p' "$0"; exit 2;;
+ esac
+ set +u; source /opt/ros/humble/setup.bash; source "$ROAD/install/setup.bash"; set -u
+ PIDS=()
+@@ -38,7 +41,7 @@ cleanup() { for p in "${PIDS[@]}"; do kill -INT "$p" 2>/dev/null || true; done;
+ trap cleanup EXIT INT TERM
+ 
+ # Detector with the display filter inside it (carla.yaml settings), reference pose adapter, TF.
+-( exec "${SIGINT_EXEC[@]}" ros2 launch vision_road maploop.launch.py display_filter_inline:=true $LEARNED ) &
++( exec "${SIGINT_EXEC[@]}" ros2 launch vision_road maploop.launch.py display_filter_inline:=true lane_guidance:=$GUIDANCE $LEARNED ) &
+ PIDS+=($!)
+ /usr/bin/python3 - <<'PY'
+ import time,rclpy
+@@ -48,8 +51,8 @@ rclpy.shutdown()
+ PY
+ 
+ if [ "$HUD" = 1 ]; then
+-  ( set +u; source "$HUD_ROOT/install/setup.bash"; unset QT_QPA_PLATFORM_PLUGIN_PATH QT_QPA_FONTDIR
+-    exec "${SIGINT_EXEC[@]}" "$HUD_ROOT/install/hero_hud/lib/hero_hud/hud_node" --ros-args --params-file "$HUD_ROOT/config/hud.yaml" \
++  ( set +u; unset QT_QPA_PLATFORM_PLUGIN_PATH QT_QPA_FONTDIR
++    exec "${SIGINT_EXEC[@]}" "$ROAD/install/hero_hud/lib/hero_hud/hud_node" --ros-args --params-file "$HUD_CONFIG" \
+       -p display.mirror_horizontal:=false -p road.lane_only:=true ) &
+   PIDS+=($!)
+   sleep 2
+diff --git a/src/hero_coach/setup.py b/src/hero_coach/setup.py
+index 8dcbf39..d3d13af 100644
+--- a/src/hero_coach/setup.py
++++ b/src/hero_coach/setup.py
+@@ -30,6 +30,7 @@ setup(
+             'parking_planner = hero_coach.parking_planner:main',
+             'coach_node = hero_coach.coach_node:main',
+             'voice_node = hero_coach.voice_node:main',
++            'lane_guidance = hero_coach.lane_guidance_node:main',
+         ],
+     },
+ )
+diff --git a/src/hero_hud/CMakeLists.txt b/src/hero_hud/CMakeLists.txt
+index a818c84..e45fa99 100644
+--- a/src/hero_hud/CMakeLists.txt
++++ b/src/hero_hud/CMakeLists.txt
+@@ -15,7 +15,10 @@ find_package(geometry_msgs REQUIRED)
+ find_package(visualization_msgs REQUIRED)
+ find_package(vision_lane_interfaces REQUIRED)
+ find_package(ament_index_cpp REQUIRED)
+-find_package(Qt5 REQUIRED COMPONENTS Core Gui Quick Svg)
++find_package(Qt5 REQUIRED COMPONENTS Core Gui Quick)
++# Qt5Svg draws the sign icons (signs/*.svg).  Without its development files (libqt5svg5-dev) the HUD
++# still builds and the sign slot draws nothing (the lane-only mode shows no signs).
++find_package(Qt5 QUIET COMPONENTS Svg)
+ 
+ # ---------------------------------------------------------------- 표시 계약
+ rosidl_generate_interfaces(${PROJECT_NAME}
+@@ -65,8 +68,14 @@ set_target_properties(hud_node PROPERTIES AUTOMOC ON)
+ target_include_directories(hud_node PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+ target_link_libraries(hud_node
+   hero_hud_core
+-  Qt5::Core Qt5::Gui Qt5::Quick Qt5::Svg
++  Qt5::Core Qt5::Gui Qt5::Quick
+   "${msgs_target}")
++if(Qt5Svg_FOUND)
++  target_link_libraries(hud_node Qt5::Svg)
++  target_compile_definitions(hud_node PRIVATE HERO_HUD_HAVE_SVG=1)
++else()
++  message(WARNING "Qt5Svg development files not found: sign icons are not drawn")
++endif()
+ ament_target_dependencies(hud_node rclcpp std_msgs geometry_msgs visualization_msgs vision_lane_interfaces ament_index_cpp)
+ 
+ # ------------------------------------------------- 테스트 시나리오 발행 노드
+diff --git a/src/hero_hud/README.md b/src/hero_hud/README.md
+index 80bf059..c037fac 100644
+--- a/src/hero_hud/README.md
++++ b/src/hero_hud/README.md
+@@ -7,10 +7,10 @@
+ HUD와 vision-road를 **같은 `ROS_DOMAIN_ID`**에서 실행하세요. HUD 기본 구독 토픽은 `config/hud.yaml`의 `road.paint_topic`으로 바꿀 수 있습니다. maploop 로스백 테스트는 다른 터미널에서 각각 아래처럼 실행합니다.
+ 
+ ```bash
+-# vision-road를 먼저 빌드한 ROS 환경에서
++# 이 복사본은 vision-road 작업공간(src/hero_hud)에서 함께 빌드한다:
++#   colcon build --symlink-install --base-paths src --packages-select hero_hud
+ source /opt/ros/humble/setup.bash
+ source /home/jaehun/Desktop/vision-road/install/setup.bash
+-source /home/jaehun/Desktop/hero-hud-main/install/setup.bash
+ ros2 launch hero_hud hud.launch.py
+ # 별도 터미널: vision-road/run_maploop.sh, replay_maploop.sh --rate 1
+ ```
+diff --git a/src/hero_hud/include/hero_hud/world_item.hpp b/src/hero_hud/include/hero_hud/world_item.hpp
+index 8d2e552..61e0f65 100644
+--- a/src/hero_hud/include/hero_hud/world_item.hpp
++++ b/src/hero_hud/include/hero_hud/world_item.hpp
+@@ -141,6 +141,8 @@ class WorldItem : public QQuickItem {
+   // 재던 코드(addScreenRibbon)는 이것으로 대체되어 사라졌다.
+   void drawRoadPaint(VertexBuffer& out, const RoadPaint& paint, double now) const;
+   void drawRoadMarkings(VertexBuffer& out, const RoadPaint& paint, double now) const;
++  // Lane-only mode: the lane guidance path (hero_coach lane_guidance_node, SceneOverlay.ideal).
++  void drawLaneGuidance(VertexBuffer& out, const SceneModel& scene, double now) const;
+   void addWorldRibbon(VertexBuffer& out, const std::vector<Vec2>& center,
+                       float half_m, const std::vector<Rgba>& colors) const;
+ 
+diff --git a/src/hero_hud/src/chrome_item.cpp b/src/hero_hud/src/chrome_item.cpp
+index fd48432..83bea47 100644
+--- a/src/hero_hud/src/chrome_item.cpp
++++ b/src/hero_hud/src/chrome_item.cpp
+@@ -4,7 +4,9 @@
+ #include <QFont>
+ #include <QPainter>
+ #include <QPolygonF>
++#ifdef HERO_HUD_HAVE_SVG
+ #include <QSvgRenderer>
++#endif
+ #include <QQuickWindow>
+ #include <QSGSimpleTextureNode>
+ 
+@@ -90,6 +92,11 @@ QString gearGlyph(Gear g) {
+ // 자산을 코드가 아니라 파일로 둔 이유는 나중에 공식 표지판 SVG 를 같은
+ // 디렉터리에 넣으면 그대로 동작하게 하려는 것이다.
+ QImage renderSignInk(const QString& path, int side, const QColor& ink) {
++#ifndef HERO_HUD_HAVE_SVG
++  // Built without Qt5Svg: no icon (the caller then draws nothing in the sign slot).
++  (void)path;(void)side;(void)ink;
++  return QImage();
++#else
+   QSvgRenderer renderer(path);
+   if (!renderer.isValid() || side < 4) {
+     return QImage();
+@@ -127,6 +134,7 @@ QImage renderSignInk(const QString& path, int side, const QColor& ink) {
+     }
+   }
+   return out;
++#endif
+ }
+ 
+ QString signAsset(uint8_t kind) {
+diff --git a/src/hero_hud/src/world_item.cpp b/src/hero_hud/src/world_item.cpp
+index 40f3f01..3375c89 100644
+--- a/src/hero_hud/src/world_item.cpp
++++ b/src/hero_hud/src/world_item.cpp
+@@ -971,6 +971,51 @@ void WorldItem::drawRoadMarkings(VertexBuffer& out, const RoadPaint& paint,
+   }
+ }
+ 
++// 차선 전용 모드의 안내 경로 — **차에서 시작해 가야 할 차로 중앙으로 휘는 차폭 두 줄과 화살촉.**
++//
++// 목표선(13-19)과 같은 어법이다: 한 줄은 "차선 중앙선"으로 읽히고 두 줄은 "자리"로 읽힌다.
++// 차폭으로 벌린 두 줄이 차 바로 앞에서 시작해 목표 차로 중앙으로 휘고, 끝의 화살촉이 방향을
++// 준다. 차선 전용 모드에는 차의 현재 진행 호가 없으므로(CAN 없음) 비교 대상 없이 "이리로 가라"를
++// 그린다.
++//
++// 외곽선만, 채움·글로우 없음(4절). 넘으면 안 되는 선을 넘었을 때(coach severity Warn 이상)는
++// 빨강, 굵게, 점멸 — 색 단독 인코딩을 피해 굵기와 점멸을 같이 바꾼다. 차가 중앙 근처면 노드가
++// has_ideal 을 내리지 않으므로 그리지 않는다(켜는 기준 0.30 m, 끄는 기준 0.15 m 는 노드 쪽).
++void WorldItem::drawLaneGuidance(VertexBuffer& out, const SceneModel& scene, double now) const {
++  if (!scene.has_ideal || scene.ideal.points.size() < 2) return;
++  const bool warn = scene.has_coach && scene.coach.severity >= Severity::Warn;
++  // 화살촉은 14 m 앞(또는 경로 끝)까지. 먼 끝은 작아서 읽히지 않는다.
++  const float reach = std::min(14.0f, projector_->range() * 0.6f);
++  std::vector<Vec2> path;
++  for (const auto& p : scene.ideal.points) {
++    path.push_back(p);
++    if (p.x >= reach) break;
++  }
++  if (path.size() < 3) return;
++  const float half = std::max(scene.ideal.width_m, 1.0f) * 0.5f;
++  const float thick = warn ? 0.10f : 0.07f;
++  const float level = warn ? (blinkOn(now, 0.55, 0.5) ? 1.0f : 0.45f) : 0.90f;
++  const Rgba base = dim(warn ? kRed : kAmber, adapt(level));
++  std::vector<Vec2> left, right;
++  offsetPath(path, half, left, right);
++  for (const std::vector<Vec2>* edge : {&left, &right}) {
++    if (edge->size() < 2) continue;
++    addWorldRibbon(out, *edge, thick, std::vector<Rgba>(edge->size(), base));
++  }
++  // 화살촉: 경로 끝에서 진행 방향을 가리키는 꺾쇠 하나.
++  const Vec2 tip = path.back();
++  const Vec2 back = path[path.size() - 3];
++  float dx = tip.x - back.x, dy = tip.y - back.y;
++  const float len = std::hypot(dx, dy);
++  if (len < 1e-3f) return;
++  dx /= len; dy /= len;
++  const float L = 1.8f, W = half + 0.45f;
++  std::vector<Vec2> chevron{{tip.x - dx * L - dy * W, tip.y - dy * L + dx * W},
++                            {tip.x + dx * 0.6f, tip.y + dy * 0.6f},
++                            {tip.x - dx * L + dy * W, tip.y - dy * L - dx * W}};
++  addWorldRibbon(out, chevron, thick * 1.2f, std::vector<Rgba>(chevron.size(), base));
++}
++
+ void WorldItem::buildFrame(VertexBuffer& out, double now) {
+   if (!state_ || !projector_) {
+     return;
+@@ -996,6 +1041,8 @@ void WorldItem::buildFrame(VertexBuffer& out, double now) {
+     projector_->setLateralHalf(4.5f);
+     if (road_fresh || boundary_fresh) drawRoadPaint(world, *road, now);
+     if (road) drawRoadMarkings(world, *road, now);
++    // The lane guidance, over the lanes; only while it is fresh (the node sends it every frame).
++    if (scene && now - scene->stamp >= 0.0 && now - scene->stamp < 0.35) drawLaneGuidance(world, *scene, now);
+     out.insert(out.end(), world.begin(), world.end());
+     return;
+   }
+diff --git a/src/vision_road/launch/maploop.launch.py b/src/vision_road/launch/maploop.launch.py
+index e64c33d..c5ba964 100644
+--- a/src/vision_road/launch/maploop.launch.py
++++ b/src/vision_road/launch/maploop.launch.py
+@@ -29,6 +29,9 @@ def generate_launch_description():
+         DeclareLaunchArgument('learned_gate',default_value='remove'),
+         DeclareLaunchArgument('road_markings',default_value='false'),
+         DeclareLaunchArgument('learned_every',default_value='2'),
++        # Lane return / lane change guidance for the HUD (hero_coach lane_guidance, its own process):
++        # reads /road/lane_centres and /road/reference_odom, sends /hero/scene_overlay and /hero/lane_guidance.
++        DeclareLaunchArgument('lane_guidance',default_value='false'),
+         Node(package='vision_road',executable='road_node',name='vision_road',output='screen',parameters=[share+'/config/carla.yaml',{
+             'use_sim_time':LaunchConfiguration('use_sim_time'),
+             'image_topic':'/sensing/camera/dashcam/image_raw','image_reliability':LaunchConfiguration('image_reliability'),'image_queue_depth':10,
+@@ -49,6 +52,9 @@ def generate_launch_description():
+         Node(package='vision_road',executable='lane_display_filter',
+              condition=IfCondition(PythonExpression(["'",LaunchConfiguration('display_filter'),"'=='true' and '",LaunchConfiguration('display_filter_inline'),"'!='true'"])),
+              parameters=[share+'/config/carla.yaml',{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
++        Node(package='hero_coach',executable='lane_guidance',name='lane_guidance',output='screen',
++             condition=IfCondition(LaunchConfiguration('lane_guidance')),
++             parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
+         Node(package='vision_road',executable='reference_pose',condition=IfCondition(LaunchConfiguration('reference_pose')),
+              parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
+         Node(package='tf2_ros',executable='static_transform_publisher',arguments=[
+diff --git a/tools/realtime_eval.py b/tools/realtime_eval.py
+index 9d6669f..82b6099 100644
+--- a/tools/realtime_eval.py
++++ b/tools/realtime_eval.py
+@@ -21,7 +21,8 @@ from rclpy.node import Node
+ from rclpy.qos import QoSProfile,ReliabilityPolicy
+ from visualization_msgs.msg import MarkerArray
+ ROOT=Path(__file__).resolve().parents[1]
+-HUD=Path('/home/jaehun/Desktop/hero-hud-main')
++HUD=ROOT  # the HUD copy in this workspace (src/hero_hud), built into ROOT/install
++HUD_CONFIG=ROOT/'src/hero_hud/config/hud.yaml'
+ DISK=Path('/media/jaehun/38F7-677B')
+ VIDEOS=dict(maploop=(DISK/'rosbag/maploop_30hz',ROOT/'data/maploop30hz_native.cdrz'),
+             town04=(DISK/'rosbag/town04_30hz',DISK/'vision-road-cache/town04_30hz_native.cdrz'),
+@@ -106,7 +107,7 @@ def main():
+                 (a.output/'hud_frames').mkdir(exist_ok=True)
+                 env.update(HERO_HUD_RECORD=str(a.output/'hud_frames'),HERO_HUD_RECORD_FPS='10',HERO_HUD_RECORD_SECONDS=str(frames//30+8),HERO_HUD_SCREENSHOT_DELAY_MS='2500')
+             hud=subprocess.Popen(['bash','-c','source /opt/ros/humble/setup.bash && source "$0/install/setup.bash" && exec "$0/install/hero_hud/lib/hero_hud/hud_node" "$@"',
+-                                  str(HUD),'--ros-args','--params-file',str(HUD/'config/hud.yaml'),'-p','display.mirror_horizontal:=false','-p','road.lane_only:=true'],
++                                  str(HUD),'--ros-args','--params-file',str(HUD_CONFIG),'-p','display.mirror_horizontal:=false','-p','road.lane_only:=true'],
+                                  env=env,stdout=logs['hud'],stderr=subprocess.STDOUT,start_new_session=True);procs.append(hud)
+             end=time.monotonic()+3
+             while time.monotonic()<end:rclpy.spin_once(node,timeout_sec=.05)
+--- a/src/hero_coach/hero_coach/lane_guidance.py
++++ b/src/hero_coach/hero_coach/lane_guidance.py
+@@ -0,0 +1,303 @@
++"""Lane return and lane change guidance from the lane centrelines (vision_road /road/lane_centres).
++
++Pure computation: no ROS, no Autoware; numpy only.  lane_guidance_node.py wraps it.
++
++Target lane.  The guidance keeps one target lane, followed by its position on the road, not by its
++name: the detector renames lanes (ego / left / right) the moment the car crosses a line.  Each frame
++the target centreline of the last frame is carried into the new base_link with the vehicle's motion and
++the current lane whose centre lies within match_m of it (at ref_m ahead) is the target.  Without a
++match the carried line stands in for up to carry_sec; after that, or after a sharp turn (a junction:
++yaw rate above turn_rate) or an implausible offset, the target is taken afresh: the lane the car is in.
++
++  - The target moves to a neighbouring lane only when all of these hold: the line between them is
++    white dashed (crossable), the neighbour is lane-like and not oncoming; the car moves towards
++    that line (lateral speed of at least change_speed_mps, gaps under change_gap_sec, for
++    change_sec); and the car centre is within change_line_m of the line, or past it.
++  - A yellow or solid boundary, or one to an oncoming lane, never moves the target: crossing it keeps
++    the target on the home lane ('forbidden' while the car's side is on or past that line).
++  - After a move the same must hold towards the other side to move again: on a line the target does
++    not flip.
++
++The car's offset from the target centre.  The centreline is seen from about 5 m ahead.  Its points
++seen in the last memory_sec (kept in world coordinates, from ref_m to ref_m + 8 m ahead) are, after
++the car has moved on, beside and just ahead of the car: a straight line through those within
++near_window_m of x = 0 gives the centre's offset and direction at the car.  Until there are enough
++(start, a new target), the centreline is continued back from its reference point along its heading
++and curvature.
++
++Path.  A quintic in the lateral offset from the target centreline, parameterised by the forward
++distance x: from the car (on its position, along its heading, straight) to the centreline at x = L
++(offset, slope and curvature 0), then along the centreline for tail_m.  L is the speed times
++merge_sec, at least merge_per_m per metre of offset, within merge_min_m..merge_max_m.
++
++States: 'none' (no reliable target: no lane, taken afresh within settle_sec, no measured part of the
++target lane within near_m, turning sharply), 'keep' (near the centre: shown from on_m, hidden again
++under off_m), 'return' (back to the home lane's centre), 'change' (onto the new lane, until near its
++centre), 'forbidden' (the car's side is on or past a line that must not be crossed: back to the home
++lane)."""
++from dataclasses import dataclass
++import math
++import numpy as np
++
++
++@dataclass
++class GuidanceSettings:
++    ref_m: float = 5.0  # where lane centres are compared (inside the camera view)
++    on_m: float = 0.30  # guidance shown when the car is this far from the target centre
++    off_m: float = 0.15  # ... and hidden again when back within this
++    change_speed_mps: float = 0.25  # lateral speed towards the line that counts as moving over
++    change_sec: float = 0.6  # ... for at least this long
++    change_gap_sec: float = 0.15  # a dip below that speed this short does not break it
++    change_line_m: float = 0.5  # car centre within this of the line (or past it)
++    half_width_m: float = 0.91  # the car's half width (IONIQ 1.82 m): its side is on a line from here
++    match_m: float = 0.5  # a carried target centre matches a current lane within this
++    carry_sec: float = 1.5  # without a match the carried target stands in this long
++    settle_sec: float = 0.5  # after taking a lane afresh no guidance for this long
++    near_m: float = 15.0  # no guidance while the target lane has no measured part starting within this
++    turn_rate: float = 0.30  # rad/s: turning this sharply (a junction) suspends the guidance
++    implausible: float = 1.3  # an offset beyond this many lane widths is a lost lane, not a position
++    memory_sec: float = 1.5  # centreline points kept to find the centre beside the car
++    near_window_m: float = 3.0
++    merge_sec: float = 3.0
++    merge_min_m: float = 10.0
++    merge_max_m: float = 30.0
++    merge_per_m: float = 8.0
++    tail_m: float = 6.0
++    step_m: float = 0.5
++    speed_tau_sec: float = 0.3  # low-pass of the speeds
++    offset_tau_sec: float = 0.1  # low-pass of the offset used for the state
++
++
++def relative(previous, pose):
++    """Motion (dx, dy, dyaw) from one world pose (x, y, yaw) to the next, in the first's frame."""
++    c, s = math.cos(previous[2]), math.sin(previous[2]); wx, wy = pose[0]-previous[0], pose[1]-previous[1]
++    return (c*wx+s*wy, -s*wx+c*wy, math.atan2(math.sin(pose[2]-previous[2]), math.cos(pose[2]-previous[2])))
++
++
++def carry(points, motion):
++    """Points of the previous base_link in the next one."""
++    dx, dy, dyaw = motion; c, s = math.cos(dyaw), math.sin(dyaw)
++    px = points[:, 0]-dx; py = points[:, 1]-dy
++    return np.column_stack([c*px+s*py, -s*px+c*py])
++
++
++def to_world(points, pose):
++    c, s = math.cos(pose[2]), math.sin(pose[2])
++    return np.column_stack([pose[0]+c*points[:, 0]-s*points[:, 1], pose[1]+s*points[:, 0]+c*points[:, 1]])
++
++
++def to_base(points, pose):
++    c, s = math.cos(pose[2]), math.sin(pose[2]); dx = points[:, 0]-pose[0]; dy = points[:, 1]-pose[1]
++    return np.column_stack([c*dx+s*dy, -s*dx+c*dy])
++
++
++def centre_at(points, x, ref=None):
++    """y of a centreline at forward distances x: the polyline inside it; before its first point the
++    line continued from its reference point along its heading and curvature (ref: ref_x_m, offset_m,
++    heading_rad, curvature_1pm) or straight; after its last point straight on."""
++    p = np.asarray(points, float); x = np.asarray(x, float); y = np.interp(x, p[:, 0], p[:, 1])
++    before = x < p[0, 0]
++    if before.any():
++        if ref is not None:
++            x0 = ref['ref_x_m']; y0 = ref['offset_m']; b = math.tan(ref['heading_rad'])
++            k = ref['curvature_1pm']*(1+b*b)**1.5; u = x[before]-x0; y[before] = y0+b*u+.5*k*u*u
++        elif len(p) >= 2:
++            b = (p[1, 1]-p[0, 1])/max(p[1, 0]-p[0, 0], 1e-6); y[before] = p[0, 1]+b*(x[before]-p[0, 0])
++    after = x > p[-1, 0]
++    if after.any() and len(p) >= 2:
++        b = (p[-1, 1]-p[-2, 1])/max(p[-1, 0]-p[-2, 0], 1e-6); y[after] = p[-1, 1]+b*(x[after]-p[-1, 0])
++    return y
++
++
++def quintic(d0, d1, d2, length):
++    """Coefficients (lowest power first) of d(x) with d, d', d'' = d0, d1, d2 at 0 and 0, 0, 0 at length."""
++    L = length; a0, a1, a2 = d0, d1, d2/2.
++    A = np.array([[L**3, L**4, L**5], [3*L**2, 4*L**3, 5*L**4], [6*L, 12*L**2, 20*L**3]])
++    b = np.array([-(a0+a1*L+a2*L*L), -(a1+2*a2*L), -2*a2])
++    return np.r_[a0, a1, a2, np.linalg.solve(A, b)]
++
++
++def path_onto(centre, near, length, settings):
++    """Path from the car (base_link origin, heading +x, straight) onto a centreline.  centre(x): its y;
++    near: (y, slope, curvature) of the centre at x = 0.  Quintic offset over [0, length], then the
++    centreline for tail_m.  Returns (n, 2) points."""
++    s = settings; y0, slope, curve = near
++    coef = quintic(-y0, -slope, -curve, length)
++    x = np.arange(0., length+s.tail_m+1e-9, s.step_m)
++    d = np.where(x <= length, np.polyval(coef[::-1], np.minimum(x, length)), 0.)
++    y = centre(x); y[0] = y0  # the near centre (memory) at 0, the polyline (and its continuation) beyond
++    blend = np.clip(x/max(s.near_window_m, 1e-6), 0., 1.)
++    y = (1-blend)*(y0+slope*x)+blend*y  # the memory's near line joins the polyline over near_window_m
++    return np.column_stack([x, y+d])
++
++
++@dataclass
++class Lane:
++    """One centreline of /road/lane_centres, as the guidance reads it."""
++    name: str
++    points: np.ndarray
++    ref: dict
++    width: float
++    opposite: bool = False
++    lane_like: bool = True
++    left: dict = None
++    right: dict = None
++    measured_from: float = math.inf  # where the two boundaries start facing each other (both_m); inf: estimated
++
++    @classmethod
++    def from_message(cls, item):
++        return cls(item['name'], np.asarray(item['points'], float),
++                   dict(ref_x_m=item['ref_x_m'], offset_m=item['offset_m'], heading_rad=item['heading_rad'],
++                        curvature_1pm=item['curvature_1pm']),
++                   float(item['width_m']), bool(item.get('opposite_direction')), bool(item.get('lane_like', True)),
++                   item.get('left_boundary'), item.get('right_boundary'),
++                   float(item['both_m'][0]) if item.get('both_m') else math.inf)
++
++    def at(self, x):
++        return float(centre_at(self.points, [x], self.ref)[0])
++
++
++def crossable(boundary):
++    """White dashed: one may change lanes over it."""
++    return boundary is not None and boundary.get('style') == 'dashed' and not boundary.get('yellow')
++
++
++def forbidden(boundary):
++    """Known yellow or solid: not to be crossed (an unknown style is neither)."""
++    return boundary is not None and (bool(boundary.get('yellow')) or boundary.get('style') == 'solid')
++
++
++@dataclass
++class Output:
++    state: str  # none / keep / return / change / forbidden
++    target: str  # the target lane's current name (ego / left / right), 'carried', or '' when none
++    offset_m: float  # the car's lateral offset from the target centre (+: car left of it)
++    lateral_speed_mps: float
++    speed_mps: float
++    shown: bool
++    path: np.ndarray = None
++    merge_m: float = 0.
++    changes: int = 0
++    reason: str = ''
++
++
++class LaneGuidance:
++    def __init__(self, settings=None):
++        self.s = settings or GuidanceSettings(); self.reset()
++
++    def reset(self):
++        self.target = None  # (points, ref, width, left, right) of the target, last base_link
++        self.target_time = None; self.pose = None; self.time = None; self.acquired = None
++        self.speed = 0.; self.yaw_rate = 0.; self.lateral_speed = 0.; self.offset = None; self.smooth = None
++        self.moving = {'left': 0., 'right': 0.}; self.gap = {'left': 0., 'right': 0.}
++        self.memory = []; self.shown = False; self.changes = 0; self.state = 'none'
++
++    def _lose(self):
++        self.target = None; self.memory = []; self.offset = self.smooth = None
++
++    def _near(self, lane, pose):
++        """(y, slope, curvature) of the target centre at x = 0, from the remembered points, else continued."""
++        s = self.s
++        if pose is not None and self.memory:
++            q = to_base(np.vstack([p for _, p in self.memory]), pose)
++            q = q[np.abs(q[:, 0]) <= s.near_window_m]
++            if len(q) >= 6 and np.ptp(q[:, 0]) >= 1.:
++                b, a = np.polyfit(q[:, 0], q[:, 1], 1)
++                return float(a), float(b), lane.ref['curvature_1pm'] if lane.ref else 0.
++        h = 1e-3; c0, cp, cm = centre_at(lane.points, [0., h, -h], lane.ref)
++        return float(c0), float((cp-cm)/(2*h)), float((cp-2*c0+cm)/(h*h))
++
++    def update(self, t, pose, lanes, path=True):
++        """t (s), pose (x, y, yaw) in a world frame or None, lanes: Lane list of this frame.  Returns Output.
++        path=False: the path only while the guidance is shown."""
++        s = self.s
++        dt = 0. if self.time is None else t-self.time
++        if self.time is not None and not 0. < dt <= 1.:self.reset();dt = 0.
++        motion = relative(self.pose, pose) if pose is not None and self.pose is not None and dt > 0 else None
++        if motion is not None:
++            a = 1-math.exp(-dt/s.speed_tau_sec)
++            self.speed += (math.hypot(motion[0], motion[1])/dt-self.speed)*a
++            self.yaw_rate += (motion[2]/dt-self.yaw_rate)*a
++        self.pose = pose; self.time = t
++        named = {l.name: l for l in lanes}
++        turning = abs(self.yaw_rate) > s.turn_rate
++        if turning:self._lose()
++        # The target, by position: last frame's carried into this one, matched among the current lanes.
++        target = None
++        if self.target is not None and motion is not None:
++            points, ref, width, left, right = self.target
++            yc = float(centre_at(carry(points, motion), [s.ref_m])[0])
++            best = min(lanes, key=lambda l: abs(l.at(s.ref_m)-yc), default=None)
++            if best is not None and abs(best.at(s.ref_m)-yc) <= s.match_m:
++                target = best; self.target_time = t
++            elif t-self.target_time <= s.carry_sec:
++                target = Lane('carried', carry(points, motion), None, width, left=left, right=right)
++        if target is None:
++            target = named.get('ego')
++            if target is None:
++                self._lose(); self.state = 'none'; self.shown = False
++                return Output('none', '', 0., 0., self.speed, False, changes=self.changes, reason='no lane')
++            # Taken afresh: the car's lane, settled first.
++            self._lose(); self.target_time = t; self.acquired = t
++            self.lateral_speed = 0.; self.moving = {'left': 0., 'right': 0.}
++        # Unreliable surroundings (a junction: turning, or no measured lane near): the car's own lane,
++        # taken afresh every frame, so the target does not stick to a misnamed lane on the way out.
++        if target.name != 'carried' and (turning or target.measured_from > s.near_m) and 'ego' in named:
++            if target is not named['ego'] or self.acquired is None or t-self.acquired >= s.settle_sec:
++                self._lose();target = named['ego']
++            self.acquired = t;self.target_time = t;self.lateral_speed = 0.;self.moving = {'left': 0., 'right': 0.}
++        near = self._near(target, pose); offset = -near[0]
++        limit = (1. if target.name == 'carried' else s.implausible)*target.width
++        if abs(offset) > limit:
++            self._lose(); self.state = 'none'; self.shown = False
++            return Output('none', target.name, offset, self.lateral_speed, self.speed, False, changes=self.changes, reason='implausible offset')
++        # Lateral speed from the offset change (the target centre is fixed on the road).
++        if self.offset is not None and dt > 0:
++            raw = (offset-self.offset)/dt
++            if abs(raw) < 5.:self.lateral_speed += (raw-self.lateral_speed)*(1-math.exp(-dt/s.speed_tau_sec))
++        self.offset = offset
++        self.smooth = offset if self.smooth is None or dt <= 0 else self.smooth+(offset-self.smooth)*(1-math.exp(-dt/s.offset_tau_sec))
++        for side, sign in (('left', 1.), ('right', -1.)):
++            if sign*self.lateral_speed >= s.change_speed_mps:self.moving[side] += dt;self.gap[side] = 0.
++            else:
++                self.gap[side] += dt
++                if self.gap[side] > s.change_gap_sec:self.moving[side] = 0.
++        # Moving over a dashed line into a lane-like, same-direction neighbour (found by position).
++        reason = ''; changed = False
++        for side, sign in (('left', 1.), ('right', -1.)):
++            if self.moving[side] < s.change_sec or target.name == 'carried':continue
++            yt = target.at(s.ref_m)
++            near_lanes = [l for l in lanes if l is not target and .6*target.width <= sign*(l.at(s.ref_m)-yt) <= 1.5*target.width]
++            if not near_lanes:continue
++            n = min(near_lanes, key=lambda l: abs(sign*(l.at(s.ref_m)-yt)-target.width))
++            shared = target.left if side == 'left' else target.right
++            close = sign*offset >= .5*target.width-s.change_line_m
++            ok = crossable(shared) and n.lane_like and not n.opposite
++            if close and ok:
++                target = n;self.memory = [];near = self._near(n, pose);offset = -near[0]
++                self.offset = self.smooth = offset;self.changes += 1;changed = True
++                self.moving = {'left': 0., 'right': 0.};reason = 'moved over a dashed line to the '+side;break
++            if close and not ok:reason = 'the line to the '+side+' may not be crossed'
++        self.target = (target.points, target.ref, target.width, target.left, target.right)
++        # Remember the measured part of the target centre ahead (world coordinates).
++        if pose is not None and target.name != 'carried':
++            p = target.points[(target.points[:, 0] >= max(s.ref_m, target.measured_from)) & (target.points[:, 0] <= s.ref_m+8.)]
++            if len(p):self.memory.append((t, to_world(p, pose)))
++            self.memory = [(u, p) for u, p in self.memory if t-u <= s.memory_sec]
++        # State (on the filtered offset).
++        e = self.smooth
++        unsure = turning or (self.acquired is not None and t-self.acquired < s.settle_sec) or \
++            (target.name != 'carried' and target.measured_from > s.near_m) or \
++            (target.name == 'carried' and self.state == 'none')  # carried on only what was reliable
++        side = 'left' if e > 0 else 'right'
++        shared = target.left if side == 'left' else target.right
++        on_line = abs(e) >= .5*target.width-s.half_width_m
++        if unsure and not changed:state = 'none'
++        elif changed or (self.state == 'change' and abs(e) > s.off_m):state = 'change'
++        elif on_line and forbidden(shared):state = 'forbidden'
++        elif on_line and self.state == 'forbidden':state = 'forbidden'
++        else:state = 'return' if abs(e) >= (s.off_m if self.shown else s.on_m) else 'keep'
++        self.shown = state not in ('keep', 'none');self.state = state
++        merge = float(np.clip(max(self.speed*s.merge_sec, s.merge_per_m*abs(offset)), s.merge_min_m, s.merge_max_m))
++        line = path_onto(lambda x: centre_at(target.points, x, target.ref), near, merge, s) if path or self.shown else None
++        return Output(state, target.name, offset, self.lateral_speed, self.speed, self.shown, line, merge, self.changes, reason)
+--- a/src/hero_coach/hero_coach/lane_guidance_node.py
++++ b/src/hero_coach/hero_coach/lane_guidance_node.py
+@@ -0,0 +1,99 @@
++"""ROS wrapper of lane_guidance.py: lane return / lane change guidance for the HUD's lane-only mode.
++
++In:  /road/lane_centres (std_msgs/String JSON, vision_road), /road/reference_odom (nav_msgs/Odometry:
++     the rear-axle pose; any odometry of the car in a world frame will do).
++Out: /hero/scene_overlay (hero_hud/SceneOverlay): has_ideal + ideal = the path (base_link, from the car,
++     car width) while guidance is shown; has_coach with a short text and severity
++     (return: INFO, change: CAUTION, forbidden: WARN) so the HUD can tell them apart.
++     /hero/lane_guidance (std_msgs/String JSON): stamp, state (none/keep/return/change/forbidden),
++     target (the target lane's current name), offset_m (car from the target centre, + left),
++     lateral_speed_mps, speed_mps, shown, merge_m, changes (target moves so far), reason,
++     compute_ms, path [[x, y], ...].
++A process of its own, apart from the lane detector: it only reads the detector's output topics.
++NumPy's BLAS is held to one thread: its pool of spinning threads would take CPU from the detector for
++matrices this small."""
++import os
++for _name in ('OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS', 'MKL_NUM_THREADS'):os.environ.setdefault(_name, '1')
++import json
++import time
++import math
++from collections import deque
++import rclpy
++from rclpy.node import Node
++from rclpy.qos import QoSProfile, ReliabilityPolicy
++from std_msgs.msg import String
++from nav_msgs.msg import Odometry
++from geometry_msgs.msg import Point32
++from .lane_guidance import LaneGuidance, GuidanceSettings, Lane
++
++TEXT = {'return': ('차로 중앙으로', 0), 'change': ('차선 변경', 1), 'forbidden': ('넘으면 안 되는 선', 2)}  # text, CoachingMessage severity
++
++
++class LaneGuidanceNode(Node):
++    def __init__(self):
++        super().__init__('lane_guidance')
++        p = lambda name, default: self.declare_parameter(name, default).value
++        settings = GuidanceSettings()
++        for name in settings.__dataclass_fields__:
++            setattr(settings, name, type(getattr(settings, name))(p('guidance.'+name, getattr(settings, name))))
++        self.core = LaneGuidance(settings); self.width = float(p('vehicle_width_m', 1.82))
++        self.poses = deque(maxlen=400)
++        from hero_hud.msg import SceneOverlay
++        self.SceneOverlay = SceneOverlay
++        self.scene_pub = self.create_publisher(SceneOverlay, p('scene_topic', '/hero/scene_overlay'), 10)
++        self.info_pub = self.create_publisher(String, p('guidance_topic', '/hero/lane_guidance'), 10)
++        self.create_subscription(Odometry, p('odom_topic', '/road/reference_odom'), self.on_odom,
++                                 QoSProfile(depth=200, reliability=ReliabilityPolicy.BEST_EFFORT))
++        self.create_subscription(String, p('centres_topic', '/road/lane_centres'), self.on_centres, 10)
++        self.get_logger().info('Lane guidance: '+str(settings))
++
++    def on_odom(self, msg):
++        q = msg.pose.pose.orientation
++        yaw = math.atan2(2*(q.w*q.z+q.x*q.y), 1-2*(q.y*q.y+q.z*q.z))
++        t = msg.header.stamp.sec+msg.header.stamp.nanosec*1e-9
++        if self.poses and t < self.poses[-1][0]:self.poses.clear()  # replay restarted
++        self.poses.append((t, msg.pose.pose.position.x, msg.pose.pose.position.y, yaw))
++
++    def pose_at(self, t):
++        """The pose at t, interpolated between the odometry samples around it (None when not covered)."""
++        if not self.poses or t < self.poses[0][0]-.05 or t > self.poses[-1][0]+.1:return None
++        prev = None
++        for sample in self.poses:
++            if sample[0] >= t:
++                if prev is None:return sample[1:]
++                u = (t-prev[0])/max(sample[0]-prev[0], 1e-9)
++                yaw = prev[3]+math.atan2(math.sin(sample[3]-prev[3]), math.cos(sample[3]-prev[3]))*u
++                return (prev[1]+(sample[1]-prev[1])*u, prev[2]+(sample[2]-prev[2])*u, yaw)
++            prev = sample
++        return self.poses[-1][1:]
++
++    def on_centres(self, msg):
++        begin = time.perf_counter()
++        data = json.loads(msg.data); t = float(data['stamp'])
++        if self.core.time is not None and t < self.core.time:self.core.reset()
++        lanes = [Lane.from_message(item) for item in data['lanes']]
++        out = self.core.update(t, self.pose_at(t), lanes, path=False)  # the path only while shown
++        sec = int(t); nanosec = int(round((t-sec)*1e9))
++        if nanosec >= 1000000000:sec += 1;nanosec -= 1000000000
++        scene = self.SceneOverlay();scene.header.stamp.sec = sec;scene.header.stamp.nanosec = nanosec
++        scene.header.frame_id = data.get('frame_id', 'base_link')
++        if out.shown and out.path is not None:
++            scene.has_ideal = True;scene.ideal.width_m = self.width;scene.ideal.confidence = 1.
++            scene.ideal.points = [Point32(x=float(x), y=float(y), z=0.) for x, y in out.path]
++            text, severity = TEXT[out.state]
++            scene.has_coach = True;scene.coach.text = text;scene.coach.severity = severity;scene.coach.ttl_sec = .5
++        self.scene_pub.publish(scene)
++        compute = (time.perf_counter()-begin)*1e3
++        self.info_pub.publish(String(data=json.dumps(dict(
++            stamp=t, state=out.state, target=out.target, offset_m=round(out.offset_m, 3), lateral_speed_mps=round(out.lateral_speed_mps, 3),
++            speed_mps=round(out.speed_mps, 2), shown=out.shown, merge_m=round(out.merge_m, 1), changes=out.changes, reason=out.reason,
++            compute_ms=round(compute, 3), path=[] if out.path is None else [[round(float(x), 2), round(float(y), 3)] for x, y in out.path]),
++            separators=(',', ':'))))
++
++
++def main():
++    rclpy.init();node = LaneGuidanceNode()
++    try:rclpy.spin(node)
++    except KeyboardInterrupt:pass
++    finally:
++        node.destroy_node();rclpy.try_shutdown()
+--- a/src/hero_coach/test/test_lane_guidance.py
++++ b/src/hero_coach/test/test_lane_guidance.py
+@@ -0,0 +1,111 @@
++"""lane_guidance.py: pure functions and the target rules, on synthetic straight lanes (no ROS)."""
++import math
++
++import numpy as np
++
++from hero_coach.lane_guidance import (GuidanceSettings, Lane, LaneGuidance, centre_at, path_onto, quintic)
++
++WIDTH = 3.5
++
++
++def lane(name, centre_y, left_style='dashed', left_yellow=False, right_style='dashed', right_yellow=False,
++         opposite=False):
++    """A straight lane whose centre is centre_y (base_link) from 5.5 to 30 m ahead."""
++    x = np.arange(5.5, 30., .5)
++    return Lane(name, np.column_stack([x, np.full_like(x, centre_y)]),
++                dict(ref_x_m=5.5, offset_m=centre_y, heading_rad=0., curvature_1pm=0.), WIDTH, opposite, True,
++                dict(line='l', style=left_style, yellow=left_yellow), dict(line='r', style=right_style, yellow=right_yellow), 5.5)
++
++
++def road(delta):
++    """Home lane (yellow centre line on its left, white dashed on its right), oncoming lane on the left,
++    a same-direction lane on the right; the car delta (m, + left) from the home centre.  Named by position."""
++    centres = [(WIDTH, 'oncoming'), (0., 'home'), (-WIDTH, 'right lane')]
++    lanes = []
++    for y, kind in centres:
++        c = y-delta
++        if kind == 'oncoming':l = lane('', c, 'dashed', False, 'solid', True, opposite=True)
++        elif kind == 'home':l = lane('', c, 'solid', True, 'dashed', False)
++        else:l = lane('', c, 'dashed', False, 'solid', False)
++        l.kind = kind;lanes.append(l)
++    ego = min(range(3), key=lambda i: abs(lanes[i].at(0.)))
++    for i, l in enumerate(lanes):l.name = {ego: 'ego', ego-1: 'left', ego+1: 'right'}.get(i, 'far')
++    return [l for l in lanes if l.name != 'far']
++
++
++def drive(profile, seconds, rate=30., speed=10.):
++    """Run the guidance along a straight road at speed with lateral position profile(t). Returns outputs and lanes."""
++    g = LaneGuidance(); outs = []
++    for i in range(int(seconds*rate)):
++        t = i/rate; d = profile(t); lanes = road(d)
++        o = g.update(t, (speed*t, d, 0.), lanes)
++        kind = next((l.kind for l in lanes if l.name == o.target), o.target)
++        outs.append((t, d, o, kind))
++    return outs
++
++
++def ramp(t, t0, t1, a, b):
++    if t <= t0:return a
++    if t >= t1:return b
++    u = (t-t0)/(t1-t0);return a+(b-a)*(1-math.cos(math.pi*u))/2
++
++
++def test_quintic_meets_both_ends():
++    c = quintic(.8, -.05, .01, 20.)
++    d = np.polynomial.polynomial.Polynomial(c)
++    assert abs(d(0.)-.8) < 1e-12 and abs(d.deriv()(0.)+.05) < 1e-12 and abs(d.deriv(2)(0.)-.01) < 1e-12
++    for k in range(3):assert abs(d.deriv(k)(20.)) < 1e-9
++
++
++def test_path_leaves_the_car_along_its_heading_and_ends_on_the_centreline():
++    s = GuidanceSettings()
++    x = np.arange(5., 40., .5); pts = np.column_stack([x, -1.2+.02*x+.001*x*x])
++    ref = dict(ref_x_m=5., offset_m=float(pts[0, 1]), heading_rad=math.atan(.02+.01), curvature_1pm=.002)
++    centre = lambda q: centre_at(pts, q, ref)
++    near = (float(centre([0.])[0]), .02, .002)
++    path = path_onto(centre, near, 20., s)
++    assert np.allclose(path[0], [0., 0.], atol=1e-9)
++    assert abs((path[1, 1]-path[0, 1])/(path[1, 0]-path[0, 0])) < .01  # along the heading (+x)
++    end = path[path[:, 0] >= 20.]
++    assert np.max(np.abs(end[:, 1]-centre(end[:, 0]))) < 1e-6  # on the centreline from the merge on
++    slope = np.gradient(path[:, 1], path[:, 0]);i = int(np.searchsorted(path[:, 0], 20.))
++    assert abs(slope[i]-(.02+.002*20.)) < .01  # and along it (centre slope .02 + .002 x)
++
++
++def test_near_the_centre_nothing_is_shown_and_on_off_differ():
++    outs = drive(lambda t: .25 if t > 1 else 0., 3.)
++    assert not any(o.shown for _, _, o, _ in outs)
++    outs = drive(lambda t: ramp(t, 1., 1.5, 0., .4) if t < 3. else ramp(t, 3., 3.5, .4, .2), 5.)
++    late = [o for t, _, o, _ in outs if t > 4.]
++    assert late and all(o.shown and o.state == 'return' for o in late)  # 0.2 m: still shown (off below 0.15 m)
++
++
++def test_crossing_the_yellow_line_never_targets_the_oncoming_lane():
++    outs = drive(lambda t: ramp(t, 1., 3., 0., 2.6) if t < 5. else ramp(t, 5., 7., 2.6, 0.), 9.)
++    assert all(kind == 'home' for t, _, o, kind in outs if o.state != 'none')
++    assert any(o.state == 'forbidden' for _, _, o, _ in outs)
++    assert outs[-1][2].changes == 0
++
++
++def test_straddling_the_dashed_line_and_back_keeps_the_target():
++    outs = drive(lambda t: ramp(t, 1., 2.5, 0., -1.15) if t < 3.5 else ramp(t, 3.5, 5., -1.15, 0.), 7.)
++    assert outs[-1][2].changes == 0
++    assert all(kind == 'home' for _, _, o, kind in outs if o.state != 'none')
++
++
++def test_moving_over_the_dashed_line_moves_the_target_once_by_position():
++    outs = drive(lambda t: ramp(t, 1., 5., 0., -WIDTH), 12.)
++    assert outs[-1][2].changes == 1
++    switch = next(t for (t, _, a, _), (_, _, b, _) in zip(outs, outs[1:]) if b.changes != a.changes)
++    crossed = next(t for t, d, _, _ in outs if d <= -WIDTH/2)
++    assert switch <= crossed+.2
++    assert outs[-1][3] == 'right lane' and outs[-1][2].state == 'keep'
++    # Renamed by the detector once over the line, the target stays the right lane by position.
++    names = {o.target for t, _, o, kind in outs if t > 6.}
++    assert names == {'ego'} and {kind for t, _, _, kind in outs if t > 6.} == {'right lane'}
++
++
++def test_wobble_inside_the_lane_returns_without_moving_the_target():
++    outs = drive(lambda t: .45*math.sin(2*math.pi*t/4.), 12.)
++    assert outs[-1][2].changes == 0
++    assert any(o.state == 'return' for _, _, o, _ in outs) and not any(o.state in ('forbidden', 'change') for _, _, o, _ in outs)

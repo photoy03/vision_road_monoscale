@@ -141,6 +141,8 @@ class WorldItem : public QQuickItem {
   // 재던 코드(addScreenRibbon)는 이것으로 대체되어 사라졌다.
   void drawRoadPaint(VertexBuffer& out, const RoadPaint& paint, double now) const;
   void drawRoadMarkings(VertexBuffer& out, const RoadPaint& paint, double now) const;
+  // Lane-only mode: the lane guidance path (hero_coach lane_guidance_node, SceneOverlay.ideal).
+  void drawLaneGuidance(VertexBuffer& out, const SceneModel& scene, double now) const;
   void addWorldRibbon(VertexBuffer& out, const std::vector<Vec2>& center,
                       float half_m, const std::vector<Rgba>& colors) const;
 

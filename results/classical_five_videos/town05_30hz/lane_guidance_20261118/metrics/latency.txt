@@ -1,0 +1,11 @@
+b2_judge1_town05 processed 1.0 p95 31.01 mean 24.76 max 50.22 drift -1.04 gaps>100 0 detect 14.11/19.01 display 2.92/3.74 extra 3.22/5.2 markers 2.76/5.77
+b2_judge2_town05 processed 1.0 p95 31.3 mean 24.86 max 50.66 drift -0.76 gaps>100 0 detect 14.05/18.96 display 2.91/3.73 extra 3.23/5.19 markers 2.73/5.64
+b2_judge3_town05 processed 1.0 p95 31.17 mean 24.84 max 50.44 drift 0.84 gaps>100 0 detect 13.9/18.8 display 2.9/3.68 extra 3.24/5.17 markers 2.84/6.34
+b2_noguidance_town05 processed 1.0 p95 30.62 mean 24.14 max 49.24 drift 1.21 gaps>100 0 detect 13.79/18.74 display 2.83/3.68 extra 3.13/5.06 markers 2.67/5.32
+b3_judge1_town05 processed 1.0 p95 31.89 mean 24.99 max 50.77 drift 0.12 gaps>100 0 detect 13.94/19.26 display 2.88/3.7 extra 3.22/5.41 markers 2.71/5.9
+b3_judge2_town05 processed 1.0 p95 30.68 mean 24.75 max 50.91 drift -0.53 gaps>100 0 detect 13.9/18.66 display 2.88/3.63 extra 3.13/4.85 markers 2.67/5.17
+b3_judge3_town05 processed 0.9978 p95 35.0 mean 25.55 max 67.95 drift -7.93 gaps>100 0 detect 14.06/19.38 display 2.89/3.8 extra 3.41/6.13 markers 2.91/6.21
+judge1_town05    processed 1.0 p95 31.34 mean 24.3 max 48.58 drift 1.12 gaps>100 0 detect 13.78/18.96 display 2.84/3.68 extra 3.21/5.18 markers 2.84/6.0
+judge2_town05    processed 1.0 p95 31.93 mean 25.2 max 50.38 drift 0.19 gaps>100 0 detect 14.17/19.16 display 2.94/3.8 extra 3.25/5.17 markers 2.88/6.44
+judge3_town05    processed 1.0 p95 31.42 mean 24.35 max 49.64 drift 1.05 gaps>100 0 detect 13.76/18.75 display 2.85/3.65 extra 3.16/5.18 markers 2.77/6.25
+record_town05    processed 1.0 p95 32.33 mean 25.43 max 51.16 drift -0.15 gaps>100 0 detect 14.08/19.2 display 2.88/3.76 extra 3.45/6.12 markers 3.14/7.98

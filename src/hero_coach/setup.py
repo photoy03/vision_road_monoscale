@@ -30,6 +30,7 @@ setup(
             'parking_planner = hero_coach.parking_planner:main',
             'coach_node = hero_coach.coach_node:main',
             'voice_node = hero_coach.voice_node:main',
+            'lane_guidance = hero_coach.lane_guidance_node:main',
         ],
     },
 )

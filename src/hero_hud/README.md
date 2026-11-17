@@ -7,10 +7,10 @@
 HUD와 vision-road를 **같은 `ROS_DOMAIN_ID`**에서 실행하세요. HUD 기본 구독 토픽은 `config/hud.yaml`의 `road.paint_topic`으로 바꿀 수 있습니다. maploop 로스백 테스트는 다른 터미널에서 각각 아래처럼 실행합니다.
 
 ```bash
-# vision-road를 먼저 빌드한 ROS 환경에서
+# 이 복사본은 vision-road 작업공간(src/hero_hud)에서 함께 빌드한다:
+#   colcon build --symlink-install --base-paths src --packages-select hero_hud
 source /opt/ros/humble/setup.bash
 source /home/jaehun/Desktop/vision-road/install/setup.bash
-source /home/jaehun/Desktop/hero-hud-main/install/setup.bash
 ros2 launch hero_hud hud.launch.py
 # 별도 터미널: vision-road/run_maploop.sh, replay_maploop.sh --rate 1
 ```

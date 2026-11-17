@@ -971,6 +971,51 @@ void WorldItem::drawRoadMarkings(VertexBuffer& out, const RoadPaint& paint,
   }
 }
 
+// 차선 전용 모드의 안내 경로 — **차에서 시작해 가야 할 차로 중앙으로 휘는 차폭 두 줄과 화살촉.**
+//
+// 목표선(13-19)과 같은 어법이다: 한 줄은 "차선 중앙선"으로 읽히고 두 줄은 "자리"로 읽힌다.
+// 차폭으로 벌린 두 줄이 차 바로 앞에서 시작해 목표 차로 중앙으로 휘고, 끝의 화살촉이 방향을
+// 준다. 차선 전용 모드에는 차의 현재 진행 호가 없으므로(CAN 없음) 비교 대상 없이 "이리로 가라"를
+// 그린다.
+//
+// 외곽선만, 채움·글로우 없음(4절). 넘으면 안 되는 선을 넘었을 때(coach severity Warn 이상)는
+// 빨강, 굵게, 점멸 — 색 단독 인코딩을 피해 굵기와 점멸을 같이 바꾼다. 차가 중앙 근처면 노드가
+// has_ideal 을 내리지 않으므로 그리지 않는다(켜는 기준 0.30 m, 끄는 기준 0.15 m 는 노드 쪽).
+void WorldItem::drawLaneGuidance(VertexBuffer& out, const SceneModel& scene, double now) const {
+  if (!scene.has_ideal || scene.ideal.points.size() < 2) return;
+  const bool warn = scene.has_coach && scene.coach.severity >= Severity::Warn;
+  // 화살촉은 14 m 앞(또는 경로 끝)까지. 먼 끝은 작아서 읽히지 않는다.
+  const float reach = std::min(14.0f, projector_->range() * 0.6f);
+  std::vector<Vec2> path;
+  for (const auto& p : scene.ideal.points) {
+    path.push_back(p);
+    if (p.x >= reach) break;
+  }
+  if (path.size() < 3) return;
+  const float half = std::max(scene.ideal.width_m, 1.0f) * 0.5f;
+  const float thick = warn ? 0.10f : 0.07f;
+  const float level = warn ? (blinkOn(now, 0.55, 0.5) ? 1.0f : 0.45f) : 0.90f;
+  const Rgba base = dim(warn ? kRed : kAmber, adapt(level));
+  std::vector<Vec2> left, right;
+  offsetPath(path, half, left, right);
+  for (const std::vector<Vec2>* edge : {&left, &right}) {
+    if (edge->size() < 2) continue;
+    addWorldRibbon(out, *edge, thick, std::vector<Rgba>(edge->size(), base));
+  }
+  // 화살촉: 경로 끝에서 진행 방향을 가리키는 꺾쇠 하나.
+  const Vec2 tip = path.back();
+  const Vec2 back = path[path.size() - 3];
+  float dx = tip.x - back.x, dy = tip.y - back.y;
+  const float len = std::hypot(dx, dy);
+  if (len < 1e-3f) return;
+  dx /= len; dy /= len;
+  const float L = 1.8f, W = half + 0.45f;
+  std::vector<Vec2> chevron{{tip.x - dx * L - dy * W, tip.y - dy * L + dx * W},
+                            {tip.x + dx * 0.6f, tip.y + dy * 0.6f},
+                            {tip.x - dx * L + dy * W, tip.y - dy * L - dx * W}};
+  addWorldRibbon(out, chevron, thick * 1.2f, std::vector<Rgba>(chevron.size(), base));
+}
+
 void WorldItem::buildFrame(VertexBuffer& out, double now) {
   if (!state_ || !projector_) {
     return;
@@ -996,6 +1041,8 @@ void WorldItem::buildFrame(VertexBuffer& out, double now) {
     projector_->setLateralHalf(4.5f);
     if (road_fresh || boundary_fresh) drawRoadPaint(world, *road, now);
     if (road) drawRoadMarkings(world, *road, now);
+    // The lane guidance, over the lanes; only while it is fresh (the node sends it every frame).
+    if (scene && now - scene->stamp >= 0.0 && now - scene->stamp < 0.35) drawLaneGuidance(world, *scene, now);
     out.insert(out.end(), world.begin(), world.end());
     return;
   }
