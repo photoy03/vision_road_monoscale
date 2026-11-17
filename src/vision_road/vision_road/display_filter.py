@@ -58,6 +58,17 @@ class FilterSettings:
     fit_near_m:float=0.         # >0: boundary points beyond this count less in the fit, (near/x)^2 (sharp curves)
     cubic_m:float=0.            # >0: the line is a cubic, its third-order term held to 0 unless a quadratic misses by about this (sharp curves)
     cubic_ridge:float=1e-3      # pull of that term at that miss
+    # Line ends (all off by default).  The "seen span" is where the kept line rests on paint: from the
+    # nearest remembered or observed point to the median far end of the last seen_frames accepted observations.
+    gate_span:bool=False        # also gate at the near end, middle and far end of the seen span the observation shares
+    gate_per_10m:float=0.       # with gate_span: the gate grows by this per 10 m beyond 10 m (far ends move more in curves)
+    seen_frames:int=3           # observations the seen far end is taken from (median: one long frame does not count)
+    end_from_seen:bool=False    # draw at most extend_m past the seen far end (not past a smoothed longest end)
+    start_from_seen:bool=False  # draw at most extend_m below the seen near end (0 m only once paint near the car was seen)
+    outside_quadratic:bool=False  # beyond the seen span continue the end's slope and curvature, the curvature fading to 0
+    outside_fade_m:float=6.     # over this distance (no third-order bend outside what was seen)
+    near_quadratic_m:float=0.   # >0: below this x the line continues its slope and curvature there (the cubic
+                                # through the 5-20 m stations swings most at 0 m, where it amplifies their noise)
 
 
 def fit(points,ridge=1e-3,strength=None,near=0.,cubic=0.,cubic_ridge=1e-3):
@@ -89,6 +100,23 @@ def fit(points,ridge=1e-3,strength=None,near=0.,cubic=0.,cubic_ridge=1e-3):
 def evaluate(stations,x):
     coeff=np.linalg.solve(_stations_matrix(len(stations)),stations)
     return np.polyval(coeff[::-1],x)
+
+
+def outside(stations,x,y,span,fade):
+    """y with the parts outside span=(near, far) replaced by the line continued from that end: its
+    slope, and its curvature fading linearly to 0 over fade metres (then straight on)."""
+    c=np.linalg.solve(_stations_matrix(len(stations)),stations)
+    d1=np.polynomial.polynomial.polyder(c);d2=np.polynomial.polynomial.polyder(c,2)
+    y=y.copy()
+    for edge,sign in ((span[1],1.),(span[0],-1.)):
+        if math.isinf(edge):continue
+        mask=(x-edge)*sign>0
+        if not mask.any():continue
+        d=np.abs(x[mask]-edge);k=float(np.polynomial.polynomial.polyval(edge,d2))
+        if math.isinf(fade):bend=d*d/2  # curvature kept (no fading)
+        else:dd=np.minimum(d,fade);bend=dd*dd/2-dd**3/(6*fade)+np.maximum(0.,d-fade)*fade/2
+        y[mask]=float(np.polynomial.polynomial.polyval(edge,c))+sign*float(np.polynomial.polynomial.polyval(edge,d1))*d+k*bend
+    return y
 
 
 def relative(previous,pose):
@@ -139,6 +167,7 @@ class SideTrack:
         self.shown=False;self.predicted=False;self.last_observed=-math.inf;self.far=None;self.pending=[]
         self.style=None;self.candidate=None;self.candidate_since=None
         self.memory=np.empty((0,3))  # x, y in base_link and the travel when seen
+        self.seen=deque(maxlen=s.seen_frames)  # [near, far] in base_link of the last accepted observations
 
     @property
     def value(self):return self.filter.x
@@ -147,6 +176,7 @@ class SideTrack:
         if self.value is not None:self.filter.x=shift(self.value,motion)
         self.pending=[shift(p,motion) for p in self.pending]
         if self.far is not None:self.far-=motion[0]
+        for span in self.seen:span[0]-=motion[0];span[1]-=motion[0]
         if len(self.memory):
             dx,dy,dyaw=motion;c,s=math.cos(dyaw),math.sin(dyaw);px=self.memory[:,0]-dx;py=self.memory[:,1]-dy
             self.memory=np.column_stack([c*px+s*py,-s*px+c*py,self.memory[:,2]])
@@ -155,6 +185,26 @@ class SideTrack:
         # The style survives a short loss: style evidence is sparse (a dashed line in a
         # curve is often UNKNOWN), and re-learning it showed the line solid on return.
         self.shown=False;self.filter.reset();self.far=None;self.pending=[];self.history.clear();self.memory=np.empty((0,3))
+        self.seen.clear()
+
+    def span(self):
+        """(near, far) of the seen span, or None before an accepted observation: the nearest remembered or
+        last observed point, and the median far end of the last seen_frames accepted observations."""
+        if not self.seen:return None
+        near=self.seen[-1][0]
+        if len(self.memory):near=min(near,float(self.memory[:,0].min()))
+        return near,float(np.median([f for _,f in self.seen]))
+
+    def span_ok(self,stations,near,far):
+        """The observation (stations over near..far) against the kept line at the near end, middle and
+        far end of the part both cover (the kept line's part: the seen span and extend_m past it)."""
+        kept=self.span()
+        if kept is None:return True
+        lo,hi=max(near,kept[0]),min(far,kept[1]+self.s.extend_m)  # the drawn line reaches extend_m past the seen end
+        if hi<lo:return True
+        x=np.array([lo,.5*(lo+hi),hi])
+        limit=self.s.gate_m*(1.+self.s.gate_per_10m*np.maximum(0.,x-10.)/10.)
+        return bool(np.all(np.abs(evaluate(stations,x)-evaluate(self.value,x))<=limit))
 
     def store(self,observed,paint,travel):
         """Remember the near part of an accepted observation, only where paint was seen this frame.
@@ -186,12 +236,13 @@ class SideTrack:
         p=p[np.abs(p[:,1]-evaluate(stations if self.value is None else self.value,p[:,0]))<=self.s.memory_gate_m]
         return p if len(p) else None
 
-    def take(self,stations,t,alone=None):
+    def take(self,stations,t,alone=None,span=None):
         """Gate a measurement at 10 m; returns False when it was set aside as an outlier.
-        alone: the observation fitted without remembered paint, used when the line switches."""
+        alone: the observation fitted without remembered paint, used when the line switches.
+        span: the observation's (near, far), for gate_span."""
         if self.value is None:
             self.filter.reset(stations,t);return True
-        if abs(stations[1]-self.value[1])<=self.s.gate_m:
+        if abs(stations[1]-self.value[1])<=self.s.gate_m and (not self.s.gate_span or span is None or self.span_ok(stations,*span)):
             self.pending=[];self.filter(stations,t);return True
         # Only the latest gate_frames candidates can make a sustained change.
         self.pending=(self.pending+[stations])[-self.s.gate_frames:]
@@ -214,9 +265,10 @@ class SideTrack:
                 if below is not None:stations=fit(np.vstack([below,observed]),strength=10**np.interp(far-float(below[0,0]),[4.,12.],[1.,-3.]),near=s.fit_near_m,cubic=s.cubic_m,cubic_ridge=s.cubic_ridge)[0]
                 obs=(stations,near,far,alone)
         if obs is not None:
-            stations,_,far,alone=obs
-            accepted=self.take(stations,t,alone)
+            stations,near,far,alone=obs
+            accepted=self.take(stations,t,alone,(near,far))
             if accepted:
+                self.seen.append([near,far])
                 # The drawn end grows quickly and shrinks slowly, so its length does not flicker.
                 self.far=far if self.far is None else self.far+(.5 if far>self.far else .1)*(far-self.far)
                 # Rejected candidates do not extend the hold: an unstable stream must not keep
@@ -244,9 +296,19 @@ class SideTrack:
 
     def points(self):
         if not self.shown or self.value is None:return None
-        s=self.s;end=min(s.far_m,max(s.near_m+s.step_m,(self.far or s.far_m)+s.extend_m))
-        x=np.arange(s.near_m,end+1e-6,s.step_m)
-        return np.column_stack([x,evaluate(self.value,x)])
+        s=self.s;end=min(s.far_m,max(s.near_m+s.step_m,(self.far or s.far_m)+s.extend_m));start=s.near_m
+        span=self.span()
+        if span is not None:
+            if s.end_from_seen:end=min(end,span[1]+s.extend_m)
+            if s.start_from_seen:start=max(start,span[0]-s.extend_m)
+        if end-start<s.step_m:return None
+        x=np.arange(start,end+1e-6,s.step_m)
+        y=evaluate(self.value,x)
+        if s.outside_quadratic and span is not None and span[1]>span[0]:
+            y=outside(self.value,x,y,span,s.outside_fade_m)
+        if s.near_quadratic_m>0:
+            y=outside(self.value,x,y,(s.near_quadratic_m,math.inf),math.inf)
+        return np.column_stack([x,y])
 
 
 class DisplayFilter:

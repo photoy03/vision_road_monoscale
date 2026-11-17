@@ -21,6 +21,8 @@ def generate_launch_description():
         DeclareLaunchArgument('display_filter',default_value='true'),
         # true: road_node runs the display filter itself (one ROS hop less), and no lane_display_filter node starts.
         DeclareLaunchArgument('display_filter_inline',default_value='false'),
+        # The yaml whose lane_display_filter section road_node's own display filter (inline / in the worker) uses.
+        DeclareLaunchArgument('display_filter_config',default_value=share+'/config/carla.yaml'),
         # Learned lane mask (YOLOPv2, GPU) gating paint within 15 m, and road markings. Off by default;
         # with weights set but no GPU the node logs it and runs as without.
         DeclareLaunchArgument('learned_weights',default_value=''),
@@ -41,7 +43,8 @@ def generate_launch_description():
             'carla_learned_gate':ParameterValue(LaunchConfiguration('learned_gate'),value_type=str),'carla_learned_gate_far_m':15.,
             'road_markings':ParameterValue(LaunchConfiguration('road_markings'),value_type=bool),
             'learned_every':ParameterValue(LaunchConfiguration('learned_every'),value_type=int),
-            'display_filter_inline':ParameterValue(LaunchConfiguration('display_filter_inline'),value_type=bool)}]),
+            'display_filter_inline':ParameterValue(LaunchConfiguration('display_filter_inline'),value_type=bool),
+            'display_filter_config':ParameterValue(LaunchConfiguration('display_filter_config'),value_type=str)}]),
         # HUD-only smoothing of the boundaries; road_node's own topics are unchanged.
         Node(package='vision_road',executable='lane_display_filter',
              condition=IfCondition(PythonExpression(["'",LaunchConfiguration('display_filter'),"'=='true' and '",LaunchConfiguration('display_filter_inline'),"'!='true'"])),

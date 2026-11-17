@@ -1,0 +1,329 @@
+{
+ "video": "town05",
+ "name": "a2",
+ "settings": {
+  "confirm_window": 8,
+  "confirm_hits": 5,
+  "start_span_m": 6.0,
+  "update_span_m": 3.0,
+  "max_start_m": 12.0,
+  "min_cutoff_hz": 0.3,
+  "beta": 0.5,
+  "d_cutoff_hz": 1.0,
+  "gate_m": 0.3,
+  "gate_frames": 3,
+  "near_m": 0.0,
+  "far_m": 20.0,
+  "step_m": 0.5,
+  "extend_m": 3.0,
+  "hold_s": 1.0,
+  "odom_timeout_s": 0.2,
+  "odom_lost_hold_s": 0.2,
+  "style_stable_s": 0.5,
+  "restart_s": 0.5,
+  "style_memory_s": 10.0,
+  "dashed_min_confidence": 0.6,
+  "memory_m": 10.0,
+  "memory_store_m": 4.0,
+  "memory_gate_m": 0.25,
+  "fit_near_m": 0.0,
+  "cubic_m": 0.05,
+  "cubic_ridge": 0.001,
+  "gate_span": true,
+  "gate_per_10m": 1.0,
+  "seen_frames": 3,
+  "end_from_seen": true,
+  "start_from_seen": true,
+  "outside_quadratic": true,
+  "outside_fade_m": 6.0
+ },
+ "frames": 1808,
+ "sides": {
+  "left": {
+   "y0": {
+    "n": 1452,
+    "over": 0,
+    "p95_cm": 0.62,
+    "max_cm": 1.8
+   },
+   "far": {
+    "n": 1506,
+    "over": 0,
+    "p95_cm": 0.77,
+    "max_cm": 3.3
+   },
+   "y10": {
+    "n": 1434,
+    "over": 0,
+    "p95_cm": 0.15,
+    "max_cm": 0.4
+   },
+   "raw_y0": {
+    "n": 1448,
+    "over": 1,
+    "p95_cm": 1.18,
+    "max_cm": 5.1
+   },
+   "raw_y10": {
+    "n": 1437,
+    "over": 0,
+    "p95_cm": 6.62,
+    "max_cm": 9.4
+   },
+   "raw_y20": {
+    "n": 1206,
+    "over": 0,
+    "p95_cm": 9.11,
+    "max_cm": 19.8
+   },
+   "shown_frames": 1510,
+   "from_0m_share": 0.9636,
+   "big": []
+  },
+  "right": {
+   "y0": {
+    "n": 1423,
+    "over": 0,
+    "p95_cm": 0.72,
+    "max_cm": 3.5
+   },
+   "far": {
+    "n": 1518,
+    "over": 0,
+    "p95_cm": 0.34,
+    "max_cm": 1.4
+   },
+   "y10": {
+    "n": 1456,
+    "over": 0,
+    "p95_cm": 0.17,
+    "max_cm": 0.9
+   },
+   "raw_y0": {
+    "n": 1419,
+    "over": 1,
+    "p95_cm": 1.01,
+    "max_cm": 5.4
+   },
+   "raw_y10": {
+    "n": 1461,
+    "over": 0,
+    "p95_cm": 5.99,
+    "max_cm": 7.3
+   },
+   "raw_y20": {
+    "n": 1200,
+    "over": 0,
+    "p95_cm": 8.02,
+    "max_cm": 18.2
+   },
+   "shown_frames": 1522,
+   "from_0m_share": 0.9363,
+   "big": []
+  }
+ },
+ "display_filter_eval": {
+  "left": {
+   "jitter_cm": {
+    "raw": {
+     "std": 2.42,
+     "p90_abs": 3.9,
+     "jumps": 1
+    },
+    "filtered": {
+     "std": 2.04,
+     "p90_abs": 2.6,
+     "jumps": 0
+    }
+   },
+   "jitter_straight_cm": {
+    "raw": {
+     "std": 2.2,
+     "p90_abs": 3.51,
+     "jumps": 0
+    },
+    "filtered": {
+     "std": 1.98,
+     "p90_abs": 3.04,
+     "jumps": 0
+    }
+   },
+   "shake_cm": {
+    "raw": 0.87,
+    "filtered": 0.5,
+    "filtered_where_raw": 0.51
+   },
+   "shake_straight_cm": {
+    "raw": 0.9,
+    "filtered": 0.48
+   },
+   "toggles": {
+    "raw": 8,
+    "filtered": 4
+   },
+   "shown_frames": {
+    "raw": 1418,
+    "filtered": 1441
+   },
+   "curve_lag_m": {
+    "mean_abs": 0.01,
+    "p95_abs": 0.03,
+    "frames": 416
+   },
+   "observed_mismatch_frames": 0,
+   "reacquire_m": {
+    "mean": null,
+    "max": null,
+    "events": 0,
+    "mean_after_5_frames": null,
+    "events_after_5_frames": 0
+   },
+   "style_switches": 1
+  },
+  "right": {
+   "jitter_cm": {
+    "raw": {
+     "std": 1.99,
+     "p90_abs": 3.74,
+     "jumps": 0
+    },
+    "filtered": {
+     "std": 1.83,
+     "p90_abs": 3.64,
+     "jumps": 0
+    }
+   },
+   "jitter_straight_cm": {
+    "raw": {
+     "std": 2.01,
+     "p90_abs": 4.86,
+     "jumps": 0
+    },
+    "filtered": {
+     "std": 1.91,
+     "p90_abs": 4.67,
+     "jumps": 0
+    }
+   },
+   "shake_cm": {
+    "raw": 0.87,
+    "filtered": 0.5,
+    "filtered_where_raw": 0.48
+   },
+   "shake_straight_cm": {
+    "raw": 0.74,
+    "filtered": 0.47
+   },
+   "toggles": {
+    "raw": 10,
+    "filtered": 4
+   },
+   "shown_frames": {
+    "raw": 1434,
+    "filtered": 1465
+   },
+   "curve_lag_m": {
+    "mean_abs": 0.016,
+    "p95_abs": 0.041,
+    "frames": 422
+   },
+   "observed_mismatch_frames": 0,
+   "reacquire_m": {
+    "mean": null,
+    "max": null,
+    "events": 0,
+    "mean_after_5_frames": null,
+    "events_after_5_frames": 0
+   },
+   "style_switches": 1
+  }
+ },
+ "paint_gap_p95_cm_6_8_10_15_20": {
+  "straight 0-9/left": "16/12/13/13/13",
+  "straight 0-9/right": "2/2/1/2/2",
+  "turn 10-15/left": "16/15/14/14/11",
+  "turn 10-15/right": "5/7/3/9/7",
+  "curve 15-30/left": "17/15/14/15/25",
+  "curve 15-30/right": "13/13/9/7/9",
+  "turn2 35-40/left": "15/14/15/15/15",
+  "turn2 35-40/right": "2/1/2/2/1",
+  "straight2 40-45/left": "16/13/14/14/14",
+  "straight2 40-45/right": "3/2/1/2/2",
+  "junction 45-50/left": "16/14/14/14/-",
+  "junction 45-50/right": "1/2/2/2/-",
+  "straight3 55-60/left": "16/12/13/13/14",
+  "straight3 55-60/right": "2/2/1/2/3"
+ },
+ "near_head_mrad": {
+  "straight 0-9/left": {
+   "event_rms": null,
+   "events": 0,
+   "other_rms": 0.1
+  },
+  "straight 0-9/right": {
+   "event_rms": 0.03,
+   "events": 19,
+   "other_rms": 0.09
+  },
+  "turn 10-15/left": {
+   "event_rms": 0.65,
+   "events": 3,
+   "other_rms": 0.47
+  },
+  "turn 10-15/right": {
+   "event_rms": 0.64,
+   "events": 3,
+   "other_rms": 0.72
+  },
+  "curve 15-30/left": {
+   "event_rms": 0.61,
+   "events": 24,
+   "other_rms": 0.49
+  },
+  "curve 15-30/right": {
+   "event_rms": 0.55,
+   "events": 53,
+   "other_rms": 0.83
+  },
+  "turn2 35-40/left": {
+   "event_rms": 0.57,
+   "events": 2,
+   "other_rms": 0.63
+  },
+  "turn2 35-40/right": {
+   "event_rms": 0.08,
+   "events": 5,
+   "other_rms": 0.06
+  },
+  "straight2 40-45/left": {
+   "event_rms": 0.03,
+   "events": 3,
+   "other_rms": 0.07
+  },
+  "straight2 40-45/right": {
+   "event_rms": 0.06,
+   "events": 9,
+   "other_rms": 0.05
+  },
+  "junction 45-50/left": {
+   "event_rms": 0.11,
+   "events": 2,
+   "other_rms": 0.12
+  },
+  "junction 45-50/right": {
+   "event_rms": 0.08,
+   "events": 5,
+   "other_rms": 0.09
+  },
+  "straight3 55-60/left": {
+   "event_rms": 0.08,
+   "events": 1,
+   "other_rms": 0.07
+  },
+  "straight3 55-60/right": {
+   "event_rms": 0.04,
+   "events": 11,
+   "other_rms": 0.05
+  }
+ }
+}

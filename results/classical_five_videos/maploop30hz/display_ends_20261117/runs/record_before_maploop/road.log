@@ -1,0 +1,21 @@
+[INFO] [launch]: All log files can be found below /home/jaehun/.ros/log/2026-11-17-17-05-13-455869-ros-34403
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [road_node-1]: process started with pid [34419]
+[INFO] [reference_pose-2]: process started with pid [34421]
+[INFO] [static_transform_publisher-3]: process started with pid [34423]
+[static_transform_publisher-3] [INFO] [1794902713.519183150] [static_transform_publisher_GqSU8FdR2gw0MKUM]: Spinning until stopped - publishing transform
+[static_transform_publisher-3] translation: ('2.200000', '0.000000', '1.400000')
+[static_transform_publisher-3] rotation: ('-0.500000', '0.500000', '-0.500000', '0.500000')
+[static_transform_publisher-3] from 'base_link' to 'dashcam_optical_link'
+[reference_pose-2] [WARN] [1794902713.791389947] [maploop_reference_pose]: Evaluation reference from CARLA truth; this is not estimated odometry
+[road_node-1] [INFO] [1794902714.210258397] [vision_road]: Learned lane mask: off
+[road_node-1] [INFO] [1794902714.233958063] [vision_road]: Display filter in the perception worker, published there: FilterSettings(confirm_window=8, confirm_hits=5, start_span_m=6.0, update_span_m=3.0, max_start_m=12.0, min_cutoff_hz=0.3, beta=0.5, d_cutoff_hz=1.0, gate_m=0.3, gate_frames=3, near_m=0.0, far_m=20.0, step_m=0.5, extend_m=3.0, hold_s=1.0, odom_timeout_s=0.2, odom_lost_hold_s=0.2, style_stable_s=0.5, restart_s=0.5, style_memory_s=10.0, dashed_min_confidence=0.6, memory_m=10.0, memory_store_m=4.0, memory_gate_m=0.25, fit_near_m=0.0, cubic_m=0.05, cubic_ridge=0.001, gate_span=False, gate_per_10m=0.0, seen_frames=3, end_from_seen=False, start_from_seen=False, outside_quadratic=False, outside_fade_m=6.0, near_quadratic_m=0.0)
+[road_node-1] [INFO] [1794902714.647465373] [vision_road]: Road detector ready: carla; image processing only, no learned model
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[INFO] [static_transform_publisher-3]: sending signal 'SIGINT' to process[static_transform_publisher-3]
+[INFO] [reference_pose-2]: sending signal 'SIGINT' to process[reference_pose-2]
+[INFO] [road_node-1]: sending signal 'SIGINT' to process[road_node-1]
+[static_transform_publisher-3] [INFO] [1794902786.546247174] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[INFO] [static_transform_publisher-3]: process has finished cleanly [pid 34423]
+[INFO] [reference_pose-2]: process has finished cleanly [pid 34421]
+[INFO] [road_node-1]: process has finished cleanly [pid 34419]

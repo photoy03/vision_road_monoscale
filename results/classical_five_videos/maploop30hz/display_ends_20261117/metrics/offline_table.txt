@@ -1,0 +1,12 @@
+off            l y0>5   7 far>20  0 y10>10 0 | jit10 1.33 shake 0.39 tog 4 shown 1253 lag 0.011 mism 0 from0 1.0
+off            r y0>5  30 far>20  9 y10>10 0 | jit10 1.63 shake 0.66 tog 4 shown 1225 lag 0.015 mism 0 from0 1.0
+               gap l:18/15/14/13/12 r:6/6/4/3/6 | kink ev/oth strair 2.18/1.77 curver 3.72/4.08 curvel 0.61/1.8 islanr 0.61/4.02 | near0-5 strair 25.2 curver 10.9 curvel 11.0 islanr 8.9
+final          l y0>5   1 far>20  0 y10>10 0 | jit10 1.33 shake 0.39 tog 4 shown 1250 lag 0.011 mism 0 from0 0.9712
+final          r y0>5   5 far>20  0 y10>10 0 | jit10 1.35 shake 0.47 tog 4 shown 1211 lag 0.015 mism 0 from0 0.9567
+               gap l:18/15/14/13/12 r:6/6/4/3/6 | kink ev/oth strair 1.98/0.98 curver 0.78/0.88 curvel 0.54/1.87 islanr 0.58/1.52 | near0-5 strair 25.2 curver 10.4 curvel 10.8 islanr 8.9
+off            l y0>5   1 far>20  0 y10>10 0 | jit10 2.04 shake 0.5 tog 4 shown 1443 lag 0.01 mism 0 from0 1.0
+off            r y0>5   0 far>20  0 y10>10 0 | jit10 1.83 shake 0.5 tog 4 shown 1466 lag 0.016 mism 0 from0 1.0
+               gap l:17/15/14/15/25 r:13/13/9/7/9 | kink ev/oth strair 0.03/0.09 curver 0.55/0.83 curvel 0.61/0.49 strair 0.06/0.05 | near0-5 strair 0.2 curver 3.3 curvel 10.1 strair 0.2
+final          l y0>5   0 far>20  0 y10>10 0 | jit10 2.04 shake 0.5 tog 4 shown 1441 lag 0.01 mism 0 from0 0.9636
+final          r y0>5   0 far>20  0 y10>10 0 | jit10 1.83 shake 0.5 tog 4 shown 1465 lag 0.016 mism 0 from0 0.9363
+               gap l:17/15/14/15/25 r:13/13/9/7/9 | kink ev/oth strair 0.03/0.08 curver 0.58/0.85 curvel 0.67/0.54 strair 0.06/0.05 | near0-5 strair 0.2 curver 3.7 curvel 10.1 strair 0.2

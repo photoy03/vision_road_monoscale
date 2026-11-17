@@ -1,0 +1,252 @@
+diff --git a/src/vision_road/config/carla.yaml b/src/vision_road/config/carla.yaml
+index c6aab4c..8a86112 100644
+--- a/src/vision_road/config/carla.yaml
++++ b/src/vision_road/config/carla.yaml
+@@ -89,3 +89,14 @@ lane_display_filter:
+     memory_m: 10.0
+     # Sharp curves: the HUD line is a cubic too, its third-order term held to 0 unless a quadratic misses by ~5 cm.
+     cubic_m: 0.05
++    # Line ends (plan 18): an observation must match the kept line at the near end, middle and far end of the
++    # part both cover (gate 0.30 m, +0.30 m per 10 m beyond 10 m), not at 10 m alone; the line is drawn at most
++    # 3 m (extend_m) past the median far end of the last 3 accepted observations and below the nearest seen or
++    # remembered paint; outside that span it continues the end's slope with the curvature fading over 6 m, and
++    # below 6 m it continues the slope and curvature at 6 m (the cubic swings most at 0 m).
++    gate_span: true
++    gate_per_10m: 1.0
++    end_from_seen: true
++    start_from_seen: true
++    outside_quadratic: true
++    near_quadratic_m: 6.0
+diff --git a/src/vision_road/launch/maploop.launch.py b/src/vision_road/launch/maploop.launch.py
+index 2e7a1b9..e64c33d 100644
+--- a/src/vision_road/launch/maploop.launch.py
++++ b/src/vision_road/launch/maploop.launch.py
+@@ -21,6 +21,8 @@ def generate_launch_description():
+         DeclareLaunchArgument('display_filter',default_value='true'),
+         # true: road_node runs the display filter itself (one ROS hop less), and no lane_display_filter node starts.
+         DeclareLaunchArgument('display_filter_inline',default_value='false'),
++        # The yaml whose lane_display_filter section road_node's own display filter (inline / in the worker) uses.
++        DeclareLaunchArgument('display_filter_config',default_value=share+'/config/carla.yaml'),
+         # Learned lane mask (YOLOPv2, GPU) gating paint within 15 m, and road markings. Off by default;
+         # with weights set but no GPU the node logs it and runs as without.
+         DeclareLaunchArgument('learned_weights',default_value=''),
+@@ -41,7 +43,8 @@ def generate_launch_description():
+             'carla_learned_gate':ParameterValue(LaunchConfiguration('learned_gate'),value_type=str),'carla_learned_gate_far_m':15.,
+             'road_markings':ParameterValue(LaunchConfiguration('road_markings'),value_type=bool),
+             'learned_every':ParameterValue(LaunchConfiguration('learned_every'),value_type=int),
+-            'display_filter_inline':ParameterValue(LaunchConfiguration('display_filter_inline'),value_type=bool)}]),
++            'display_filter_inline':ParameterValue(LaunchConfiguration('display_filter_inline'),value_type=bool),
++            'display_filter_config':ParameterValue(LaunchConfiguration('display_filter_config'),value_type=str)}]),
+         # HUD-only smoothing of the boundaries; road_node's own topics are unchanged.
+         Node(package='vision_road',executable='lane_display_filter',
+              condition=IfCondition(PythonExpression(["'",LaunchConfiguration('display_filter'),"'=='true' and '",LaunchConfiguration('display_filter_inline'),"'!='true'"])),
+diff --git a/src/vision_road/vision_road/display_filter.py b/src/vision_road/vision_road/display_filter.py
+index 9b6dbf8..4b8d763 100644
+--- a/src/vision_road/vision_road/display_filter.py
++++ b/src/vision_road/vision_road/display_filter.py
+@@ -58,6 +58,17 @@ class FilterSettings:
+     fit_near_m:float=0.         # >0: boundary points beyond this count less in the fit, (near/x)^2 (sharp curves)
+     cubic_m:float=0.            # >0: the line is a cubic, its third-order term held to 0 unless a quadratic misses by about this (sharp curves)
+     cubic_ridge:float=1e-3      # pull of that term at that miss
++    # Line ends (all off by default).  The "seen span" is where the kept line rests on paint: from the
++    # nearest remembered or observed point to the median far end of the last seen_frames accepted observations.
++    gate_span:bool=False        # also gate at the near end, middle and far end of the seen span the observation shares
++    gate_per_10m:float=0.       # with gate_span: the gate grows by this per 10 m beyond 10 m (far ends move more in curves)
++    seen_frames:int=3           # observations the seen far end is taken from (median: one long frame does not count)
++    end_from_seen:bool=False    # draw at most extend_m past the seen far end (not past a smoothed longest end)
++    start_from_seen:bool=False  # draw at most extend_m below the seen near end (0 m only once paint near the car was seen)
++    outside_quadratic:bool=False  # beyond the seen span continue the end's slope and curvature, the curvature fading to 0
++    outside_fade_m:float=6.     # over this distance (no third-order bend outside what was seen)
++    near_quadratic_m:float=0.   # >0: below this x the line continues its slope and curvature there (the cubic
++                                # through the 5-20 m stations swings most at 0 m, where it amplifies their noise)
+ 
+ 
+ def fit(points,ridge=1e-3,strength=None,near=0.,cubic=0.,cubic_ridge=1e-3):
+@@ -91,6 +102,23 @@ def evaluate(stations,x):
+     return np.polyval(coeff[::-1],x)
+ 
+ 
++def outside(stations,x,y,span,fade):
++    """y with the parts outside span=(near, far) replaced by the line continued from that end: its
++    slope, and its curvature fading linearly to 0 over fade metres (then straight on)."""
++    c=np.linalg.solve(_stations_matrix(len(stations)),stations)
++    d1=np.polynomial.polynomial.polyder(c);d2=np.polynomial.polynomial.polyder(c,2)
++    y=y.copy()
++    for edge,sign in ((span[1],1.),(span[0],-1.)):
++        if math.isinf(edge):continue
++        mask=(x-edge)*sign>0
++        if not mask.any():continue
++        d=np.abs(x[mask]-edge);k=float(np.polynomial.polynomial.polyval(edge,d2))
++        if math.isinf(fade):bend=d*d/2  # curvature kept (no fading)
++        else:dd=np.minimum(d,fade);bend=dd*dd/2-dd**3/(6*fade)+np.maximum(0.,d-fade)*fade/2
++        y[mask]=float(np.polynomial.polynomial.polyval(edge,c))+sign*float(np.polynomial.polynomial.polyval(edge,d1))*d+k*bend
++    return y
++
++
+ def relative(previous,pose):
+     """Motion (dx, dy, dyaw) from one world pose (x, y, yaw) to the next, in the first's frame."""
+     c,s=math.cos(previous[2]),math.sin(previous[2]);wx,wy=pose[0]-previous[0],pose[1]-previous[1]
+@@ -139,6 +167,7 @@ class SideTrack:
+         self.shown=False;self.predicted=False;self.last_observed=-math.inf;self.far=None;self.pending=[]
+         self.style=None;self.candidate=None;self.candidate_since=None
+         self.memory=np.empty((0,3))  # x, y in base_link and the travel when seen
++        self.seen=deque(maxlen=s.seen_frames)  # [near, far] in base_link of the last accepted observations
+ 
+     @property
+     def value(self):return self.filter.x
+@@ -147,6 +176,7 @@ class SideTrack:
+         if self.value is not None:self.filter.x=shift(self.value,motion)
+         self.pending=[shift(p,motion) for p in self.pending]
+         if self.far is not None:self.far-=motion[0]
++        for span in self.seen:span[0]-=motion[0];span[1]-=motion[0]
+         if len(self.memory):
+             dx,dy,dyaw=motion;c,s=math.cos(dyaw),math.sin(dyaw);px=self.memory[:,0]-dx;py=self.memory[:,1]-dy
+             self.memory=np.column_stack([c*px+s*py,-s*px+c*py,self.memory[:,2]])
+@@ -155,6 +185,26 @@ class SideTrack:
+         # The style survives a short loss: style evidence is sparse (a dashed line in a
+         # curve is often UNKNOWN), and re-learning it showed the line solid on return.
+         self.shown=False;self.filter.reset();self.far=None;self.pending=[];self.history.clear();self.memory=np.empty((0,3))
++        self.seen.clear()
++
++    def span(self):
++        """(near, far) of the seen span, or None before an accepted observation: the nearest remembered or
++        last observed point, and the median far end of the last seen_frames accepted observations."""
++        if not self.seen:return None
++        near=self.seen[-1][0]
++        if len(self.memory):near=min(near,float(self.memory[:,0].min()))
++        return near,float(np.median([f for _,f in self.seen]))
++
++    def span_ok(self,stations,near,far):
++        """The observation (stations over near..far) against the kept line at the near end, middle and
++        far end of the part both cover (the kept line's part: the seen span and extend_m past it)."""
++        kept=self.span()
++        if kept is None:return True
++        lo,hi=max(near,kept[0]),min(far,kept[1]+self.s.extend_m)  # the drawn line reaches extend_m past the seen end
++        if hi<lo:return True
++        x=np.array([lo,.5*(lo+hi),hi])
++        limit=self.s.gate_m*(1.+self.s.gate_per_10m*np.maximum(0.,x-10.)/10.)
++        return bool(np.all(np.abs(evaluate(stations,x)-evaluate(self.value,x))<=limit))
+ 
+     def store(self,observed,paint,travel):
+         """Remember the near part of an accepted observation, only where paint was seen this frame.
+@@ -186,12 +236,13 @@ class SideTrack:
+         p=p[np.abs(p[:,1]-evaluate(stations if self.value is None else self.value,p[:,0]))<=self.s.memory_gate_m]
+         return p if len(p) else None
+ 
+-    def take(self,stations,t,alone=None):
++    def take(self,stations,t,alone=None,span=None):
+         """Gate a measurement at 10 m; returns False when it was set aside as an outlier.
+-        alone: the observation fitted without remembered paint, used when the line switches."""
++        alone: the observation fitted without remembered paint, used when the line switches.
++        span: the observation's (near, far), for gate_span."""
+         if self.value is None:
+             self.filter.reset(stations,t);return True
+-        if abs(stations[1]-self.value[1])<=self.s.gate_m:
++        if abs(stations[1]-self.value[1])<=self.s.gate_m and (not self.s.gate_span or span is None or self.span_ok(stations,*span)):
+             self.pending=[];self.filter(stations,t);return True
+         # Only the latest gate_frames candidates can make a sustained change.
+         self.pending=(self.pending+[stations])[-self.s.gate_frames:]
+@@ -214,9 +265,10 @@ class SideTrack:
+                 if below is not None:stations=fit(np.vstack([below,observed]),strength=10**np.interp(far-float(below[0,0]),[4.,12.],[1.,-3.]),near=s.fit_near_m,cubic=s.cubic_m,cubic_ridge=s.cubic_ridge)[0]
+                 obs=(stations,near,far,alone)
+         if obs is not None:
+-            stations,_,far,alone=obs
+-            accepted=self.take(stations,t,alone)
++            stations,near,far,alone=obs
++            accepted=self.take(stations,t,alone,(near,far))
+             if accepted:
++                self.seen.append([near,far])
+                 # The drawn end grows quickly and shrinks slowly, so its length does not flicker.
+                 self.far=far if self.far is None else self.far+(.5 if far>self.far else .1)*(far-self.far)
+                 # Rejected candidates do not extend the hold: an unstable stream must not keep
+@@ -244,9 +296,19 @@ class SideTrack:
+ 
+     def points(self):
+         if not self.shown or self.value is None:return None
+-        s=self.s;end=min(s.far_m,max(s.near_m+s.step_m,(self.far or s.far_m)+s.extend_m))
+-        x=np.arange(s.near_m,end+1e-6,s.step_m)
+-        return np.column_stack([x,evaluate(self.value,x)])
++        s=self.s;end=min(s.far_m,max(s.near_m+s.step_m,(self.far or s.far_m)+s.extend_m));start=s.near_m
++        span=self.span()
++        if span is not None:
++            if s.end_from_seen:end=min(end,span[1]+s.extend_m)
++            if s.start_from_seen:start=max(start,span[0]-s.extend_m)
++        if end-start<s.step_m:return None
++        x=np.arange(start,end+1e-6,s.step_m)
++        y=evaluate(self.value,x)
++        if s.outside_quadratic and span is not None and span[1]>span[0]:
++            y=outside(self.value,x,y,span,s.outside_fade_m)
++        if s.near_quadratic_m>0:
++            y=outside(self.value,x,y,(s.near_quadratic_m,math.inf),math.inf)
++        return np.column_stack([x,y])
+ 
+ 
+ class DisplayFilter:
+diff --git a/tests/test_display_filter.py b/tests/test_display_filter.py
+index 78cfa79..4bbaeb6 100644
+--- a/tests/test_display_filter.py
++++ b/tests/test_display_filter.py
+@@ -261,3 +261,63 @@ def test_cubic_display_follows_a_straight_then_curving_line_and_is_off_by_defaul
+     # Motion keeps a cubic a cubic.
+     moved=shift(cubic,(1.,0.,.02))
+     assert len(moved)==4 and abs(evaluate(moved,np.array([9.]))[0]-evaluate(cubic,np.array([10.]))[0])<.3
++
++
++ENDS=dict(gate_span=True,gate_per_10m=1.,end_from_seen=True,start_from_seen=True,outside_quadratic=True,near_quadratic_m=6.)
++
++
++def test_line_end_settings_are_off_by_default():
++    s=FilterSettings()
++    assert not (s.gate_span or s.end_from_seen or s.start_from_seen or s.outside_quadratic) and s.near_quadratic_m==0.
++
++
++def test_an_observation_that_only_matches_at_10m_is_set_aside():
++    """A diagonal joined to the line (as at a stop line) agrees at 10 m but not at 14 m."""
++    diagonal=np.array([[7.9,1.75],[10.,1.75],[14.3,3.3]])
++    shown={}
++    for ends in (False,True):
++        f=DisplayFilter(FilterSettings(near_m=0.,**(ENDS if ends else {})))
++        for i in range(30):feed(f,i*DT,1.75,start=4.,end=14.)
++        f.update(30*DT,[('left',diagonal,False)],(0.,0.,0.))
++        out={side:(p,pred) for side,p,pred,_ in f.output()}
++        shown[ends]=out['left']
++    p,pred=shown[False];assert not pred and float(np.interp(14.,p[:,0],p[:,1]))>2.2  # taken: the far end bends away
++    p,pred=shown[True];assert pred and abs(float(np.interp(14.,p[:,0],p[:,1]))-1.75)<.05  # kept line, predicted colour
++
++
++def test_one_long_frame_does_not_lengthen_the_drawn_line():
++    ends={}
++    for on in (False,True):
++        f=DisplayFilter(FilterSettings(near_m=0.,**(ENDS if on else {})))
++        for i in range(30):feed(f,i*DT,1.75,start=5.,end=11.)
++        feed(f,30*DT,1.75,start=5.,end=35.)
++        out=feed(f,31*DT,1.75,start=5.,end=11.)
++        ends[on]=float(out['left'][0][-1,0])
++    assert ends[False]>=19.5 and ends[True]<=11.+3.+1e-6
++
++
++def test_a_new_line_starts_near_its_first_seen_paint():
++    """Seen from 9 m only: drawn from 6 m (extend_m below it), not swung down to 0 m."""
++    starts={}
++    for on in (False,True):
++        f=DisplayFilter(FilterSettings(near_m=0.,**(ENDS if on else {})))
++        for i in range(8):out=feed(f,i*DT,-1.6,start=9.,end=20.)
++        starts[on]=float(out['left'][0][0,0])
++    assert starts[False]==0. and abs(starts[True]-6.)<1e-6
++
++
++def test_outside_the_seen_span_the_line_has_no_third_order_bend():
++    """A line seen 4-12 m that curves away only at its end: past 12 m it goes on with the end's slope and
++    a fading curvature instead of the cubic's growing bend."""
++    x=np.linspace(4.,12.,33);y=1.75+.002*(x-4.)**3
++    drawn={}
++    for on in (False,True):
++        f=DisplayFilter(FilterSettings(near_m=0.,cubic_m=.05,**(ENDS if on else {})))
++        for i in range(30):f.update(i*DT,[('left',np.column_stack([x,y]),False)],(0.,0.,0.))
++        drawn[on]=[q for side,q,_,_ in f.output() if side=='left'][0]
++    p=drawn[True];assert p[-1,0]<=15.+1e-6
++    bend=np.diff(p[:,1],2)[p[1:-1,0]>12.]  # second differences past the seen end (0.5 m steps)
++    inside=np.diff(p[:,1],2)[(p[1:-1,0]>10.)&(p[1:-1,0]<=12.)]
++    assert np.all(np.diff(bend)<=1e-9) and bend[0]<=inside[-1]+1e-9  # the curvature only fades past 12 m
++    q=drawn[False];k=np.searchsorted(q[:,0],p[-1,0])
++    assert q[k,1]>p[-1,1]  # the cubic bends further away

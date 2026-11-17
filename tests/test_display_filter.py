@@ -261,3 +261,63 @@ def test_cubic_display_follows_a_straight_then_curving_line_and_is_off_by_defaul
     # Motion keeps a cubic a cubic.
     moved=shift(cubic,(1.,0.,.02))
     assert len(moved)==4 and abs(evaluate(moved,np.array([9.]))[0]-evaluate(cubic,np.array([10.]))[0])<.3
+
+
+ENDS=dict(gate_span=True,gate_per_10m=1.,end_from_seen=True,start_from_seen=True,outside_quadratic=True,near_quadratic_m=6.)
+
+
+def test_line_end_settings_are_off_by_default():
+    s=FilterSettings()
+    assert not (s.gate_span or s.end_from_seen or s.start_from_seen or s.outside_quadratic) and s.near_quadratic_m==0.
+
+
+def test_an_observation_that_only_matches_at_10m_is_set_aside():
+    """A diagonal joined to the line (as at a stop line) agrees at 10 m but not at 14 m."""
+    diagonal=np.array([[7.9,1.75],[10.,1.75],[14.3,3.3]])
+    shown={}
+    for ends in (False,True):
+        f=DisplayFilter(FilterSettings(near_m=0.,**(ENDS if ends else {})))
+        for i in range(30):feed(f,i*DT,1.75,start=4.,end=14.)
+        f.update(30*DT,[('left',diagonal,False)],(0.,0.,0.))
+        out={side:(p,pred) for side,p,pred,_ in f.output()}
+        shown[ends]=out['left']
+    p,pred=shown[False];assert not pred and float(np.interp(14.,p[:,0],p[:,1]))>2.2  # taken: the far end bends away
+    p,pred=shown[True];assert pred and abs(float(np.interp(14.,p[:,0],p[:,1]))-1.75)<.05  # kept line, predicted colour
+
+
+def test_one_long_frame_does_not_lengthen_the_drawn_line():
+    ends={}
+    for on in (False,True):
+        f=DisplayFilter(FilterSettings(near_m=0.,**(ENDS if on else {})))
+        for i in range(30):feed(f,i*DT,1.75,start=5.,end=11.)
+        feed(f,30*DT,1.75,start=5.,end=35.)
+        out=feed(f,31*DT,1.75,start=5.,end=11.)
+        ends[on]=float(out['left'][0][-1,0])
+    assert ends[False]>=19.5 and ends[True]<=11.+3.+1e-6
+
+
+def test_a_new_line_starts_near_its_first_seen_paint():
+    """Seen from 9 m only: drawn from 6 m (extend_m below it), not swung down to 0 m."""
+    starts={}
+    for on in (False,True):
+        f=DisplayFilter(FilterSettings(near_m=0.,**(ENDS if on else {})))
+        for i in range(8):out=feed(f,i*DT,-1.6,start=9.,end=20.)
+        starts[on]=float(out['left'][0][0,0])
+    assert starts[False]==0. and abs(starts[True]-6.)<1e-6
+
+
+def test_outside_the_seen_span_the_line_has_no_third_order_bend():
+    """A line seen 4-12 m that curves away only at its end: past 12 m it goes on with the end's slope and
+    a fading curvature instead of the cubic's growing bend."""
+    x=np.linspace(4.,12.,33);y=1.75+.002*(x-4.)**3
+    drawn={}
+    for on in (False,True):
+        f=DisplayFilter(FilterSettings(near_m=0.,cubic_m=.05,**(ENDS if on else {})))
+        for i in range(30):f.update(i*DT,[('left',np.column_stack([x,y]),False)],(0.,0.,0.))
+        drawn[on]=[q for side,q,_,_ in f.output() if side=='left'][0]
+    p=drawn[True];assert p[-1,0]<=15.+1e-6
+    bend=np.diff(p[:,1],2)[p[1:-1,0]>12.]  # second differences past the seen end (0.5 m steps)
+    inside=np.diff(p[:,1],2)[(p[1:-1,0]>10.)&(p[1:-1,0]<=12.)]
+    assert np.all(np.diff(bend)<=1e-9) and bend[0]<=inside[-1]+1e-9  # the curvature only fades past 12 m
+    q=drawn[False];k=np.searchsorted(q[:,0],p[-1,0])
+    assert q[k,1]>p[-1,1]  # the cubic bends further away

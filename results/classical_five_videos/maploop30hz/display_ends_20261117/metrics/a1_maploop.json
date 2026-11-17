@@ -1,0 +1,375 @@
+{
+ "video": "maploop",
+ "name": "a1",
+ "settings": {
+  "confirm_window": 8,
+  "confirm_hits": 5,
+  "start_span_m": 6.0,
+  "update_span_m": 3.0,
+  "max_start_m": 12.0,
+  "min_cutoff_hz": 0.3,
+  "beta": 0.5,
+  "d_cutoff_hz": 1.0,
+  "gate_m": 0.3,
+  "gate_frames": 3,
+  "near_m": 0.0,
+  "far_m": 20.0,
+  "step_m": 0.5,
+  "extend_m": 3.0,
+  "hold_s": 1.0,
+  "odom_timeout_s": 0.2,
+  "odom_lost_hold_s": 0.2,
+  "style_stable_s": 0.5,
+  "restart_s": 0.5,
+  "style_memory_s": 10.0,
+  "dashed_min_confidence": 0.6,
+  "memory_m": 10.0,
+  "memory_store_m": 4.0,
+  "memory_gate_m": 0.25,
+  "fit_near_m": 0.0,
+  "cubic_m": 0.05,
+  "cubic_ridge": 0.001,
+  "gate_span": true,
+  "gate_per_10m": 0.0,
+  "seen_frames": 3,
+  "end_from_seen": true,
+  "start_from_seen": true,
+  "outside_quadratic": true,
+  "outside_fade_m": 6.0
+ },
+ "frames": 1807,
+ "sides": {
+  "left": {
+   "y0": {
+    "n": 1277,
+    "over": 2,
+    "p95_cm": 0.97,
+    "max_cm": 11.5
+   },
+   "far": {
+    "n": 1314,
+    "over": 0,
+    "p95_cm": 0.64,
+    "max_cm": 7.1
+   },
+   "y10": {
+    "n": 1243,
+    "over": 0,
+    "p95_cm": 0.23,
+    "max_cm": 1.4
+   },
+   "raw_y0": {
+    "n": 1275,
+    "over": 21,
+    "p95_cm": 1.75,
+    "max_cm": 11.6
+   },
+   "raw_y10": {
+    "n": 1246,
+    "over": 0,
+    "p95_cm": 3.33,
+    "max_cm": 7.6
+   },
+   "raw_y20": {
+    "n": 1029,
+    "over": 0,
+    "p95_cm": 7.05,
+    "max_cm": 14.9
+   },
+   "shown_frames": 1318,
+   "from_0m_share": 0.9712,
+   "big": [
+    [
+     43.9,
+     "y0",
+     0.115
+    ],
+    [
+     44.367,
+     "y0",
+     0.053
+    ]
+   ]
+  },
+  "right": {
+   "y0": {
+    "n": 1125,
+    "over": 8,
+    "p95_cm": 1.42,
+    "max_cm": 26.9
+   },
+   "far": {
+    "n": 1224,
+    "over": 1,
+    "p95_cm": 1.62,
+    "max_cm": 48.7
+   },
+   "y10": {
+    "n": 1218,
+    "over": 0,
+    "p95_cm": 0.35,
+    "max_cm": 9.1
+   },
+   "raw_y0": {
+    "n": 1119,
+    "over": 20,
+    "p95_cm": 1.86,
+    "max_cm": 26.3
+   },
+   "raw_y10": {
+    "n": 1220,
+    "over": 0,
+    "p95_cm": 4.48,
+    "max_cm": 9.7
+   },
+   "raw_y20": {
+    "n": 911,
+    "over": 5,
+    "p95_cm": 3.45,
+    "max_cm": 25.0
+   },
+   "shown_frames": 1228,
+   "from_0m_share": 0.9169,
+   "big": [
+    [
+     43.833,
+     "y0",
+     -0.059
+    ],
+    [
+     43.867,
+     "y0",
+     -0.269
+    ],
+    [
+     43.9,
+     "y0",
+     0.137
+    ],
+    [
+     44.1,
+     "y0",
+     0.238
+    ],
+    [
+     44.233,
+     "y0",
+     0.138
+    ],
+    [
+     52.267,
+     "y0",
+     -0.138
+    ],
+    [
+     52.433,
+     "y0",
+     0.071
+    ],
+    [
+     52.633,
+     "y0",
+     -0.251
+    ],
+    [
+     52.633,
+     "far",
+     0.487,
+     12.8
+    ]
+   ]
+  }
+ },
+ "display_filter_eval": {
+  "left": {
+   "jitter_cm": {
+    "raw": {
+     "std": 1.57,
+     "p90_abs": 2.13,
+     "jumps": 0
+    },
+    "filtered": {
+     "std": 1.33,
+     "p90_abs": 1.17,
+     "jumps": 0
+    }
+   },
+   "jitter_straight_cm": {
+    "raw": {
+     "std": 1.57,
+     "p90_abs": 1.35,
+     "jumps": 0
+    },
+    "filtered": {
+     "std": 1.45,
+     "p90_abs": 1.06,
+     "jumps": 0
+    }
+   },
+   "shake_cm": {
+    "raw": 0.68,
+    "filtered": 0.39,
+    "filtered_where_raw": 0.35
+   },
+   "shake_straight_cm": {
+    "raw": 0.54,
+    "filtered": 0.39
+   },
+   "toggles": {
+    "raw": 16,
+    "filtered": 4
+   },
+   "shown_frames": {
+    "raw": 1196,
+    "filtered": 1250
+   },
+   "curve_lag_m": {
+    "mean_abs": 0.011,
+    "p95_abs": 0.03,
+    "frames": 256
+   },
+   "observed_mismatch_frames": 0,
+   "reacquire_m": {
+    "mean": 0.002,
+    "max": 0.002,
+    "events": 1,
+    "mean_after_5_frames": null,
+    "events_after_5_frames": 0
+   },
+   "style_switches": 0
+  },
+  "right": {
+   "jitter_cm": {
+    "raw": {
+     "std": 2.39,
+     "p90_abs": 3.58,
+     "jumps": 0
+    },
+    "filtered": {
+     "std": 1.56,
+     "p90_abs": 2.06,
+     "jumps": 0
+    }
+   },
+   "jitter_straight_cm": {
+    "raw": {
+     "std": 1.83,
+     "p90_abs": 2.59,
+     "jumps": 0
+    },
+    "filtered": {
+     "std": 1.4,
+     "p90_abs": 1.06,
+     "jumps": 0
+    }
+   },
+   "shake_cm": {
+    "raw": 1.49,
+    "filtered": 0.67,
+    "filtered_where_raw": 0.54
+   },
+   "shake_straight_cm": {
+    "raw": 1.15,
+    "filtered": 0.48
+   },
+   "toggles": {
+    "raw": 49,
+    "filtered": 4
+   },
+   "shown_frames": {
+    "raw": 1085,
+    "filtered": 1224
+   },
+   "curve_lag_m": {
+    "mean_abs": 0.015,
+    "p95_abs": 0.048,
+    "frames": 211
+   },
+   "observed_mismatch_frames": 0,
+   "reacquire_m": {
+    "mean": 0.054,
+    "max": 0.13,
+    "events": 11,
+    "mean_after_5_frames": 0.055,
+    "events_after_5_frames": 3
+   },
+   "style_switches": 1
+  }
+ },
+ "paint_gap_p95_cm_6_8_10_15_20": {
+  "straight 5-20/left": "14/12/11/1/1",
+  "straight 5-20/right": "17/5/11/2/4",
+  "curve 22-35/left": "18/15/14/13/12",
+  "curve 22-35/right": "6/6/4/3/6",
+  "straight2 35-42/left": "21/9/6/4/6",
+  "straight2 35-42/right": "8/8/6/4/6",
+  "crosswalk 42-48/left": "15/2/14/15/17",
+  "crosswalk 42-48/right": "5/4/6/4/18",
+  "island 48-53/left": "6/4/5/3/1",
+  "island 48-53/right": "16/5/4/2/12",
+  "junction2 53-61/left": "3/6/5/1/2",
+  "junction2 53-61/right": "23/6/5/1/17"
+ },
+ "near_head_mrad": {
+  "straight 5-20/left": {
+   "event_rms": 0.31,
+   "events": 10,
+   "other_rms": 0.19
+  },
+  "straight 5-20/right": {
+   "event_rms": 2.42,
+   "events": 35,
+   "other_rms": 2.46
+  },
+  "curve 22-35/left": {
+   "event_rms": 0.61,
+   "events": 20,
+   "other_rms": 1.76
+  },
+  "curve 22-35/right": {
+   "event_rms": 0.84,
+   "events": 31,
+   "other_rms": 0.96
+  },
+  "straight2 35-42/left": {
+   "event_rms": 0.81,
+   "events": 5,
+   "other_rms": 0.64
+  },
+  "straight2 35-42/right": {
+   "event_rms": 1.37,
+   "events": 13,
+   "other_rms": 0.72
+  },
+  "crosswalk 42-48/left": {
+   "event_rms": null,
+   "events": 0,
+   "other_rms": 1.26
+  },
+  "crosswalk 42-48/right": {
+   "event_rms": 1.16,
+   "events": 2,
+   "other_rms": 3.31
+  },
+  "island 48-53/left": {
+   "event_rms": 0.24,
+   "events": 5,
+   "other_rms": 0.23
+  },
+  "island 48-53/right": {
+   "event_rms": 0.61,
+   "events": 14,
+   "other_rms": 2.51
+  },
+  "junction2 53-61/left": {
+   "event_rms": null,
+   "events": 0,
+   "other_rms": 0.69
+  },
+  "junction2 53-61/right": {
+   "event_rms": 0.27,
+   "events": 3,
+   "other_rms": 0.84
+  }
+ }
+}

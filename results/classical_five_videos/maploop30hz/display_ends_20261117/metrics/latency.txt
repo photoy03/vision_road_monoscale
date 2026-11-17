@@ -1,0 +1,8 @@
+judge1_maploop processed 1.0 drift -0.8 gaps>100 0 from_car 0.9631 p95 30.01 mean 23.9 max 41.9 worker.display mean 2.4 p95 3.45
+judge1_town05 processed 1.0 drift -0.73 gaps>100 0 from_car 0.9499 p95 28.9 mean 23.87 max 51.59 worker.display mean 2.79 p95 3.52
+judge2_maploop processed 1.0 drift -1.65 gaps>100 0 from_car 0.9631 p95 31.32 mean 24.24 max 42.26 worker.display mean 2.46 p95 3.63
+judge2_town05 processed 1.0 drift 0.01 gaps>100 0 from_car 0.9499 p95 29.21 mean 23.83 max 49.55 worker.display mean 2.77 p95 3.47
+judge3_maploop processed 1.0 drift -0.41 gaps>100 0 from_car 0.9631 p95 30.35 mean 23.93 max 42.86 worker.display mean 2.46 p95 3.64
+judge3_town05 processed 1.0 drift -0.02 gaps>100 0 from_car 0.9499 p95 29.08 mean 23.77 max 49.14 worker.display mean 2.77 p95 3.53
+record_after_maploop processed 1.0 drift -1.01 gaps>100 0 from_car 0.9631 p95 30.63 mean 24.0 max 41.53 worker.display mean 2.45 p95 3.61
+record_before_maploop processed 1.0 drift -1.25 gaps>100 0 from_car 1.0 p95 30.43 mean 23.86 max 43.13 worker.display mean 2.13 p95 3.14

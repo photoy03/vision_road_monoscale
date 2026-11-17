@@ -89,3 +89,14 @@ lane_display_filter:
     memory_m: 10.0
     # Sharp curves: the HUD line is a cubic too, its third-order term held to 0 unless a quadratic misses by ~5 cm.
     cubic_m: 0.05
+    # Line ends (plan 18): an observation must match the kept line at the near end, middle and far end of the
+    # part both cover (gate 0.30 m, +0.30 m per 10 m beyond 10 m), not at 10 m alone; the line is drawn at most
+    # 3 m (extend_m) past the median far end of the last 3 accepted observations and below the nearest seen or
+    # remembered paint; outside that span it continues the end's slope with the curvature fading over 6 m, and
+    # below 6 m it continues the slope and curvature at 6 m (the cubic swings most at 0 m).
+    gate_span: true
+    gate_per_10m: 1.0
+    end_from_seen: true
+    start_from_seen: true
+    outside_quadratic: true
+    near_quadratic_m: 6.0
