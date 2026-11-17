@@ -1,0 +1,859 @@
+--- backups/before-fast-detector-20261117/carla.py	2026-11-17 15:26:05.649686188 +0900
++++ src/vision_road/vision_road/carla.py	2026-11-17 15:51:29.561620720 +0900
+@@ -2,7 +2,7 @@
+ 
+ No fitted classifier, model weights or simulator map labels are used.
+ """
+-from dataclasses import replace
++from dataclasses import fields, replace
+ import math
+ import statistics
+ import cv2
+@@ -25,6 +25,16 @@
+     return mask&(np.abs(left-right)<=1)&(width<=max_width)
+ 
+ 
++LANE_FIELDS=tuple(f.name for f in fields(Lane))
++
++
++def clone(lane,**changes):
++    """dataclasses.replace(lane, **changes) for a Lane, without its per-call overhead (fields only, like replace)."""
++    new=object.__new__(Lane);values=new.__dict__
++    for name in LANE_FIELDS:values[name]=getattr(lane,name)
++    values.update(changes);return new
++
++
+ def shifted(image, offset, axis=1):
+     """Replicated boundaries, unlike wrapping a row to the opposite image edge."""
+     indices=np.clip(np.arange(image.shape[axis])+offset,0,image.shape[axis]-1)
+@@ -70,19 +80,21 @@
+ 
+     def binary(self,bev,valid):
+         c=self.c
+-        gray=cv2.cvtColor(bev,cv2.COLOR_BGR2GRAY).astype(np.float32)
++        self.gray_u8=cv2.cvtColor(bev,cv2.COLOR_BGR2GRAY)  # also the tracker's registration image for this BEV
++        gray=self.gray_u8.astype(np.float32)
+         gray=cv2.GaussianBlur(gray,(3,3),.55);self.gray=gray
+         h,l,s=cv2.split(cv2.cvtColor(bev,cv2.COLOR_BGR2HLS));self.light=l;self.saturation=s  # reused by road_markings
+         b,g,r=cv2.split(bev.astype(np.float32))
+         white=(s<120)&(l>c.carla_white_light_min)
+         self.yellow=(h>=16)&(h<=42)&(s>20)&((g-b)>18)&((g-b)>.09*np.maximum(g,1))&((g-b)>1.25*(r-g))
++        relative=None
+         if c.carla_yellow_relative_min>0:
+             # Faint yellow (a pale map, or washed out by light): blue below red and green, measured against
+             # the road around it, so a uniformly warm or bluish road is not yellow.
+             yellowness=(r+g)/2-b;size=2*round(c.carla_yellow_relative_window_m/c.mpp/2)+1
+-            road=cv2.medianBlur(np.clip(yellowness+128,0,255).astype(np.uint8),size).astype(np.float32)-128
+-            self.yellow|=(yellowness>=c.carla_yellow_relative_min)&(yellowness-road>=c.carla_yellow_relative_min)
+-        color=white|self.yellow
++            level=np.clip(yellowness+128,0,255).astype(np.uint8)
++            # The median filter is the slowest step here; with carla_parallel_ops it runs beside the ridges below.
++            relative=self.pool().submit(cv2.medianBlur,level,size) if c.carla_parallel_ops else cv2.medianBlur(level,size)
+         response=np.zeros_like(gray)
+         # Average both flanks at multiple paint widths. Preserve weak ridges;
+         # subsequent geometry uses this same response rather than a second
+@@ -96,6 +108,10 @@
+             ridge=cv2.subtract(gray,side)
+             eligible=(ridge>=c.carla_ridge_min)&(ridge>=c.carla_relative_min*cv2.max(side,25.))
+             response=cv2.max(response,np.where(eligible,ridge,np.float32(0)))
++        if relative is not None:
++            road=(relative.result() if c.carla_parallel_ops else relative).astype(np.float32)-128
++            self.yellow|=(yellowness>=c.carla_yellow_relative_min)&(yellowness-road>=c.carla_yellow_relative_min)
++        color=white|self.yellow
+         safe=cv2.erode(valid,np.ones((3,9),np.uint8))>0;self.valid_safe=safe.astype(np.uint8)
+         raw=((response>0)&color&safe).astype(np.uint8)*255
+         self.response=response;self.raw_mask=raw.copy()
+@@ -131,6 +147,13 @@
+         if removed is not None:self.diagnostics['learned_outside_pixels']=removed
+         return raw
+ 
++    def pool(self):
++        """Two threads for independent OpenCV steps (they release the interpreter lock)."""
++        if getattr(self,'_pool',None) is None:
++            from concurrent.futures import ThreadPoolExecutor
++            self._pool=ThreadPoolExecutor(max_workers=2,thread_name_prefix='lane-ops')
++        return self._pool
++
+     def learned_gate(self,raw):
+         """Paint away from the learned lane mask (crosswalk bars, arrows, text, patches) is
+         removed or marked for a score penalty, within carla_learned_gate_far_m only."""
+@@ -232,9 +255,11 @@
+         count=int(np.count_nonzero(keep))
+         if count<3:return False
+         y=y[keep];x=x[keep]
+-        left=float(gray[y,x-offset].sum()+gray[y,x-offset-1].sum())/(2*count)
+-        right=float(gray[y,x+offset].sum()+gray[y,x+offset+1].sum())/(2*count)
+-        center=float(gray[y,x].sum())/count;asymmetry=abs(left-right)
++        # One gather, one row per flank column; each row sums like the 1-D gathers it replaces.
++        sums=gray[y[None,:],x[None,:]+np.array([-offset,-offset-1,offset,offset+1,0])[:,None]].sum(axis=1)
++        left=float(sums[0]+sums[1])/(2*count)
++        right=float(sums[2]+sums[3])/(2*count)
++        center=float(sums[4])/count;asymmetry=abs(left-right)
+         return asymmetry>=20. and center-max(left,right)<asymmetry/1.5
+ 
+     def merge_strands(self,nodes,sample,smooth,yellow,side=None):
+@@ -289,6 +314,7 @@
+                 if groups and lo<=groups[-1]['hi']+.05:
+                     g=groups[-1];g['hi']=max(g['hi'],hi);g['items'].append((a,value))
+                 else:groups.append(dict(lo=lo,hi=hi,items=[(a,value)]))
++            built=[]
+             for g in groups:
+                 items=g['items']
+                 if len(items)==1:
+@@ -298,12 +324,18 @@
+                     forward,measured=grouped_median(np.vstack([a['lane'].points for a,_ in items]))
+                     mids=np.array([np.mean(a['lane'].points[:,0]) for a,_ in items]);values=np.array([v for _,v in items]);order=np.argsort(mids)
+                     offset=interp(forward,mids[order],values[order])
+-                # Each strand stays within half a BEV pixel of its measured paint.
+-                lateral=np.clip(interp(forward,sample,smooth)+offset,measured-.45*self.c.mpp,measured+.45*self.c.mpp)
+-                lane=replace(items[0][0]['lane'],points=np.column_stack([forward,lateral]),
+-                             confidence=max(a['lane'].confidence for a,_ in items))
+-                pixels=(np.concatenate([a['pixels'][0] for a,_ in items]),np.concatenate([a['pixels'][1] for a,_ in items]))
+-                merged.append(dict(lane=lane,pixels=pixels))
++                built.append((items,forward,measured,offset))
++            if built:
++                # Each strand stays within half a BEV pixel of its measured paint: element-wise, so one call for all.
++                sizes=[len(f) for _,f,_,_ in built];half=.45*self.c.mpp
++                forward_all=np.concatenate([f for _,f,_,_ in built]);measured_all=np.concatenate([m for _,_,m,_ in built])
++                offset_all=np.concatenate([np.broadcast_to(o,len(f)) for _,f,_,o in built])
++                lateral_all=np.clip(interp(forward_all,sample,smooth)+offset_all,measured_all-half,measured_all+half)
++                for (items,forward,_,_),lateral in zip(built,np.split(lateral_all,np.cumsum(sizes)[:-1])):
++                    lane=clone(items[0][0]['lane'],points=np.column_stack([forward,lateral]),
++                               confidence=max(a['lane'].confidence for a,_ in items))
++                    pixels=(np.concatenate([a['pixels'][0] for a,_ in items]),np.concatenate([a['pixels'][1] for a,_ in items]))
++                    merged.append(dict(lane=lane,pixels=pixels))
+         merged.sort(key=lambda a:a['lane'].points[0,0])
+         if voted is not None:
+             # Section by section: the 3 m neighbour medians, interpolated along the spine.
+@@ -332,10 +364,13 @@
+             y,x=a['pixels']
+             # Paint pixels per BEV row, across the strand: one strand ~0.13 m, two touching ~0.4 m.
+             if len(y) and len(y)/len(forward[i])*mpp/math.sqrt(1+slope*slope)>=half+.13:label[i]=0.
++        # Plain floats: the pair test below runs for every pair of fragments.
++        first=[float(f[0]) for f in forward];last=[float(f[-1]) for f in forward];wide=[l==0. for l in label]
+         for i in range(len(nodes)):
++            if wide[i]:continue
+             for j in range(i+1,len(nodes)):
+-                if label[i]==0. or label[j]==0.:continue
+-                lo=max(forward[i][0],forward[j][0]);hi=min(forward[i][-1],forward[j][-1])
++                if wide[j]:continue
++                lo=max(first[i],first[j]);hi=min(last[i],last[j])
+                 if hi-lo<1.:continue
+                 middle=(lo+hi)/2
+                 if abs(abs((lines[i][0]-lines[j][0])*middle+lines[i][1]-lines[j][1])-gap)>.15:continue
+@@ -808,15 +843,18 @@
+             # own straight extrapolation suggested.
+             support={side:[] for side in spines}
+             members={id(a):side for side,value in spines.items() for a in value[4]}
++            # Plain floats for the per-fragment, per-side tests (numpy scalars cost more here than the tests).
++            reach={side:(float(value[0][0])-.15,float(value[0][-1])+.15) for side,value in spines.items()}
+             for a in nodes:
+                 pts=a['lane'].points;best=None;middle=len(pts)//2
++                lo,hi,mx,my=float(pts[0,0]),float(pts[-1,0]),float(pts[middle,0]),float(pts[middle,1])
+                 for side,(sample,smooth,band,yellow_path,group) in spines.items():
+                     if id(a) in members and members[id(a)]!=side:continue
+                     if c.carla_path_filter_enabled:
+-                        if a['yellow']!=yellow_path or pts[0,0]<sample[0]-.15 or pts[-1,0]>sample[-1]+.15:continue
++                        if a['yellow']!=yellow_path or lo<reach[side][0] or hi>reach[side][1]:continue
+                     elif id(a) not in members:continue
+                     # Cheap rejection before the robust median test.
+-                    if abs(pts[middle,1]-interp(pts[middle,0],sample,smooth))>band+.30:continue
++                    if abs(my-interp(mx,sample,smooth))>band+.30:continue
+                     error=float(median(np.abs(pts[:,1]-interp(pts[:,0],sample,smooth))))
+                     if error<=band and (best is None or error<best[0]):best=(error,side)
+                 if best is not None:support[best[1]].append(a)
+--- backups/before-fast-detector-20261117/temporal.py	2026-11-17 15:26:05.649686188 +0900
++++ src/vision_road/vision_road/temporal.py	2026-11-17 15:51:29.561620720 +0900
+@@ -5,6 +5,7 @@
+ import numpy as np
+ from numpy.core.multiarray import interp  # np.interp without its Python wrapper (hundreds of calls per frame)
+ from .core import Detector, Lane, to_world, median
++from .carla import clone
+ from .marking_style import classify_lane
+ try:
+     from . import _native
+@@ -231,7 +232,7 @@
+                 pixels=self.pixel(track.lane.points) @ matrix[:,:2].T+matrix[:,2]
+                 points=self._visible(self.metric(pixels),valid)
+                 if points is None: continue
+-                prior=replace(track.lane,points=points,reprojected=False,source_time=track.last_observed)
++                prior=clone(track.lane,points=points,reprojected=False,source_time=track.last_observed)
+                 priors[side]=prior
+                 records[side]=Track(prior,track.last_observed,track.misses,track.travel+travel,track.style_candidate,track.style_streak,track.style_time)
+         if hasattr(self.detector,'path_tracking'):
+@@ -277,10 +278,17 @@
+         if c.style_temporal_enabled:
+             history=[]
+             if matrix is not None:
+-                for stamp,old_mask in self.paint_history:
+-                    if 0<t-stamp<=c.style_history_sec:
+-                        moved=cv2.warpAffine(old_mask,matrix,(valid.shape[1],valid.shape[0]),flags=cv2.INTER_NEAREST,borderMode=cv2.BORDER_CONSTANT)
+-                        history.append((stamp,moved))
++                kept=[(stamp,old_mask) for stamp,old_mask in self.paint_history if 0<t-stamp<=c.style_history_sec]
++                move=lambda m:cv2.warpAffine(m,matrix,(valid.shape[1],valid.shape[0]),flags=cv2.INTER_NEAREST,borderMode=cv2.BORDER_CONSTANT)
++                masks=[m for _,m in kept]
++                if c.carla_parallel_ops:
++                    # Up to four masks per call as the channels of one image: nearest-neighbour warps each the same.
++                    moved=[]
++                    for i in range(0,len(masks),4):
++                        part=masks[i:i+4]
++                        moved.extend(cv2.split(move(cv2.merge(part))) if len(part)>1 else [move(part[0])])
++                else:moved=[move(m) for m in masks]
++                history.extend(zip([stamp for stamp,_ in kept],moved))
+             history.append((float(t),style_binary.copy()))
+             self.paint_history=history[-c.style_history_frames:]
+             if len(self.paint_history)>=2:
+@@ -301,7 +309,10 @@
+                 if error<c.temporal_match_m:
+                     matched=True
+                     lane.hits=min(65535,old.lane.hits+1)
+-                    overlap=(a[:,0]>=lo)&(a[:,0]<=hi)
++                    xs=a[:,0]
++                    # Sorted points (as observed lanes are): the overlap is one slice, the same elements in order.
++                    if (np.diff(xs)>=0).all():overlap=slice(int(np.searchsorted(xs,lo,'left')),int(np.searchsorted(xs,hi,'right')))
++                    else:overlap=(xs>=lo)&(xs<=hi)
+                     weight=.95 if getattr(self.detector,'fragment_tracks',False) else .75
+                     lane.points[overlap,1]=weight*a[overlap,1]+(1-weight)*interp(a[overlap,0],b[:,0],b[:,1])
+             lane.source_time=float(t)
+@@ -348,7 +359,7 @@
+                     and old.lane.confidence>=getattr(self.detector,'minimum_prediction_confidence',0.)
+                     and misses<=c.temporal_max_frames and age<=c.temporal_max_age_sec
+                     and old.travel<=c.temporal_max_distance_m):
+-                lane=replace(old.lane,confidence=old.lane.confidence*math.exp(-(t-self.last_time)/.20),reprojected=True,source_time=old.last_observed,style_confidence=old.lane.style_confidence*math.exp(-(t-self.last_time)/.20))
++                lane=clone(old.lane,confidence=old.lane.confidence*math.exp(-(t-self.last_time)/.20),reprojected=True,source_time=old.last_observed,style_confidence=old.lane.style_confidence*math.exp(-(t-self.last_time)/.20))
+                 points=self._visible(lane.points,final_valid)
+                 if points is None:continue
+                 lane.points=points
+@@ -371,6 +382,8 @@
+                     filtered.append(lane)
+             result=filtered
+         self.tracks=tracks; self.last_pose=pose; self.last_time=float(t)
+-        self.gray=cv2.cvtColor(bev,cv2.COLOR_BGR2GRAY); self.valid=valid.copy()
++        # The detector converted this same BEV to grey already (when it made the paint mask this frame).
++        same=paint_mask is None and getattr(self.detector,'gray_u8',None) is not None
++        self.gray=self.detector.gray_u8 if same else cv2.cvtColor(bev,cv2.COLOR_BGR2GRAY); self.valid=valid.copy()
+         self.measured_count=sum(not l.reprojected for l in result); self.predicted_count=sum(l.reprojected for l in result)
+         return result,binary
+--- backups/before-fast-detector-20261117/core.py	2026-11-17 15:26:05.649686188 +0900
++++ src/vision_road/vision_road/core.py	2026-11-17 15:43:03.307408354 +0900
+@@ -65,6 +65,7 @@
+     carla_tail_gap_m: float = 0.0  # >0: after a paint gap this long that holds a transverse bar (stop line), a chain is cut where it continues off its own near shape
+     carla_tail_offset_m: float = 0.5  # ... by more than this (a line ending at a junction picks up the crossing road's edge)
+     carla_tail_bar_m: float = 1.0  # transverse paint at least this wide counts as a bar
++    carla_parallel_ops: bool = False  # True: independent OpenCV steps (median filter, history warps) on two threads; same results
+     carla_turn_curvature: float = 0.0  # >0: while the vehicle turns this sharply (1/m, over its last metre), a candidate starting within 15 m is not taken
+     carla_turn_angle_deg: float = 25.0  # ... when its first 2 m head against the turn and cross the vehicle's own arc at this angle (a crossing road's line)
+     carla_turn_wrong_side_m: float = 0.3  # ... or when it starts this far on the other side of that arc
+@@ -335,6 +336,11 @@
+     a=np.asarray(values,dtype=float).ravel();n=a.size
+     if n==0:return np.float64(np.nan)
+     k=n//2
++    if n<=32:
++        # A short list sorts faster in Python than np.partition runs; a NaN (or inf-inf) in it goes the general way.
++        s=a.tolist()
++        if sum(s)==sum(s):
++            s.sort();return np.float64(s[k]) if n%2 else np.float64((s[k-1]+s[k])/2)
+     if n%2:p=np.partition(a,k);m=p[k]
+     else:p=np.partition(a,(k-1,k));m=(p[k-1]+p[k])/2
+     return np.float64(np.nan) if np.isnan(p[-1]) else m
+--- backups/before-fast-detector-20261117/display_filter.py	2026-11-17 15:26:05.649686188 +0900
++++ src/vision_road/vision_road/display_filter.py	2026-11-17 15:28:53.444843811 +0900
+@@ -303,6 +303,44 @@
+         return out
+ 
+ 
++def simplify(points,error):
++    """The display polyline road_node publishes: Douglas-Peucker within error metres (0: unchanged)."""
++    import cv2
++    if error<=0 or len(points)<3:return points
++    return cv2.approxPolyDP(points.astype(np.float32),error,False).reshape(-1,2).astype(float)
++
++
++def lane_styles(lanes):
++    """road_node's /road/lane_styles content as the display filter reads it: per side the lane with the
++    highest style confidence (first on ties), observed ones only, confidence as the message's float32."""
++    unique={}
++    for lane in lanes:
++        if lane.side not in unique or lane.style_confidence>unique[lane.side].style_confidence:unique[lane.side]=lane
++    return [(lane.side,lane.style if lane.style in ('solid','dashed') else None,float(np.float32(lane.style_confidence)))
++            for lane in unique.values() if not lane.reprojected]
++
++
++class DisplayCore:
++    """The display filter's per-frame step without ROS: vehicle motion from consecutive poses and the
++    filter update.  road_node's perception worker runs it next to the detector (display_filter_in_worker)."""
++
++    def __init__(self,settings):
++        self.filter=DisplayFilter(settings);self.last_pose=None
++
++    def styles(self,t,styles):
++        for side,style,confidence in styles:self.filter.update_style(t,side,style,confidence)
++
++    def step(self,t,lines,pose,paint):
++        if self.filter.restarted(t):self.last_pose=None
++        motion=None
++        if pose is not None:
++            if self.last_pose is not None and t>self.last_pose[0]:motion=relative(self.last_pose[1],pose)
++            elif self.last_pose is None:motion=(0.,0.,0.)
++            self.last_pose=(t,pose)
++        self.filter.update(t,lines,motion,paint)
++        return self.filter.output()
++
++
+ class DisplayStage:
+     """The display filter on ROS messages, without a node: road_node can run it inline (display_filter_inline)
+     and the lane_display_filter node wraps it.  Inputs are road_node's own topics; on_boundaries returns the
+@@ -310,7 +348,7 @@
+ 
+     def __init__(self,settings,frame='base_link'):
+         from vision_lane_interfaces.msg import LaneStyle
+-        self.filter=DisplayFilter(settings);self.frame=frame;self.paint=None;self.last_pose=None
++        self.core=DisplayCore(settings);self.filter=self.core.filter;self.frame=frame;self.paint=None
+         self.names={LaneStyle.SOLID:'solid',LaneStyle.DASHED:'dashed'};self.kinds={v:k for k,v in self.names.items()}
+ 
+     def on_paint(self,msg):
+@@ -349,23 +387,22 @@
+         return self.update(stamp,boundaries,pose_at)
+ 
+     def update(self,stamp,lines,pose_at):
++        t=stamp.sec+stamp.nanosec*1e-9
++        if self.filter.restarted(t):self.core.last_pose=None
++        pose=pose_at(t)
++        paint=self.paint[1] if self.paint is not None and abs(self.paint[0]-t)<1e-6 else None
++        return self.messages(stamp,self.core.step(t,lines,pose,paint))
++
++    def messages(self,stamp,output):
++        """/road/lane_display_markers and /road/lane_display_styles for one frame's filter output."""
+         from std_msgs.msg import Header
+         from geometry_msgs.msg import Point
+         from visualization_msgs.msg import Marker, MarkerArray
+         from vision_lane_interfaces.msg import LaneStyle, LaneStyleArray
+-        t=stamp.sec+stamp.nanosec*1e-9
+-        if self.filter.restarted(t):self.last_pose=None
+-        pose=pose_at(t);motion=None
+-        if pose is not None:
+-            if self.last_pose is not None and t>self.last_pose[0]:motion=relative(self.last_pose[1],pose)
+-            elif self.last_pose is None:motion=(0.,0.,0.)
+-            self.last_pose=(t,pose)
+-        paint=self.paint[1] if self.paint is not None and abs(self.paint[0]-t)<1e-6 else None
+-        self.filter.update(t,lines,motion,paint)
+         out=MarkerArray();head=Header(stamp=stamp,frame_id=self.frame)
+         clear=Marker();clear.header=head;clear.action=Marker.DELETEALL;out.markers.append(clear)
+         styles=LaneStyleArray();styles.header=head;styles.camera_id='front'
+-        for ident,(side,points,predicted,style) in enumerate(self.filter.output()):
++        for ident,(side,points,predicted,style) in enumerate(output):
+             m=Marker();m.header=head;m.ns='display/'+side;m.id=ident;m.type=Marker.LINE_STRIP;m.action=Marker.ADD
+             m.pose.orientation.w=1.;m.scale.x=.05;m.color.a=.9;m.color.g=1.;m.color.b=1.;m.color.r=1. if predicted else 0.
+             m.lifetime.nanosec=300000000
+--- backups/before-fast-detector-20261117/node.py	2026-11-17 15:26:05.649686188 +0900
++++ src/vision_road/vision_road/node.py	2026-11-17 16:11:57.616003002 +0900
+@@ -107,10 +107,28 @@
+         if weights:self.projector.initialize(*self.projector.size)
+         self.learned=LearnedMask(self.projector,weights,param('learned_every',1))
+         self.get_logger().info('Learned lane mask: '+self.learned.status)
+-        if param('isolated_compute',False):
++        # display_filter_inline: the HUD display filter (lane_display_filter) runs in this node, with the settings
++        # of carla.yaml's lane_display_filter section; one ROS hop less.  display_filter_in_worker: in the
++        # perception worker process, next to the detector, away from this process's ROS threads.
++        self.display_settings=None
++        if param('display_filter_inline',False):
++            from .display_filter import settings_from
++            section=yaml.safe_load(open(param('display_filter_config',get_package_share_directory('vision_road')+'/config/carla.yaml')))
++            self.display_settings=settings_from((section.get('lane_display_filter') or {}).get('ros__parameters',{}))
++        in_worker=param('display_filter_in_worker',False) and self.display_settings is not None
++        # ... and display_publish_in_worker: the worker publishes the display topics itself, as soon as it has them.
++        publish_in_worker=in_worker and param('display_publish_in_worker',False)
++        # image_in_worker: the perception worker subscribes the camera and odometry itself (see rt_worker.ros_loop).
++        isolated=param('isolated_compute',False)
++        self.image_in_worker=isolated and param('image_in_worker',False) and not weights
++        self.worker_display=(self.display_settings,self.display_error,publish_in_worker,self.base_frame) if in_worker else None
++        if self.image_in_worker:
++            self.compute_worker=None;self.extras=None;self.worker_extras=extras  # started with the subscriptions below
++        elif isolated:
+             from .rt_worker import ComputeWorker
+             self.projector.initialize(*self.projector.size)
+-            self.compute_worker=ComputeWorker(self.projector,cfg,backend,self.image_roi_bottom,threads,extras)
++            self.compute_worker=ComputeWorker(self.projector,cfg,backend,self.image_roi_bottom,threads,extras,
++                                              display=self.worker_display)
+             self.extras=None
+         else:
+             self.extras=Extras(**extras) if backend=='carla' and extras['markings'] else None
+@@ -129,17 +147,16 @@
+         self.binary_pub = self.create_publisher(Image, '/parking/cpp/binary', qos_profile_sensor_data)
+         self.bev_pub = self.create_publisher(Image, '/parking/cpp/vector_bev', qos_profile_sensor_data)
+         self.overlay_pub = self.create_publisher(Image, '/road/overlay', qos_profile_sensor_data)
+-        # display_filter_inline: the HUD display filter (lane_display_filter) runs here on this node's own
+-        # messages, with the settings of carla.yaml's lane_display_filter section; one ROS hop less.
+         self.display_stage=None
+-        if param('display_filter_inline',False):
+-            from .display_filter import DisplayStage,settings_from
+-            section=yaml.safe_load(open(param('display_filter_config',get_package_share_directory('vision_road')+'/config/carla.yaml')))
+-            values=(section.get('lane_display_filter') or {}).get('ros__parameters',{})
+-            self.display_stage=DisplayStage(settings_from(values),self.base_frame)
+-            self.display_pub=self.create_publisher(MarkerArray,'/road/lane_display_markers',10)
+-            self.display_style_pub=self.create_publisher(LaneStyleArray,'/road/lane_display_styles',10)
+-            self.get_logger().info('Display filter inline: '+str(self.display_stage.filter.s))
++        if self.display_settings is not None:
++            from .display_filter import DisplayStage
++            self.display_stage=DisplayStage(self.display_settings,self.base_frame)  # in the worker: messages only
++            if not (publish_in_worker and (self.compute_worker is not None or self.image_in_worker)):
++                self.display_pub=self.create_publisher(MarkerArray,'/road/lane_display_markers',10)
++                self.display_style_pub=self.create_publisher(LaneStyleArray,'/road/lane_display_styles',10)
++            self.get_logger().info('Display filter '+('in the perception worker'+(', published there' if publish_in_worker else '') if in_worker and (self.compute_worker is not None or self.image_in_worker) else 'inline')+
++                                   ': '+str(self.display_settings))
++        self.odom_topic=param('odom_topic','/localization/kinematic_state')
+         image_topic = param('image_topic', '/sensing/camera/front/fisheye/image_raw')
+         compressed = param('compressed', False)
+         reliability = param('image_reliability', 'best_effort')
+@@ -150,10 +167,18 @@
+         # raw_image_cdr: take the serialized image and view its pixel array in place; building a Python
+         # Image (6 MB) and converting it costs several milliseconds per frame.
+         self.raw_cdr=param('raw_image_cdr',False) and not compressed;self.raw_shape=None
+-        if self.raw_cdr:self.create_subscription(Image,image_topic,self.on_image_cdr,image_qos,raw=True)
++        if self.image_in_worker:
++            from .rt_worker import RosWorker
++            self.projector.initialize(*self.projector.size)
++            self.compute_worker=RosWorker(self.projector,self.detector.c,backend,self.image_roi_bottom,threads,self.worker_extras,self.worker_display,
++                dict(image_topic=image_topic,reliability=reliability,odom_topic=self.odom_topic,
++                     world_frame=self.world_frame,base_frame=self.base_frame,odom_max_gap_sec=self.timeline.max_gap,
++                     debug_hz=self.debug_hz if self.debug else 0.,overlay_max_width=self.overlay_max_width))
++            self.result_worker=threading.Thread(target=self.take_results,name='road-perception-results',daemon=True);self.result_worker.start()
++        elif self.raw_cdr:self.create_subscription(Image,image_topic,self.on_image_cdr,image_qos,raw=True)
+         else:self.create_subscription(CompressedImage if compressed else Image, image_topic, self.on_compressed if compressed else self.on_image, image_qos)
+         # Best effort accepts both reliable and best-effort odometry publishers.
+-        self.create_subscription(Odometry, param('odom_topic', '/localization/kinematic_state'), self.on_odom, QoSProfile(depth=200, reliability=ReliabilityPolicy.BEST_EFFORT))
++        self.create_subscription(Odometry, self.odom_topic, self.on_odom, QoSProfile(depth=200, reliability=ReliabilityPolicy.BEST_EFFORT))
+         self.create_timer(0.02, self.timer_flush, clock=Clock(clock_type=ClockType.STEADY_TIME))
+         if self.async_processing:
+             self.worker=threading.Thread(target=self.work_images,name='road-image-worker',daemon=True);self.worker.start()
+@@ -283,8 +308,8 @@
+                                                                     arrival_ns=begin,finish_ns=time.perf_counter_ns(),phases=getattr(self,'last_phases',{})))
+ 
+     def display_points(self,points):
+-        if self.display_error<=0 or len(points)<3:return points
+-        return cv2.approxPolyDP(points.astype(np.float32),self.display_error,False).reshape(-1,2).astype(float)
++        from .display_filter import simplify
++        return simplify(points,self.display_error)
+ 
+     def save_performance(self):
+         if self.performance_path:
+@@ -318,7 +343,9 @@
+             lanes=result['lanes'];binary=result['binary'];bev=result['bev'];markings=result.get('markings',[])
+             self.detector.boundary_lanes=result['boundaries'];self.detector.measured_count=result['measured'];self.detector.predicted_count=result['predicted']
+             self.detector.registration=result['registration'];self.detector.detector.diagnostics=result['diagnostics']
++            precomputed={k:result[k] for k in ('display','display_lanes','display_boundaries','display_published') if k in result}
+             phase('detector')
++            if self.performance_path and 'worker_ms' in result:self.last_phases.update({'worker.'+k:v for k,v in result['worker_ms'].items()})
+         else:
+             bev = self.projector.warp(frame)
+             valid=self.projector.valid.copy()
+@@ -328,13 +355,37 @@
+             if isinstance(self.detector.detector,CarlaDetector):self.detector.detector.learned=self.learned.next(t,frame)
+             lanes, binary = self.detector.process(bev, valid, t, pose)
+             markings=self.extras.after(self.detector,bev,valid,pose) if self.extras is not None else []
++            precomputed={}
+             phase('detector')
+-        job=(frame,header,t,pose,lanes,self.detector.boundary_lanes,binary,bev,markings)
++        job=(frame,header,t,pose,lanes,self.detector.boundary_lanes,binary,bev,markings,precomputed)
+         if self.output_jobs is not None:
+             # The next frame's detection overlaps these outputs; frames stay in order and none is skipped.
+             self.output_jobs.put(job);phase('handoff')
+         else:self.publish_outputs(*job,phase)
+ 
++    def take_results(self):
++        """image_in_worker: each processed frame's result from the perception worker, in order."""
++        connection=self.compute_worker.connection
++        while not self.worker_stop.is_set():
++            try:
++                if not connection.poll(.05):continue
++                result=connection.recv()
++            except (EOFError,OSError):break
++            if 'error' in result:self.dropped+=1;self.get_logger().error('Perception worker: '+result['error'],throttle_duration_sec=5);continue
++            sec,nanosec=result['stamp'];header=Header(frame_id=result['frame_id']);header.stamp.sec=sec;header.stamp.nanosec=nanosec
++            t=sec+nanosec*1e-9
++            with self.state_lock:
++                self.last_image=t;self.frames+=1
++                self.detector.boundary_lanes=result['boundaries'];self.detector.measured_count=result['measured'];self.detector.predicted_count=result['predicted']
++                self.detector.registration=result['registration'];self.detector.detector.diagnostics=result['diagnostics']
++                precomputed={k:result[k] for k in ('display','display_lanes','display_boundaries','display_published','debug_frame','debug_scale') if k in result}
++                job=(None,header,t,result['pose'],result['lanes'],result['boundaries'],result['binary'],result['bev'],result['markings'],precomputed)
++                if self.output_jobs is not None:self.output_jobs.put(job)
++                else:self.publish_outputs(*job,lambda name:None)
++            if self.performance_path:
++                self.performance_rows.append(dict(stamp=t,receive_ns=result['receive_ns'],arrival_ns=result['start_ns'],finish_ns=result['computed_ns'],
++                                                  phases={'worker.'+k:v for k,v in result['worker_ms'].items()}))
++
+     def output_loop(self):
+         while not self.worker_stop.is_set() or not self.output_jobs.empty():
+             try:job=self.output_jobs.get(timeout=.05)
+@@ -348,13 +399,19 @@
+             if self.performance_path:
+                 stamp=job[1].stamp;self.output_rows[(stamp.sec,stamp.nanosec)]=dict(output_start_ns=start,output_finish_ns=time.perf_counter_ns(),output_phases=phases)
+ 
+-    def publish_outputs(self,frame,header,t,pose,lanes,boundary_lanes,binary,bev,markings,phase):
+-        display_lanes=[replace(lane,points=self.display_points(lane.points)) for lane in lanes]
+-        boundaries=[replace(lane,points=self.display_points(lane.points)) for lane in boundary_lanes]
++    def publish_outputs(self,frame,header,t,pose,lanes,boundary_lanes,binary,bev,markings,precomputed,phase):
++        if 'display_lanes' in precomputed:display_lanes,boundaries=precomputed['display_lanes'],precomputed['display_boundaries']
++        else:
++            display_lanes=[replace(lane,points=self.display_points(lane.points)) for lane in lanes]
++            boundaries=[replace(lane,points=self.display_points(lane.points)) for lane in boundary_lanes]
+         style_msg=self.style_message(lanes,header.stamp)
+         # What the HUD draws goes out first: the display line when the filter runs here (fed the same
+         # lanes as the markers below carry), then paint, styles and boundaries; segments and markings after.
+-        if self.display_stage is not None:
++        if precomputed.get('display_published'):pass  # the worker has published the display topics
++        elif 'display' in precomputed:
++            shown=self.display_stage.messages(header.stamp,precomputed['display'])
++            self.display_pub.publish(shown[0]);self.display_style_pub.publish(shown[1]);phase('display_filter')
++        elif self.display_stage is not None:
+             self.display_stage.on_styles(style_msg)
+             shown=self.display_stage.on_lanes(header.stamp,[(l.side,l.points,l.reprojected) for l in boundaries if len(l.points)>=2],
+                                               [(l.side,l.points) for l in display_lanes if not l.reprojected and len(l.points)>=2],self.pose_at)
+@@ -366,13 +423,16 @@
+         self.local_pub.publish(self.array(display_lanes, header.stamp, self.base_frame, pose))
+         self.marking_pub.publish(self.road_marking_markers(markings,header.stamp))
+         phase('segments_markings')
+-        if self.debug and (self.debug_hz==0 or t-self.last_debug>=1/self.debug_hz-1e-8):
++        # image_in_worker: the worker sends a frame (at the overlay size) with the frames to draw.
++        debug_frame,debug_scale=precomputed.get('debug_frame'),precomputed.get('debug_scale')
++        if debug_frame is not None or (frame is not None and self.debug and (self.debug_hz==0 or t-self.last_debug>=1/self.debug_hz-1e-8)):
+             self.last_debug=t
++            if debug_frame is not None:frame=debug_frame
+             if self.debug_jobs is not None:
+                 # Drawing waits for the next frame's lanes otherwise; a busy drawer skips this one.
+-                try:self.debug_jobs.put_nowait((frame,header,boundaries,display_lanes,markings,binary,bev))
++                try:self.debug_jobs.put_nowait((frame,header,boundaries,display_lanes,markings,binary,bev,debug_scale))
+                 except queue.Full:pass
+-            else:self.draw_debug(frame,header,boundaries,display_lanes,markings,binary,bev,phase)
++            else:self.draw_debug(frame,header,boundaries,display_lanes,markings,binary,bev,debug_scale,phase)
+         phase('bev_debug')
+         if not self.map_enabled:
+             self.flush();return
+@@ -385,12 +445,15 @@
+         while not self.worker_stop.is_set():
+             try:job=self.debug_jobs.get(timeout=.1)
+             except queue.Empty:continue
+-            try:self.draw_debug(*job,lambda name:None)
++            try:self.draw_debug(*job,phase=lambda name:None)
+             except Exception as exc:self.get_logger().error('Debug images: '+str(exc),throttle_duration_sec=5)
+ 
+-    def draw_debug(self,frame,header,boundaries,display_lanes,markings,binary,bev,phase):
+-        scale=min(1.,self.overlay_max_width/frame.shape[1]) if self.overlay_max_width else 1.
+-        overlay=cv2.resize(frame,(round(frame.shape[1]*scale),round(frame.shape[0]*scale))) if scale<1 else frame.copy()
++    def draw_debug(self,frame,header,boundaries,display_lanes,markings,binary,bev,given_scale=None,phase=lambda name:None):
++        """given_scale: the frame is already reduced by it (image_in_worker)."""
++        if given_scale is not None:scale=given_scale;overlay=frame
++        else:
++            scale=min(1.,self.overlay_max_width/frame.shape[1]) if self.overlay_max_width else 1.
++            overlay=cv2.resize(frame,(round(frame.shape[1]*scale),round(frame.shape[0]*scale))) if scale<1 else frame.copy()
+         label_candidates={}
+         for lane_index,lane in enumerate(boundaries+display_lanes):
+             pixels, visible = self.projector.image_points(lane.points)
+--- backups/before-fast-detector-20261117/rt_worker.py	2026-11-17 15:29:43.377342085 +0900
++++ src/vision_road/vision_road/rt_worker.py	2026-11-17 16:10:26.679223298 +0900
+@@ -1,5 +1,6 @@
+ """Bounded shared-image worker: perception has its own Python interpreter/GIL."""
+ import multiprocessing as mp
++import time
+ from multiprocessing import shared_memory
+ import cv2
+ import numpy as np
+@@ -56,48 +57,182 @@
+ 
+ 
+ 
+-def compute_loop(connection,name,projector,cfg,backend,roi,threads,extras=None):
++class Perception:
++    """One process's perception state: projector, detector, optional road markings and display filter.
++    display: (FilterSettings, display simplification error, publish, frame); with publish the display topics go
++    out from this process (it then runs rclpy), before the result travels back to the node."""
++
++    def __init__(self,projector,cfg,backend,roi,threads,extras=None,display=None,ros=False):
++        cv2.setNumThreads(threads)
++        projector.initialize(*projector.size);self.projector=projector;self.roi=roi;self.backend=backend
++        self.detector=TemporalDetector(cfg)
++        if backend=='carla':self.detector.detector=CarlaDetector(cfg)
++        elif backend=='paint_evidence':self.detector.detector=PaintEvidenceDetector(cfg)
++        self.extra=Extras(**(extras or {})) if backend=='carla' and extras else None
++        self.core=None;self.publisher=None;self.node=None
++        if ros or (display is not None and display[2]):
++            import rclpy
++            rclpy.init(args=[]);self.node=rclpy.create_node('vision_road_perception')
++        if display is not None:
++            from .display_filter import DisplayCore,DisplayStage
++            self.core=DisplayCore(display[0]);self.error=display[1]
++            if display[2]:
++                from builtin_interfaces.msg import Time
++                from visualization_msgs.msg import MarkerArray
++                from vision_lane_interfaces.msg import LaneStyleArray
++                self.publisher=(self.node.create_publisher(MarkerArray,'/road/lane_display_markers',10),
++                                self.node.create_publisher(LaneStyleArray,'/road/lane_display_styles',10),DisplayStage(display[0],display[3]),Time)
++
++    def reset(self):
++        self.detector.reset()
++        if self.extra is not None:self.extra.reset()
++
++    def __call__(self,frame,stamp,pose,learned=None):
++        from dataclasses import replace
++        from .display_filter import simplify,lane_styles
++        detector=self.detector;begin=time.perf_counter()
++        if self.backend=='carla':detector.detector.learned=learned
++        bev=self.projector.warp(frame)
++        valid=self.projector.valid.copy();valid[self.projector.my>=frame.shape[0]*self.roi]=0
++        bev=cv2.bitwise_and(bev,bev,mask=valid)
++        warped=time.perf_counter()
++        lanes,binary=detector.process(bev,valid,stamp,pose)
++        markings=self.extra.after(detector,bev,valid,pose) if self.extra is not None else []
++        detected=time.perf_counter()
++        shown={}
++        if self.core is not None:
++            # As road_node does with its own messages: simplified lines, the side styles, this frame's pose.
++            paint=[replace(lane,points=simplify(lane.points,self.error)) for lane in lanes]
++            bounds=[replace(lane,points=simplify(lane.points,self.error)) for lane in detector.boundary_lanes]
++            self.core.styles(stamp,lane_styles(lanes))
++            shown=dict(display_lanes=paint,display_boundaries=bounds,display=self.core.step(stamp,
++                [(l.side,l.points,l.reprojected) for l in bounds if len(l.points)>=2],pose,
++                [(l.side,l.points) for l in paint if not l.reprojected and len(l.points)>=2]))
++            if self.publisher is not None:
++                markers,styles,stage,Time=self.publisher;ns=round(stamp*1e9)
++                out=stage.messages(Time(sec=ns//1000000000,nanosec=ns%1000000000),shown.pop('display'))
++                markers.publish(out[0]);styles.publish(out[1]);shown['display_published']=True
++        # Time spent here, for the node's performance report (ms): warp, detector, display filter.
++        worker=dict(warp=(warped-begin)*1e3,detect=(detected-warped)*1e3,display=(time.perf_counter()-detected)*1e3)
++        return dict(**shown,worker_ms=worker,lanes=lanes,binary=binary,bev=bev,boundaries=detector.boundary_lanes,markings=markings,
++                    measured=detector.measured_count,predicted=detector.predicted_count,
++                    registration=detector.registration,diagnostics=getattr(detector.detector,'diagnostics',{}))
++
++    def close(self):
++        if self.node is not None:
++            import rclpy
++            try:self.node.destroy_node();rclpy.try_shutdown()
++            except Exception:pass
++
++
++def compute_loop(connection,name,projector,cfg,backend,roi,threads,extras=None,display=None):
++    """Images come from road_node through shared memory, one at a time."""
+     memory=shared_memory.SharedMemory(name=name)
+-    frame=None
++    frame=None;perceive=None
+     try:
+-        cv2.setNumThreads(threads)
+-        projector.initialize(*projector.size)
+-        detector=TemporalDetector(cfg)
+-        if backend=='carla':detector.detector=CarlaDetector(cfg)
+-        elif backend=='paint_evidence':detector.detector=PaintEvidenceDetector(cfg)
+-        extra=Extras(**(extras or {})) if backend=='carla' and extras else None
++        perceive=Perception(projector,cfg,backend,roi,threads,extras,display)
+         connection.send('ready')
+         while True:
+             command=connection.recv()
+             if command is None:break
+             shape,stamp,pose,reset,learned=command
+-            if reset:
+-                detector.reset()
+-                if extra is not None:extra.reset()
++            if reset:perceive.reset()
+             frame=np.ndarray(shape,np.uint8,buffer=memory.buf)
+-            if backend=='carla':detector.detector.learned=learned
+-            bev=projector.warp(frame)
+-            valid=projector.valid.copy();valid[projector.my>=shape[0]*roi]=0
+-            bev=cv2.bitwise_and(bev,bev,mask=valid)
+-            lanes,binary=detector.process(bev,valid,stamp,pose)
+-            markings=extra.after(detector,bev,valid,pose) if extra is not None else []
+-            connection.send(dict(lanes=lanes,binary=binary,bev=bev,boundaries=detector.boundary_lanes,markings=markings,
+-                measured=detector.measured_count,predicted=detector.predicted_count,
+-                registration=detector.registration,diagnostics=getattr(detector.detector,'diagnostics',{})))
++            connection.send(perceive(frame,stamp,pose,learned))
+     except (EOFError,BrokenPipeError):pass
+     except Exception as exc:
+         try:connection.send(dict(error=str(exc)))
+         except (EOFError,BrokenPipeError):pass
+     finally:
+         frame=None;memory.close();connection.close()
++        if perceive is not None:perceive.close()
++
++
++def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
++    """image_in_worker: this process subscribes the camera and the odometry itself and keeps only the newest
++    image waiting (depth 1), so an image is neither copied to road_node nor handed over; results (and, every
++    1/debug_hz, a frame reduced to the overlay width) go back to road_node for its other topics."""
++    import math
++    from rclpy.qos import QoSProfile,ReliabilityPolicy
++    from sensor_msgs.msg import Image
++    from nav_msgs.msg import Odometry
++    from rclpy.serialization import deserialize_message
++    import struct
++    from .core import Timeline
++    perceive=None
++    try:
++        perceive=Perception(projector,cfg,backend,roi,threads,extras,display,ros=True);node=perceive.node
++        timeline=Timeline(ros['odom_max_gap_sec']);state=dict(shape=None,last=None,reset=False,last_debug=-math.inf)
++        def on_odom(msg):
++            if msg.header.frame_id!=ros['world_frame'] or msg.child_frame_id!=ros['base_frame']:return
++            p,q=msg.pose.pose.position,msg.pose.pose.orientation
++            norm=math.sqrt(q.x*q.x+q.y*q.y+q.z*q.z+q.w*q.w)
++            if not math.isfinite(norm) or norm<1e-6:return
++            x,y,z,w=q.x/norm,q.y/norm,q.z/norm,q.w/norm
++            generation=timeline.generation
++            timeline.add(msg.header.stamp.sec+msg.header.stamp.nanosec*1e-9,p.x,p.y,math.atan2(2*(w*z+x*y),1-2*(y*y+z*z)))
++            if timeline.generation!=generation:state['reset']=True
++        def on_image(raw):
++            received=time.perf_counter_ns()
++            if state['shape'] is None:
++                first=deserialize_message(raw,Image)
++                if first.encoding not in ('bgr8','rgb8') or first.step!=first.width*3 or first.is_bigendian:
++                    raise ValueError('image_in_worker needs packed bgr8/rgb8 images')
++                state['shape']=(first.height,first.width,first.encoding,first.header.frame_id)
++            h,w,encoding,frame_id=state['shape'];sec,nanosec=struct.unpack_from('<iI',raw,4);t=sec+nanosec*1e-9
++            if state['reset']:perceive.reset();state['last']=None;state['reset']=False
++            if state['last'] is not None and t<=state['last']:return
++            state['last']=t;start=time.perf_counter_ns()
++            frame=np.frombuffer(raw,np.uint8,h*w*3,len(raw)-h*w*3).reshape(h,w,3)
++            if encoding=='rgb8':frame=cv2.cvtColor(frame,cv2.COLOR_RGB2BGR)
++            pose=timeline.at(t);result=perceive(frame,t,pose)
++            result.update(stamp=(sec,nanosec),frame_id=frame_id,pose=pose,receive_ns=received,start_ns=start)
++            if ros['debug_hz']>0 and t-state['last_debug']>=1/ros['debug_hz']-1e-8:
++                state['last_debug']=t;scale=min(1.,ros['overlay_max_width']/w) if ros['overlay_max_width'] else 1.
++                result.update(debug_frame=cv2.resize(frame,(round(w*scale),round(h*scale))) if scale<1 else frame.copy(),debug_scale=scale)
++            else:result.update(bev=None,binary=None)  # only the debug images use them
++            result['computed_ns']=time.perf_counter_ns();connection.send(result)
++        node.create_subscription(Odometry,ros['odom_topic'],on_odom,QoSProfile(depth=200,reliability=ReliabilityPolicy.BEST_EFFORT))
++        node.create_subscription(Image,ros['image_topic'],on_image,QoSProfile(depth=1,reliability=ReliabilityPolicy.RELIABLE
++                                 if ros['reliability']=='reliable' else ReliabilityPolicy.BEST_EFFORT),raw=True)
++        import rclpy
++        connection.send('ready')
++        while not connection.poll(0):rclpy.spin_once(node,timeout_sec=.05)
++    except (EOFError,BrokenPipeError):pass
++    except Exception as exc:
++        try:connection.send(dict(error=str(exc)))
++        except (EOFError,BrokenPipeError):pass
++    finally:
++        connection.close()
++        if perceive is not None:perceive.close()
++
++
++class RosWorker:
++    """The perception worker with its own image and odometry subscriptions (image_in_worker)."""
++
++    def __init__(self,projector,cfg,backend,roi,threads,extras,display,ros):
++        context=mp.get_context('spawn');self.connection,child=context.Pipe()
++        self.process=context.Process(target=ros_loop,args=(child,projector,cfg,backend,roi,threads,extras,display,ros),daemon=True)
++        self.process.start();child.close();self.reset_pending=False
++        if not self.connection.poll(60):self.close();raise RuntimeError('Perception worker startup timeout')
++        ready=self.connection.recv()
++        if ready!='ready':self.close();raise RuntimeError('Perception worker failed: '+str(ready))
++
++    def close(self):
++        if hasattr(self,'process') and self.process.is_alive():
++            try:self.connection.send(None)
++            except (EOFError,BrokenPipeError):pass
++            self.process.join(timeout=3)
++            if self.process.is_alive():self.process.terminate();self.process.join(timeout=2)
++        self.connection.close()
+ 
+ 
+ class ComputeWorker:
+-    def __init__(self,projector,cfg,backend,roi,threads,extras=None):
++    def __init__(self,projector,cfg,backend,roi,threads,extras=None,display=None):
+         self.capacity=projector.size[0]*projector.size[1]*3
+         self.memory=shared_memory.SharedMemory(create=True,size=self.capacity)
+         context=mp.get_context('spawn');self.connection,child=context.Pipe()
+-        self.process=context.Process(target=compute_loop,args=(child,self.memory.name,projector,cfg,backend,roi,threads,extras),daemon=True)
++        self.process=context.Process(target=compute_loop,args=(child,self.memory.name,projector,cfg,backend,roi,threads,extras,display),daemon=True)
+         self.process.start();child.close();self.reset_pending=False
+         if not self.connection.poll(60):self.close();raise RuntimeError('Perception worker startup timeout')  # model load
+         ready=self.connection.recv()
+--- backups/before-fast-detector-20261117/carla.yaml	2026-11-17 15:26:05.649686188 +0900
++++ src/vision_road/config/carla.yaml	2026-11-17 16:11:17.799674120 +0900
+@@ -64,6 +64,8 @@
+     # While turning (1/m), a crossing road's line sweeping across the vehicle's arc, or a line on the
+     # other side of that arc, is not taken (Town04 39 s; maploop 23 s); a curve's own line bends with the turn.
+     carla_turn_curvature: 0.03
++    # Real time: the median filter and the paint-history warps run on a second thread (same results).
++    carla_parallel_ops: true
+     # Real time: only the newest image waits (a slow frame drops the older one, latency does not pile up),
+     # and the image is read in place from its serialized form.
+     image_job_depth: 1
+@@ -73,6 +75,12 @@
+     # Lane topics and the inline display go out on their own thread while the next frame is detected.
+     output_thread: true
+     gil_switch_interval_ms: 0.5
++    # With display_filter_inline: the display filter runs in the perception worker, next to the detector.
++    display_filter_in_worker: true
++    # ... and published from there, as soon as the worker has it.
++    display_publish_in_worker: true
++    # The perception worker subscribes the camera and odometry itself: no image copy or hand-over in road_node.
++    image_in_worker: true
+ lane_display_filter:
+   ros__parameters:
+     # HUD line reaches the rear axle (HUD path start, bottom of the screen); paint seen in the last
+diff --git a/tests/test_ros.py b/tests/test_ros.py
+index 173c7e4..c1d722c 100644
+--- a/tests/test_ros.py
++++ b/tests/test_ros.py
+@@ -138,3 +138,44 @@ def test_realtime_path_raw_image_inline_display_and_output_thread(tmp_path):
+     rows=__import__('json').loads(report.read_text())['records']
+     assert rows and all(r['receive_ns'] is not None and r['receive_ns']<=r['arrival_ns'] for r in rows)
+     assert all('output_finish_ns' in r for r in rows)
++
++
++def test_image_in_worker_publishes_display_and_lane_topics(tmp_path):
++    """image_in_worker: the perception worker takes the camera and odometry itself and publishes the display;
++    road_node still publishes the boundaries, both for every frame in order, with the timing report filled."""
++    report=tmp_path/'timing.json'
++    rclpy.init(args=['--ros-args','-p','detector_backend:=carla','-p','isolated_compute:=true','-p','image_in_worker:=true',
++                     '-p','display_filter_inline:=true','-p','display_filter_in_worker:=true','-p','display_publish_in_worker:=true',
++                     '-p','output_thread:=true','-p','image_topic:=/test/worker_image','-p','image_reliability:=reliable',
++                     '-p','odom_topic:=/test/worker_odom','-p','carla_chain_confirm_frames:=1','-p','performance_report:='+str(report)])
++    road=RoadNode();reader=Node('road_worker_reader');executor=SingleThreadedExecutor()
++    executor.add_node(road);executor.add_node(reader)
++    from sensor_msgs.msg import Image
++    from cv_bridge import CvBridge
++    shown,boundaries=[],[]
++    reader.create_subscription(MarkerArray,'/road/lane_display_markers',shown.append,10)
++    reader.create_subscription(MarkerArray,'/road/lane_boundary_markers',boundaries.append,10)
++    images=reader.create_publisher(Image,'/test/worker_image',10);odometry=reader.create_publisher(Odometry,'/test/worker_odom',10)
++    def pump(duration):
++        until=time.monotonic()+duration
++        while time.monotonic()<until:executor.spin_once(timeout_sec=.01)
++    try:
++        assert road.image_in_worker and road.compute_worker is not None
++        frame=cv2.imread(str(Path(__file__).resolve().parents[1]/'artifacts/synthetic_camera.png'));pump(1.)
++        stamps=[]
++        for k in range(10):
++            t=30.+k*.1;stamp=Time(sec=int(t),nanosec=round((t-int(t))*1e9))
++            msg=Odometry();msg.header=Header(stamp=stamp,frame_id='map');msg.child_frame_id='base_link'
++            msg.pose.pose.orientation.w=1.;msg.pose.pose.position.x=2.+k*.5;odometry.publish(msg);pump(.02)
++            image=CvBridge().cv2_to_imgmsg(frame,'bgr8');image.header=Header(stamp=stamp,frame_id='camera')
++            images.publish(image);stamps.append((stamp.sec,stamp.nanosec));pump(.3)
++        pump(1.)
++        got=[(m.markers[0].header.stamp.sec,m.markers[0].header.stamp.nanosec) for m in shown]
++        assert got==sorted(got) and set(got)<=set(stamps) and len(got)>=8
++        assert any(m.ns.startswith('display/') for msg in shown[-3:] for m in msg.markers)
++        assert [(m.markers[0].header.stamp.sec,m.markers[0].header.stamp.nanosec) for m in boundaries]==got
++    finally:
++        road.stop_processing();road.save_performance()
++        executor.shutdown();road.destroy_node();reader.destroy_node();rclpy.shutdown()
++    rows=__import__('json').loads(report.read_text())['records']
++    assert rows and all(r['receive_ns']<=r['arrival_ns']<=r['finish_ns'] for r in rows)
+diff --git a/tools/realtime_eval.py b/tools/realtime_eval.py
+index 8b08317..9d6669f 100644
+--- a/tools/realtime_eval.py
++++ b/tools/realtime_eval.py
+@@ -63,6 +63,7 @@ def main():
+     ap.add_argument('--frames',type=int,default=0,help='0 = whole recording');ap.add_argument('--start-frame',type=int,default=0)
+     ap.add_argument('--no-hud',action='store_true');ap.add_argument('--record',action='store_true',help='HUD screen recording (frames to OUTPUT/hud_frames)')
+     ap.add_argument('--launch-arg',nargs='*',default=[],help='extra maploop.launch.py arguments, name:=value')
++    ap.add_argument('--replay-cpus',default='',help="CPUs for the replay tool, e.g. '0-13' (taskset); default: any")
+     a=ap.parse_args();a.output.mkdir(parents=True,exist_ok=True);bag,cache=VIDEOS[a.video]
+     rclpy.init();node=Node('road_realtime_eval');arrivals={'boundary':{},'display':{},'paint':{}};content={'boundary':{},'display':{}}
+     def receiver(name):
+@@ -112,6 +113,7 @@ def main():
+             if hud.poll() is not None:raise RuntimeError('HUD exited; see hud.log')
+         replay_cmd=['bash','-c','source /opt/ros/humble/setup.bash && source "$0/install/setup.bash" && exec /usr/bin/python3 "$0/tools/replay_maploop.py" "$@"',str(ROOT),
+                     '--bag',str(bag),'--cache',str(cache),'--start-frame',str(a.start_frame),'--max-frames',str(a.frames),'--rate','1','--timing-report',str(source_timing)]
++        if a.replay_cpus:replay_cmd=['taskset','-c',a.replay_cpus]+replay_cmd
+         replay=subprocess.Popen(replay_cmd,stdout=logs['replay'],stderr=subprocess.STDOUT,start_new_session=True);procs.append(replay)
+         deadline=time.monotonic()+(a.frames or 1810)/30+120
+         while replay.poll() is None and time.monotonic()<deadline:rclpy.spin_once(node,timeout_sec=.01)

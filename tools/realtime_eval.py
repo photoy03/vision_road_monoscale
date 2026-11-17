@@ -63,6 +63,7 @@ def main():
     ap.add_argument('--frames',type=int,default=0,help='0 = whole recording');ap.add_argument('--start-frame',type=int,default=0)
     ap.add_argument('--no-hud',action='store_true');ap.add_argument('--record',action='store_true',help='HUD screen recording (frames to OUTPUT/hud_frames)')
     ap.add_argument('--launch-arg',nargs='*',default=[],help='extra maploop.launch.py arguments, name:=value')
+    ap.add_argument('--replay-cpus',default='',help="CPUs for the replay tool, e.g. '0-13' (taskset); default: any")
     a=ap.parse_args();a.output.mkdir(parents=True,exist_ok=True);bag,cache=VIDEOS[a.video]
     rclpy.init();node=Node('road_realtime_eval');arrivals={'boundary':{},'display':{},'paint':{}};content={'boundary':{},'display':{}}
     def receiver(name):
@@ -112,6 +113,7 @@ def main():
             if hud.poll() is not None:raise RuntimeError('HUD exited; see hud.log')
         replay_cmd=['bash','-c','source /opt/ros/humble/setup.bash && source "$0/install/setup.bash" && exec /usr/bin/python3 "$0/tools/replay_maploop.py" "$@"',str(ROOT),
                     '--bag',str(bag),'--cache',str(cache),'--start-frame',str(a.start_frame),'--max-frames',str(a.frames),'--rate','1','--timing-report',str(source_timing)]
+        if a.replay_cpus:replay_cmd=['taskset','-c',a.replay_cpus]+replay_cmd
         replay=subprocess.Popen(replay_cmd,stdout=logs['replay'],stderr=subprocess.STDOUT,start_new_session=True);procs.append(replay)
         deadline=time.monotonic()+(a.frames or 1810)/30+120
         while replay.poll() is None and time.monotonic()<deadline:rclpy.spin_once(node,timeout_sec=.01)

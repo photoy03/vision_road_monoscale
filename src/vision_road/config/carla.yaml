@@ -64,6 +64,8 @@ vision_road:
     # While turning (1/m), a crossing road's line sweeping across the vehicle's arc, or a line on the
     # other side of that arc, is not taken (Town04 39 s; maploop 23 s); a curve's own line bends with the turn.
     carla_turn_curvature: 0.03
+    # Real time: the median filter and the paint-history warps run on a second thread (same results).
+    carla_parallel_ops: true
     # Real time: only the newest image waits (a slow frame drops the older one, latency does not pile up),
     # and the image is read in place from its serialized form.
     image_job_depth: 1
@@ -73,6 +75,12 @@ vision_road:
     # Lane topics and the inline display go out on their own thread while the next frame is detected.
     output_thread: true
     gil_switch_interval_ms: 0.5
+    # With display_filter_inline: the display filter runs in the perception worker, next to the detector.
+    display_filter_in_worker: true
+    # ... and published from there, as soon as the worker has it.
+    display_publish_in_worker: true
+    # The perception worker subscribes the camera and odometry itself: no image copy or hand-over in road_node.
+    image_in_worker: true
 lane_display_filter:
   ros__parameters:
     # HUD line reaches the rear axle (HUD path start, bottom of the screen); paint seen in the last

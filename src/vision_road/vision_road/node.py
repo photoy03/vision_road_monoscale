@@ -107,10 +107,28 @@ class RoadNode(Node):
         if weights:self.projector.initialize(*self.projector.size)
         self.learned=LearnedMask(self.projector,weights,param('learned_every',1))
         self.get_logger().info('Learned lane mask: '+self.learned.status)
-        if param('isolated_compute',False):
+        # display_filter_inline: the HUD display filter (lane_display_filter) runs in this node, with the settings
+        # of carla.yaml's lane_display_filter section; one ROS hop less.  display_filter_in_worker: in the
+        # perception worker process, next to the detector, away from this process's ROS threads.
+        self.display_settings=None
+        if param('display_filter_inline',False):
+            from .display_filter import settings_from
+            section=yaml.safe_load(open(param('display_filter_config',get_package_share_directory('vision_road')+'/config/carla.yaml')))
+            self.display_settings=settings_from((section.get('lane_display_filter') or {}).get('ros__parameters',{}))
+        in_worker=param('display_filter_in_worker',False) and self.display_settings is not None
+        # ... and display_publish_in_worker: the worker publishes the display topics itself, as soon as it has them.
+        publish_in_worker=in_worker and param('display_publish_in_worker',False)
+        # image_in_worker: the perception worker subscribes the camera and odometry itself (see rt_worker.ros_loop).
+        isolated=param('isolated_compute',False)
+        self.image_in_worker=isolated and param('image_in_worker',False) and not weights
+        self.worker_display=(self.display_settings,self.display_error,publish_in_worker,self.base_frame) if in_worker else None
+        if self.image_in_worker:
+            self.compute_worker=None;self.extras=None;self.worker_extras=extras  # started with the subscriptions below
+        elif isolated:
             from .rt_worker import ComputeWorker
             self.projector.initialize(*self.projector.size)
-            self.compute_worker=ComputeWorker(self.projector,cfg,backend,self.image_roi_bottom,threads,extras)
+            self.compute_worker=ComputeWorker(self.projector,cfg,backend,self.image_roi_bottom,threads,extras,
+                                              display=self.worker_display)
             self.extras=None
         else:
             self.extras=Extras(**extras) if backend=='carla' and extras['markings'] else None
@@ -129,17 +147,16 @@ class RoadNode(Node):
         self.binary_pub = self.create_publisher(Image, '/parking/cpp/binary', qos_profile_sensor_data)
         self.bev_pub = self.create_publisher(Image, '/parking/cpp/vector_bev', qos_profile_sensor_data)
         self.overlay_pub = self.create_publisher(Image, '/road/overlay', qos_profile_sensor_data)
-        # display_filter_inline: the HUD display filter (lane_display_filter) runs here on this node's own
-        # messages, with the settings of carla.yaml's lane_display_filter section; one ROS hop less.
         self.display_stage=None
-        if param('display_filter_inline',False):
-            from .display_filter import DisplayStage,settings_from
-            section=yaml.safe_load(open(param('display_filter_config',get_package_share_directory('vision_road')+'/config/carla.yaml')))
-            values=(section.get('lane_display_filter') or {}).get('ros__parameters',{})
-            self.display_stage=DisplayStage(settings_from(values),self.base_frame)
-            self.display_pub=self.create_publisher(MarkerArray,'/road/lane_display_markers',10)
-            self.display_style_pub=self.create_publisher(LaneStyleArray,'/road/lane_display_styles',10)
-            self.get_logger().info('Display filter inline: '+str(self.display_stage.filter.s))
+        if self.display_settings is not None:
+            from .display_filter import DisplayStage
+            self.display_stage=DisplayStage(self.display_settings,self.base_frame)  # in the worker: messages only
+            if not (publish_in_worker and (self.compute_worker is not None or self.image_in_worker)):
+                self.display_pub=self.create_publisher(MarkerArray,'/road/lane_display_markers',10)
+                self.display_style_pub=self.create_publisher(LaneStyleArray,'/road/lane_display_styles',10)
+            self.get_logger().info('Display filter '+('in the perception worker'+(', published there' if publish_in_worker else '') if in_worker and (self.compute_worker is not None or self.image_in_worker) else 'inline')+
+                                   ': '+str(self.display_settings))
+        self.odom_topic=param('odom_topic','/localization/kinematic_state')
         image_topic = param('image_topic', '/sensing/camera/front/fisheye/image_raw')
         compressed = param('compressed', False)
         reliability = param('image_reliability', 'best_effort')
@@ -150,10 +167,18 @@ class RoadNode(Node):
         # raw_image_cdr: take the serialized image and view its pixel array in place; building a Python
         # Image (6 MB) and converting it costs several milliseconds per frame.
         self.raw_cdr=param('raw_image_cdr',False) and not compressed;self.raw_shape=None
-        if self.raw_cdr:self.create_subscription(Image,image_topic,self.on_image_cdr,image_qos,raw=True)
+        if self.image_in_worker:
+            from .rt_worker import RosWorker
+            self.projector.initialize(*self.projector.size)
+            self.compute_worker=RosWorker(self.projector,self.detector.c,backend,self.image_roi_bottom,threads,self.worker_extras,self.worker_display,
+                dict(image_topic=image_topic,reliability=reliability,odom_topic=self.odom_topic,
+                     world_frame=self.world_frame,base_frame=self.base_frame,odom_max_gap_sec=self.timeline.max_gap,
+                     debug_hz=self.debug_hz if self.debug else 0.,overlay_max_width=self.overlay_max_width))
+            self.result_worker=threading.Thread(target=self.take_results,name='road-perception-results',daemon=True);self.result_worker.start()
+        elif self.raw_cdr:self.create_subscription(Image,image_topic,self.on_image_cdr,image_qos,raw=True)
         else:self.create_subscription(CompressedImage if compressed else Image, image_topic, self.on_compressed if compressed else self.on_image, image_qos)
         # Best effort accepts both reliable and best-effort odometry publishers.
-        self.create_subscription(Odometry, param('odom_topic', '/localization/kinematic_state'), self.on_odom, QoSProfile(depth=200, reliability=ReliabilityPolicy.BEST_EFFORT))
+        self.create_subscription(Odometry, self.odom_topic, self.on_odom, QoSProfile(depth=200, reliability=ReliabilityPolicy.BEST_EFFORT))
         self.create_timer(0.02, self.timer_flush, clock=Clock(clock_type=ClockType.STEADY_TIME))
         if self.async_processing:
             self.worker=threading.Thread(target=self.work_images,name='road-image-worker',daemon=True);self.worker.start()
@@ -283,8 +308,8 @@ class RoadNode(Node):
                                                                     arrival_ns=begin,finish_ns=time.perf_counter_ns(),phases=getattr(self,'last_phases',{})))
 
     def display_points(self,points):
-        if self.display_error<=0 or len(points)<3:return points
-        return cv2.approxPolyDP(points.astype(np.float32),self.display_error,False).reshape(-1,2).astype(float)
+        from .display_filter import simplify
+        return simplify(points,self.display_error)
 
     def save_performance(self):
         if self.performance_path:
@@ -318,7 +343,9 @@ class RoadNode(Node):
             lanes=result['lanes'];binary=result['binary'];bev=result['bev'];markings=result.get('markings',[])
             self.detector.boundary_lanes=result['boundaries'];self.detector.measured_count=result['measured'];self.detector.predicted_count=result['predicted']
             self.detector.registration=result['registration'];self.detector.detector.diagnostics=result['diagnostics']
+            precomputed={k:result[k] for k in ('display','display_lanes','display_boundaries','display_published') if k in result}
             phase('detector')
+            if self.performance_path and 'worker_ms' in result:self.last_phases.update({'worker.'+k:v for k,v in result['worker_ms'].items()})
         else:
             bev = self.projector.warp(frame)
             valid=self.projector.valid.copy()
@@ -328,12 +355,36 @@ class RoadNode(Node):
             if isinstance(self.detector.detector,CarlaDetector):self.detector.detector.learned=self.learned.next(t,frame)
             lanes, binary = self.detector.process(bev, valid, t, pose)
             markings=self.extras.after(self.detector,bev,valid,pose) if self.extras is not None else []
+            precomputed={}
             phase('detector')
-        job=(frame,header,t,pose,lanes,self.detector.boundary_lanes,binary,bev,markings)
+        job=(frame,header,t,pose,lanes,self.detector.boundary_lanes,binary,bev,markings,precomputed)
         if self.output_jobs is not None:
             # The next frame's detection overlaps these outputs; frames stay in order and none is skipped.
             self.output_jobs.put(job);phase('handoff')
         else:self.publish_outputs(*job,phase)
+
+    def take_results(self):
+        """image_in_worker: each processed frame's result from the perception worker, in order."""
+        connection=self.compute_worker.connection
+        while not self.worker_stop.is_set():
+            try:
+                if not connection.poll(.05):continue
+                result=connection.recv()
+            except (EOFError,OSError):break
+            if 'error' in result:self.dropped+=1;self.get_logger().error('Perception worker: '+result['error'],throttle_duration_sec=5);continue
+            sec,nanosec=result['stamp'];header=Header(frame_id=result['frame_id']);header.stamp.sec=sec;header.stamp.nanosec=nanosec
+            t=sec+nanosec*1e-9
+            with self.state_lock:
+                self.last_image=t;self.frames+=1
+                self.detector.boundary_lanes=result['boundaries'];self.detector.measured_count=result['measured'];self.detector.predicted_count=result['predicted']
+                self.detector.registration=result['registration'];self.detector.detector.diagnostics=result['diagnostics']
+                precomputed={k:result[k] for k in ('display','display_lanes','display_boundaries','display_published','debug_frame','debug_scale') if k in result}
+                job=(None,header,t,result['pose'],result['lanes'],result['boundaries'],result['binary'],result['bev'],result['markings'],precomputed)
+                if self.output_jobs is not None:self.output_jobs.put(job)
+                else:self.publish_outputs(*job,lambda name:None)
+            if self.performance_path:
+                self.performance_rows.append(dict(stamp=t,receive_ns=result['receive_ns'],arrival_ns=result['start_ns'],finish_ns=result['computed_ns'],
+                                                  phases={'worker.'+k:v for k,v in result['worker_ms'].items()}))
 
     def output_loop(self):
         while not self.worker_stop.is_set() or not self.output_jobs.empty():
@@ -348,13 +399,19 @@ class RoadNode(Node):
             if self.performance_path:
                 stamp=job[1].stamp;self.output_rows[(stamp.sec,stamp.nanosec)]=dict(output_start_ns=start,output_finish_ns=time.perf_counter_ns(),output_phases=phases)
 
-    def publish_outputs(self,frame,header,t,pose,lanes,boundary_lanes,binary,bev,markings,phase):
-        display_lanes=[replace(lane,points=self.display_points(lane.points)) for lane in lanes]
-        boundaries=[replace(lane,points=self.display_points(lane.points)) for lane in boundary_lanes]
+    def publish_outputs(self,frame,header,t,pose,lanes,boundary_lanes,binary,bev,markings,precomputed,phase):
+        if 'display_lanes' in precomputed:display_lanes,boundaries=precomputed['display_lanes'],precomputed['display_boundaries']
+        else:
+            display_lanes=[replace(lane,points=self.display_points(lane.points)) for lane in lanes]
+            boundaries=[replace(lane,points=self.display_points(lane.points)) for lane in boundary_lanes]
         style_msg=self.style_message(lanes,header.stamp)
         # What the HUD draws goes out first: the display line when the filter runs here (fed the same
         # lanes as the markers below carry), then paint, styles and boundaries; segments and markings after.
-        if self.display_stage is not None:
+        if precomputed.get('display_published'):pass  # the worker has published the display topics
+        elif 'display' in precomputed:
+            shown=self.display_stage.messages(header.stamp,precomputed['display'])
+            self.display_pub.publish(shown[0]);self.display_style_pub.publish(shown[1]);phase('display_filter')
+        elif self.display_stage is not None:
             self.display_stage.on_styles(style_msg)
             shown=self.display_stage.on_lanes(header.stamp,[(l.side,l.points,l.reprojected) for l in boundaries if len(l.points)>=2],
                                               [(l.side,l.points) for l in display_lanes if not l.reprojected and len(l.points)>=2],self.pose_at)
@@ -366,13 +423,16 @@ class RoadNode(Node):
         self.local_pub.publish(self.array(display_lanes, header.stamp, self.base_frame, pose))
         self.marking_pub.publish(self.road_marking_markers(markings,header.stamp))
         phase('segments_markings')
-        if self.debug and (self.debug_hz==0 or t-self.last_debug>=1/self.debug_hz-1e-8):
+        # image_in_worker: the worker sends a frame (at the overlay size) with the frames to draw.
+        debug_frame,debug_scale=precomputed.get('debug_frame'),precomputed.get('debug_scale')
+        if debug_frame is not None or (frame is not None and self.debug and (self.debug_hz==0 or t-self.last_debug>=1/self.debug_hz-1e-8)):
             self.last_debug=t
+            if debug_frame is not None:frame=debug_frame
             if self.debug_jobs is not None:
                 # Drawing waits for the next frame's lanes otherwise; a busy drawer skips this one.
-                try:self.debug_jobs.put_nowait((frame,header,boundaries,display_lanes,markings,binary,bev))
+                try:self.debug_jobs.put_nowait((frame,header,boundaries,display_lanes,markings,binary,bev,debug_scale))
                 except queue.Full:pass
-            else:self.draw_debug(frame,header,boundaries,display_lanes,markings,binary,bev,phase)
+            else:self.draw_debug(frame,header,boundaries,display_lanes,markings,binary,bev,debug_scale,phase)
         phase('bev_debug')
         if not self.map_enabled:
             self.flush();return
@@ -385,12 +445,15 @@ class RoadNode(Node):
         while not self.worker_stop.is_set():
             try:job=self.debug_jobs.get(timeout=.1)
             except queue.Empty:continue
-            try:self.draw_debug(*job,lambda name:None)
+            try:self.draw_debug(*job,phase=lambda name:None)
             except Exception as exc:self.get_logger().error('Debug images: '+str(exc),throttle_duration_sec=5)
 
-    def draw_debug(self,frame,header,boundaries,display_lanes,markings,binary,bev,phase):
-        scale=min(1.,self.overlay_max_width/frame.shape[1]) if self.overlay_max_width else 1.
-        overlay=cv2.resize(frame,(round(frame.shape[1]*scale),round(frame.shape[0]*scale))) if scale<1 else frame.copy()
+    def draw_debug(self,frame,header,boundaries,display_lanes,markings,binary,bev,given_scale=None,phase=lambda name:None):
+        """given_scale: the frame is already reduced by it (image_in_worker)."""
+        if given_scale is not None:scale=given_scale;overlay=frame
+        else:
+            scale=min(1.,self.overlay_max_width/frame.shape[1]) if self.overlay_max_width else 1.
+            overlay=cv2.resize(frame,(round(frame.shape[1]*scale),round(frame.shape[0]*scale))) if scale<1 else frame.copy()
         label_candidates={}
         for lane_index,lane in enumerate(boundaries+display_lanes):
             pixels, visible = self.projector.image_points(lane.points)

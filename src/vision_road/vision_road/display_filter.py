@@ -303,6 +303,44 @@ class DisplayFilter:
         return out
 
 
+def simplify(points,error):
+    """The display polyline road_node publishes: Douglas-Peucker within error metres (0: unchanged)."""
+    import cv2
+    if error<=0 or len(points)<3:return points
+    return cv2.approxPolyDP(points.astype(np.float32),error,False).reshape(-1,2).astype(float)
+
+
+def lane_styles(lanes):
+    """road_node's /road/lane_styles content as the display filter reads it: per side the lane with the
+    highest style confidence (first on ties), observed ones only, confidence as the message's float32."""
+    unique={}
+    for lane in lanes:
+        if lane.side not in unique or lane.style_confidence>unique[lane.side].style_confidence:unique[lane.side]=lane
+    return [(lane.side,lane.style if lane.style in ('solid','dashed') else None,float(np.float32(lane.style_confidence)))
+            for lane in unique.values() if not lane.reprojected]
+
+
+class DisplayCore:
+    """The display filter's per-frame step without ROS: vehicle motion from consecutive poses and the
+    filter update.  road_node's perception worker runs it next to the detector (display_filter_in_worker)."""
+
+    def __init__(self,settings):
+        self.filter=DisplayFilter(settings);self.last_pose=None
+
+    def styles(self,t,styles):
+        for side,style,confidence in styles:self.filter.update_style(t,side,style,confidence)
+
+    def step(self,t,lines,pose,paint):
+        if self.filter.restarted(t):self.last_pose=None
+        motion=None
+        if pose is not None:
+            if self.last_pose is not None and t>self.last_pose[0]:motion=relative(self.last_pose[1],pose)
+            elif self.last_pose is None:motion=(0.,0.,0.)
+            self.last_pose=(t,pose)
+        self.filter.update(t,lines,motion,paint)
+        return self.filter.output()
+
+
 class DisplayStage:
     """The display filter on ROS messages, without a node: road_node can run it inline (display_filter_inline)
     and the lane_display_filter node wraps it.  Inputs are road_node's own topics; on_boundaries returns the
@@ -310,7 +348,7 @@ class DisplayStage:
 
     def __init__(self,settings,frame='base_link'):
         from vision_lane_interfaces.msg import LaneStyle
-        self.filter=DisplayFilter(settings);self.frame=frame;self.paint=None;self.last_pose=None
+        self.core=DisplayCore(settings);self.filter=self.core.filter;self.frame=frame;self.paint=None
         self.names={LaneStyle.SOLID:'solid',LaneStyle.DASHED:'dashed'};self.kinds={v:k for k,v in self.names.items()}
 
     def on_paint(self,msg):
@@ -349,23 +387,22 @@ class DisplayStage:
         return self.update(stamp,boundaries,pose_at)
 
     def update(self,stamp,lines,pose_at):
+        t=stamp.sec+stamp.nanosec*1e-9
+        if self.filter.restarted(t):self.core.last_pose=None
+        pose=pose_at(t)
+        paint=self.paint[1] if self.paint is not None and abs(self.paint[0]-t)<1e-6 else None
+        return self.messages(stamp,self.core.step(t,lines,pose,paint))
+
+    def messages(self,stamp,output):
+        """/road/lane_display_markers and /road/lane_display_styles for one frame's filter output."""
         from std_msgs.msg import Header
         from geometry_msgs.msg import Point
         from visualization_msgs.msg import Marker, MarkerArray
         from vision_lane_interfaces.msg import LaneStyle, LaneStyleArray
-        t=stamp.sec+stamp.nanosec*1e-9
-        if self.filter.restarted(t):self.last_pose=None
-        pose=pose_at(t);motion=None
-        if pose is not None:
-            if self.last_pose is not None and t>self.last_pose[0]:motion=relative(self.last_pose[1],pose)
-            elif self.last_pose is None:motion=(0.,0.,0.)
-            self.last_pose=(t,pose)
-        paint=self.paint[1] if self.paint is not None and abs(self.paint[0]-t)<1e-6 else None
-        self.filter.update(t,lines,motion,paint)
         out=MarkerArray();head=Header(stamp=stamp,frame_id=self.frame)
         clear=Marker();clear.header=head;clear.action=Marker.DELETEALL;out.markers.append(clear)
         styles=LaneStyleArray();styles.header=head;styles.camera_id='front'
-        for ident,(side,points,predicted,style) in enumerate(self.filter.output()):
+        for ident,(side,points,predicted,style) in enumerate(output):
             m=Marker();m.header=head;m.ns='display/'+side;m.id=ident;m.type=Marker.LINE_STRIP;m.action=Marker.ADD
             m.pose.orientation.w=1.;m.scale.x=.05;m.color.a=.9;m.color.g=1.;m.color.b=1.;m.color.r=1. if predicted else 0.
             m.lifetime.nanosec=300000000

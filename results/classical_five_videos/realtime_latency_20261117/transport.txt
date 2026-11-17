@@ -1,0 +1,4 @@
+1920x1080 (6.22 MB): received 300/300, mean 13.16 p95 14.56 max 32.73 ms
+1920x402 (2.32 MB): received 300/300, mean 4.87 p95 4.99 max 18.26 ms
+960x540 (1.56 MB): received 300/300, mean 3.21 p95 3.34 max 16.12 ms
+960x201 (0.58 MB): received 300/300, mean 1.54 p95 1.64 max 12.75 ms

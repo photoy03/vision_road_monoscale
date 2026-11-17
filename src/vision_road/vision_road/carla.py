@@ -2,7 +2,7 @@
 
 No fitted classifier, model weights or simulator map labels are used.
 """
-from dataclasses import replace
+from dataclasses import fields, replace
 import math
 import statistics
 import cv2
@@ -23,6 +23,16 @@ def centre_lines(mask,max_width):
     for j in range(w-1,-1,-1):right[:,j]=(right[:,j+1]+1)*m[:,j] if j<w-1 else m[:,j]
     width=left+right-1
     return mask&(np.abs(left-right)<=1)&(width<=max_width)
+
+
+LANE_FIELDS=tuple(f.name for f in fields(Lane))
+
+
+def clone(lane,**changes):
+    """dataclasses.replace(lane, **changes) for a Lane, without its per-call overhead (fields only, like replace)."""
+    new=object.__new__(Lane);values=new.__dict__
+    for name in LANE_FIELDS:values[name]=getattr(lane,name)
+    values.update(changes);return new
 
 
 def shifted(image, offset, axis=1):
@@ -70,19 +80,21 @@ class CarlaDetector(Detector):
 
     def binary(self,bev,valid):
         c=self.c
-        gray=cv2.cvtColor(bev,cv2.COLOR_BGR2GRAY).astype(np.float32)
+        self.gray_u8=cv2.cvtColor(bev,cv2.COLOR_BGR2GRAY)  # also the tracker's registration image for this BEV
+        gray=self.gray_u8.astype(np.float32)
         gray=cv2.GaussianBlur(gray,(3,3),.55);self.gray=gray
         h,l,s=cv2.split(cv2.cvtColor(bev,cv2.COLOR_BGR2HLS));self.light=l;self.saturation=s  # reused by road_markings
         b,g,r=cv2.split(bev.astype(np.float32))
         white=(s<120)&(l>c.carla_white_light_min)
         self.yellow=(h>=16)&(h<=42)&(s>20)&((g-b)>18)&((g-b)>.09*np.maximum(g,1))&((g-b)>1.25*(r-g))
+        relative=None
         if c.carla_yellow_relative_min>0:
             # Faint yellow (a pale map, or washed out by light): blue below red and green, measured against
             # the road around it, so a uniformly warm or bluish road is not yellow.
             yellowness=(r+g)/2-b;size=2*round(c.carla_yellow_relative_window_m/c.mpp/2)+1
-            road=cv2.medianBlur(np.clip(yellowness+128,0,255).astype(np.uint8),size).astype(np.float32)-128
-            self.yellow|=(yellowness>=c.carla_yellow_relative_min)&(yellowness-road>=c.carla_yellow_relative_min)
-        color=white|self.yellow
+            level=np.clip(yellowness+128,0,255).astype(np.uint8)
+            # The median filter is the slowest step here; with carla_parallel_ops it runs beside the ridges below.
+            relative=self.pool().submit(cv2.medianBlur,level,size) if c.carla_parallel_ops else cv2.medianBlur(level,size)
         response=np.zeros_like(gray)
         # Average both flanks at multiple paint widths. Preserve weak ridges;
         # subsequent geometry uses this same response rather than a second
@@ -96,6 +108,10 @@ class CarlaDetector(Detector):
             ridge=cv2.subtract(gray,side)
             eligible=(ridge>=c.carla_ridge_min)&(ridge>=c.carla_relative_min*cv2.max(side,25.))
             response=cv2.max(response,np.where(eligible,ridge,np.float32(0)))
+        if relative is not None:
+            road=(relative.result() if c.carla_parallel_ops else relative).astype(np.float32)-128
+            self.yellow|=(yellowness>=c.carla_yellow_relative_min)&(yellowness-road>=c.carla_yellow_relative_min)
+        color=white|self.yellow
         safe=cv2.erode(valid,np.ones((3,9),np.uint8))>0;self.valid_safe=safe.astype(np.uint8)
         raw=((response>0)&color&safe).astype(np.uint8)*255
         self.response=response;self.raw_mask=raw.copy()
@@ -130,6 +146,13 @@ class CarlaDetector(Detector):
         self.diagnostics=dict(raw_pixels=int(np.count_nonzero(self.raw_mask)),retained_pixels=int(np.count_nonzero(raw)),grid_pixels=int(np.count_nonzero(self.grid_mask)),candidates=[])
         if removed is not None:self.diagnostics['learned_outside_pixels']=removed
         return raw
+
+    def pool(self):
+        """Two threads for independent OpenCV steps (they release the interpreter lock)."""
+        if getattr(self,'_pool',None) is None:
+            from concurrent.futures import ThreadPoolExecutor
+            self._pool=ThreadPoolExecutor(max_workers=2,thread_name_prefix='lane-ops')
+        return self._pool
 
     def learned_gate(self,raw):
         """Paint away from the learned lane mask (crosswalk bars, arrows, text, patches) is
@@ -232,9 +255,11 @@ class CarlaDetector(Detector):
         count=int(np.count_nonzero(keep))
         if count<3:return False
         y=y[keep];x=x[keep]
-        left=float(gray[y,x-offset].sum()+gray[y,x-offset-1].sum())/(2*count)
-        right=float(gray[y,x+offset].sum()+gray[y,x+offset+1].sum())/(2*count)
-        center=float(gray[y,x].sum())/count;asymmetry=abs(left-right)
+        # One gather, one row per flank column; each row sums like the 1-D gathers it replaces.
+        sums=gray[y[None,:],x[None,:]+np.array([-offset,-offset-1,offset,offset+1,0])[:,None]].sum(axis=1)
+        left=float(sums[0]+sums[1])/(2*count)
+        right=float(sums[2]+sums[3])/(2*count)
+        center=float(sums[4])/count;asymmetry=abs(left-right)
         return asymmetry>=20. and center-max(left,right)<asymmetry/1.5
 
     def merge_strands(self,nodes,sample,smooth,yellow,side=None):
@@ -289,6 +314,7 @@ class CarlaDetector(Detector):
                 if groups and lo<=groups[-1]['hi']+.05:
                     g=groups[-1];g['hi']=max(g['hi'],hi);g['items'].append((a,value))
                 else:groups.append(dict(lo=lo,hi=hi,items=[(a,value)]))
+            built=[]
             for g in groups:
                 items=g['items']
                 if len(items)==1:
@@ -298,12 +324,18 @@ class CarlaDetector(Detector):
                     forward,measured=grouped_median(np.vstack([a['lane'].points for a,_ in items]))
                     mids=np.array([np.mean(a['lane'].points[:,0]) for a,_ in items]);values=np.array([v for _,v in items]);order=np.argsort(mids)
                     offset=interp(forward,mids[order],values[order])
-                # Each strand stays within half a BEV pixel of its measured paint.
-                lateral=np.clip(interp(forward,sample,smooth)+offset,measured-.45*self.c.mpp,measured+.45*self.c.mpp)
-                lane=replace(items[0][0]['lane'],points=np.column_stack([forward,lateral]),
-                             confidence=max(a['lane'].confidence for a,_ in items))
-                pixels=(np.concatenate([a['pixels'][0] for a,_ in items]),np.concatenate([a['pixels'][1] for a,_ in items]))
-                merged.append(dict(lane=lane,pixels=pixels))
+                built.append((items,forward,measured,offset))
+            if built:
+                # Each strand stays within half a BEV pixel of its measured paint: element-wise, so one call for all.
+                sizes=[len(f) for _,f,_,_ in built];half=.45*self.c.mpp
+                forward_all=np.concatenate([f for _,f,_,_ in built]);measured_all=np.concatenate([m for _,_,m,_ in built])
+                offset_all=np.concatenate([np.broadcast_to(o,len(f)) for _,f,_,o in built])
+                lateral_all=np.clip(interp(forward_all,sample,smooth)+offset_all,measured_all-half,measured_all+half)
+                for (items,forward,_,_),lateral in zip(built,np.split(lateral_all,np.cumsum(sizes)[:-1])):
+                    lane=clone(items[0][0]['lane'],points=np.column_stack([forward,lateral]),
+                               confidence=max(a['lane'].confidence for a,_ in items))
+                    pixels=(np.concatenate([a['pixels'][0] for a,_ in items]),np.concatenate([a['pixels'][1] for a,_ in items]))
+                    merged.append(dict(lane=lane,pixels=pixels))
         merged.sort(key=lambda a:a['lane'].points[0,0])
         if voted is not None:
             # Section by section: the 3 m neighbour medians, interpolated along the spine.
@@ -332,10 +364,13 @@ class CarlaDetector(Detector):
             y,x=a['pixels']
             # Paint pixels per BEV row, across the strand: one strand ~0.13 m, two touching ~0.4 m.
             if len(y) and len(y)/len(forward[i])*mpp/math.sqrt(1+slope*slope)>=half+.13:label[i]=0.
+        # Plain floats: the pair test below runs for every pair of fragments.
+        first=[float(f[0]) for f in forward];last=[float(f[-1]) for f in forward];wide=[l==0. for l in label]
         for i in range(len(nodes)):
+            if wide[i]:continue
             for j in range(i+1,len(nodes)):
-                if label[i]==0. or label[j]==0.:continue
-                lo=max(forward[i][0],forward[j][0]);hi=min(forward[i][-1],forward[j][-1])
+                if wide[j]:continue
+                lo=max(first[i],first[j]);hi=min(last[i],last[j])
                 if hi-lo<1.:continue
                 middle=(lo+hi)/2
                 if abs(abs((lines[i][0]-lines[j][0])*middle+lines[i][1]-lines[j][1])-gap)>.15:continue
@@ -806,15 +841,18 @@ class CarlaDetector(Detector):
             # own straight extrapolation suggested.
             support={side:[] for side in spines}
             members={id(a):side for side,value in spines.items() for a in value[4]}
+            # Plain floats for the per-fragment, per-side tests (numpy scalars cost more here than the tests).
+            reach={side:(float(value[0][0])-.15,float(value[0][-1])+.15) for side,value in spines.items()}
             for a in nodes:
                 pts=a['lane'].points;best=None;middle=len(pts)//2
+                lo,hi,mx,my=float(pts[0,0]),float(pts[-1,0]),float(pts[middle,0]),float(pts[middle,1])
                 for side,(sample,smooth,band,yellow_path,group) in spines.items():
                     if id(a) in members and members[id(a)]!=side:continue
                     if c.carla_path_filter_enabled:
-                        if a['yellow']!=yellow_path or pts[0,0]<sample[0]-.15 or pts[-1,0]>sample[-1]+.15:continue
+                        if a['yellow']!=yellow_path or lo<reach[side][0] or hi>reach[side][1]:continue
                     elif id(a) not in members:continue
                     # Cheap rejection before the robust median test.
-                    if abs(pts[middle,1]-interp(pts[middle,0],sample,smooth))>band+.30:continue
+                    if abs(my-interp(mx,sample,smooth))>band+.30:continue
                     error=float(median(np.abs(pts[:,1]-interp(pts[:,0],sample,smooth))))
                     if error<=band and (best is None or error<best[0]):best=(error,side)
                 if best is not None:support[best[1]].append(a)

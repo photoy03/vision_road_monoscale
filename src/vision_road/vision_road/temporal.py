@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 from numpy.core.multiarray import interp  # np.interp without its Python wrapper (hundreds of calls per frame)
 from .core import Detector, Lane, to_world, median
+from .carla import clone
 from .marking_style import classify_lane
 try:
     from . import _native
@@ -231,7 +232,7 @@ class TemporalDetector:
                 pixels=self.pixel(track.lane.points) @ matrix[:,:2].T+matrix[:,2]
                 points=self._visible(self.metric(pixels),valid)
                 if points is None: continue
-                prior=replace(track.lane,points=points,reprojected=False,source_time=track.last_observed)
+                prior=clone(track.lane,points=points,reprojected=False,source_time=track.last_observed)
                 priors[side]=prior
                 records[side]=Track(prior,track.last_observed,track.misses,track.travel+travel,track.style_candidate,track.style_streak,track.style_time)
         if hasattr(self.detector,'path_tracking'):
@@ -277,10 +278,17 @@ class TemporalDetector:
         if c.style_temporal_enabled:
             history=[]
             if matrix is not None:
-                for stamp,old_mask in self.paint_history:
-                    if 0<t-stamp<=c.style_history_sec:
-                        moved=cv2.warpAffine(old_mask,matrix,(valid.shape[1],valid.shape[0]),flags=cv2.INTER_NEAREST,borderMode=cv2.BORDER_CONSTANT)
-                        history.append((stamp,moved))
+                kept=[(stamp,old_mask) for stamp,old_mask in self.paint_history if 0<t-stamp<=c.style_history_sec]
+                move=lambda m:cv2.warpAffine(m,matrix,(valid.shape[1],valid.shape[0]),flags=cv2.INTER_NEAREST,borderMode=cv2.BORDER_CONSTANT)
+                masks=[m for _,m in kept]
+                if c.carla_parallel_ops:
+                    # Up to four masks per call as the channels of one image: nearest-neighbour warps each the same.
+                    moved=[]
+                    for i in range(0,len(masks),4):
+                        part=masks[i:i+4]
+                        moved.extend(cv2.split(move(cv2.merge(part))) if len(part)>1 else [move(part[0])])
+                else:moved=[move(m) for m in masks]
+                history.extend(zip([stamp for stamp,_ in kept],moved))
             history.append((float(t),style_binary.copy()))
             self.paint_history=history[-c.style_history_frames:]
             if len(self.paint_history)>=2:
@@ -301,7 +309,10 @@ class TemporalDetector:
                 if error<c.temporal_match_m:
                     matched=True
                     lane.hits=min(65535,old.lane.hits+1)
-                    overlap=(a[:,0]>=lo)&(a[:,0]<=hi)
+                    xs=a[:,0]
+                    # Sorted points (as observed lanes are): the overlap is one slice, the same elements in order.
+                    if (np.diff(xs)>=0).all():overlap=slice(int(np.searchsorted(xs,lo,'left')),int(np.searchsorted(xs,hi,'right')))
+                    else:overlap=(xs>=lo)&(xs<=hi)
                     weight=.95 if getattr(self.detector,'fragment_tracks',False) else .75
                     lane.points[overlap,1]=weight*a[overlap,1]+(1-weight)*interp(a[overlap,0],b[:,0],b[:,1])
             lane.source_time=float(t)
@@ -348,7 +359,7 @@ class TemporalDetector:
                     and old.lane.confidence>=getattr(self.detector,'minimum_prediction_confidence',0.)
                     and misses<=c.temporal_max_frames and age<=c.temporal_max_age_sec
                     and old.travel<=c.temporal_max_distance_m):
-                lane=replace(old.lane,confidence=old.lane.confidence*math.exp(-(t-self.last_time)/.20),reprojected=True,source_time=old.last_observed,style_confidence=old.lane.style_confidence*math.exp(-(t-self.last_time)/.20))
+                lane=clone(old.lane,confidence=old.lane.confidence*math.exp(-(t-self.last_time)/.20),reprojected=True,source_time=old.last_observed,style_confidence=old.lane.style_confidence*math.exp(-(t-self.last_time)/.20))
                 points=self._visible(lane.points,final_valid)
                 if points is None:continue
                 lane.points=points
@@ -371,6 +382,8 @@ class TemporalDetector:
                     filtered.append(lane)
             result=filtered
         self.tracks=tracks; self.last_pose=pose; self.last_time=float(t)
-        self.gray=cv2.cvtColor(bev,cv2.COLOR_BGR2GRAY); self.valid=valid.copy()
+        # The detector converted this same BEV to grey already (when it made the paint mask this frame).
+        same=paint_mask is None and getattr(self.detector,'gray_u8',None) is not None
+        self.gray=self.detector.gray_u8 if same else cv2.cvtColor(bev,cv2.COLOR_BGR2GRAY); self.valid=valid.copy()
         self.measured_count=sum(not l.reprojected for l in result); self.predicted_count=sum(l.reprojected for l in result)
         return result,binary

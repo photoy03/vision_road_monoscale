@@ -65,6 +65,7 @@ class Settings:
     carla_tail_gap_m: float = 0.0  # >0: after a paint gap this long that holds a transverse bar (stop line), a chain is cut where it continues off its own near shape
     carla_tail_offset_m: float = 0.5  # ... by more than this (a line ending at a junction picks up the crossing road's edge)
     carla_tail_bar_m: float = 1.0  # transverse paint at least this wide counts as a bar
+    carla_parallel_ops: bool = False  # True: independent OpenCV steps (median filter, history warps) on two threads; same results
     carla_turn_curvature: float = 0.0  # >0: while the vehicle turns this sharply (1/m, over its last metre), a candidate starting within 15 m is not taken
     carla_turn_angle_deg: float = 25.0  # ... when its first 2 m head against the turn and cross the vehicle's own arc at this angle (a crossing road's line)
     carla_turn_wrong_side_m: float = 0.3  # ... or when it starts this far on the other side of that arc
@@ -335,6 +336,11 @@ def median(values):
     a=np.asarray(values,dtype=float).ravel();n=a.size
     if n==0:return np.float64(np.nan)
     k=n//2
+    if n<=32:
+        # A short list sorts faster in Python than np.partition runs; a NaN (or inf-inf) in it goes the general way.
+        s=a.tolist()
+        if sum(s)==sum(s):
+            s.sort();return np.float64(s[k]) if n%2 else np.float64((s[k-1]+s[k])/2)
     if n%2:p=np.partition(a,k);m=p[k]
     else:p=np.partition(a,(k-1,k));m=(p[k-1]+p[k])/2
     return np.float64(np.nan) if np.isnan(p[-1]) else m

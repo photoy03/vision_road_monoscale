@@ -1,0 +1,22 @@
+## town05
+left  full: covered 10/20/25 m 0.784/0.483/0.361  paint reach median 24.6 m  std 10/20 m 2.42/4.27 cm
+left  half: covered 10/20/25 m 0.785/0.479/0.267  paint reach median 22.2 m  std 10/20 m 2.38/3.99 cm
+      |half-full| at 10 m: p50 0.8 p95 2.6 cm (1411 frames)
+      |half-full| at 20 m: p50 1.8 p95 4.6 cm (846 frames)
+      |half-full| at 25 m: p50 2.9 p95 14.9 cm (473 frames)
+right full: covered 10/20/25 m 0.793/0.667/0.495  paint reach median 26.9 m  std 10/20 m 2.0/5.22 cm
+right half: covered 10/20/25 m 0.790/0.661/0.387  paint reach median 24.9 m  std 10/20 m 1.97/5.26 cm
+      |half-full| at 10 m: p50 0.5 p95 2.4 cm (1426 frames)
+      |half-full| at 20 m: p50 0.9 p95 5.1 cm (1176 frames)
+      |half-full| at 25 m: p50 0.6 p95 2.4 cm (685 frames)
+## maploop
+left  full: covered 10/20/25 m 0.661/0.595/0.496  paint reach median 32.6 m  std 10/20 m 1.57/3.85 cm
+left  half: covered 10/20/25 m 0.664/0.521/0.445  paint reach median 30.9 m  std 10/20 m 1.57/3.97 cm
+      |half-full| at 10 m: p50 1.1 p95 2.6 cm (1187 frames)
+      |half-full| at 20 m: p50 2.7 p95 6.7 cm (930 frames)
+      |half-full| at 25 m: p50 3.2 p95 5.5 cm (755 frames)
+right full: covered 10/20/25 m 0.592/0.506/0.398  paint reach median 26.9 m  std 10/20 m 2.27/3.48 cm
+right half: covered 10/20/25 m 0.585/0.454/0.388  paint reach median 25.7 m  std 10/20 m 2.12/3.06 cm
+      |half-full| at 10 m: p50 1.0 p95 4.8 cm (1016 frames)
+      |half-full| at 20 m: p50 1.2 p95 5.5 cm (801 frames)
+      |half-full| at 25 m: p50 1.2 p95 4.5 cm (676 frames)

@@ -138,3 +138,44 @@ def test_realtime_path_raw_image_inline_display_and_output_thread(tmp_path):
     rows=__import__('json').loads(report.read_text())['records']
     assert rows and all(r['receive_ns'] is not None and r['receive_ns']<=r['arrival_ns'] for r in rows)
     assert all('output_finish_ns' in r for r in rows)
+
+
+def test_image_in_worker_publishes_display_and_lane_topics(tmp_path):
+    """image_in_worker: the perception worker takes the camera and odometry itself and publishes the display;
+    road_node still publishes the boundaries, both for every frame in order, with the timing report filled."""
+    report=tmp_path/'timing.json'
+    rclpy.init(args=['--ros-args','-p','detector_backend:=carla','-p','isolated_compute:=true','-p','image_in_worker:=true',
+                     '-p','display_filter_inline:=true','-p','display_filter_in_worker:=true','-p','display_publish_in_worker:=true',
+                     '-p','output_thread:=true','-p','image_topic:=/test/worker_image','-p','image_reliability:=reliable',
+                     '-p','odom_topic:=/test/worker_odom','-p','carla_chain_confirm_frames:=1','-p','performance_report:='+str(report)])
+    road=RoadNode();reader=Node('road_worker_reader');executor=SingleThreadedExecutor()
+    executor.add_node(road);executor.add_node(reader)
+    from sensor_msgs.msg import Image
+    from cv_bridge import CvBridge
+    shown,boundaries=[],[]
+    reader.create_subscription(MarkerArray,'/road/lane_display_markers',shown.append,10)
+    reader.create_subscription(MarkerArray,'/road/lane_boundary_markers',boundaries.append,10)
+    images=reader.create_publisher(Image,'/test/worker_image',10);odometry=reader.create_publisher(Odometry,'/test/worker_odom',10)
+    def pump(duration):
+        until=time.monotonic()+duration
+        while time.monotonic()<until:executor.spin_once(timeout_sec=.01)
+    try:
+        assert road.image_in_worker and road.compute_worker is not None
+        frame=cv2.imread(str(Path(__file__).resolve().parents[1]/'artifacts/synthetic_camera.png'));pump(1.)
+        stamps=[]
+        for k in range(10):
+            t=30.+k*.1;stamp=Time(sec=int(t),nanosec=round((t-int(t))*1e9))
+            msg=Odometry();msg.header=Header(stamp=stamp,frame_id='map');msg.child_frame_id='base_link'
+            msg.pose.pose.orientation.w=1.;msg.pose.pose.position.x=2.+k*.5;odometry.publish(msg);pump(.02)
+            image=CvBridge().cv2_to_imgmsg(frame,'bgr8');image.header=Header(stamp=stamp,frame_id='camera')
+            images.publish(image);stamps.append((stamp.sec,stamp.nanosec));pump(.3)
+        pump(1.)
+        got=[(m.markers[0].header.stamp.sec,m.markers[0].header.stamp.nanosec) for m in shown]
+        assert got==sorted(got) and set(got)<=set(stamps) and len(got)>=8
+        assert any(m.ns.startswith('display/') for msg in shown[-3:] for m in msg.markers)
+        assert [(m.markers[0].header.stamp.sec,m.markers[0].header.stamp.nanosec) for m in boundaries]==got
+    finally:
+        road.stop_processing();road.save_performance()
+        executor.shutdown();road.destroy_node();reader.destroy_node();rclpy.shutdown()
+    rows=__import__('json').loads(report.read_text())['records']
+    assert rows and all(r['receive_ns']<=r['arrival_ns']<=r['finish_ns'] for r in rows)
