@@ -41,6 +41,12 @@ def shifted(image, offset, axis=1):
     return np.take(image,indices,axis=axis)
 
 
+def quantiles(values,qs):
+    """Nearest-rank quantiles of a small array (np.percentile costs ~30 us a call)."""
+    v=np.sort(values);n=len(v)-1
+    return [float(v[int(q*n+.5)]) for q in qs]
+
+
 def grouped_median(points):
     """Exact row medians without one Python/NumPy reduction per BEV row."""
     forward,inverse,counts=np.unique(points[:,0],return_inverse=True,return_counts=True)
@@ -77,6 +83,8 @@ class CarlaDetector(Detector):
         self.pose=None  # (odometer m, x, y, yaw) of this frame, set by TemporalDetector when odometry is available
         self.learned=None  # BEV learned lane mask for the current frame, set by the caller (optional)
         self.learned_outside=None;self.replaced_paint=None
+        self.outer_candidates=[]  # carla_outer_enabled: this frame's neighbouring lane outer lines (side 'left_outer'/'right_outer')
+        self.outer_gap={};self.outer_paint=None  # side -> last chosen distance from the own line; this frame's paint before selection
 
     def binary(self,bev,valid):
         c=self.c
@@ -656,7 +664,7 @@ class CarlaDetector(Detector):
         """Drop frame-to-frame memory after a time jump or reset."""
         self.last_spines={};self.lane_width=3.3;self.strand_gap={};self.strand_memory={}
         self.tracking_priors={};self.path_tracking.reset()
-        self.turn_history=[]
+        self.turn_history=[];self.outer_gap={};self.outer_candidates=[]
 
     def coherent_paths(self,nodes):
         """DAG maximum-support paths; an attached branch cannot pull the fit.
@@ -742,6 +750,100 @@ class CarlaDetector(Detector):
             chosen[side]=path
         return chosen
 
+    def outer_lines(self,fragments,own,own_yellow):
+        """Each side's neighbouring lane outer line: leftover paint about a lane width outside the own line, parallel to it.
+
+        The distance is measured along the own line's normal at every paint point, not at one
+        station, so it holds in a curve; a fragment whose distance changes along it (more than
+        carla_outer_parallel_m) is not parallel and is left out, and so is a group whose
+        fragments disagree by more.  The distance must also be within carla_outer_width_miss_m
+        of the own lane width.  Among the groups the most paint wins, less the distance's miss
+        from the own lane width, plus a bonus for last frame's distance.  The line is the own
+        line moved out by that distance: over its paint, and up to carla_outer_extend_m past it
+        where the own line is (the own line straightened past its ends only to measure paint
+        there).  No own line, no outer line.
+        """
+        c=self.c;result=[];gaps={}
+        if not fragments or not own:
+            self.outer_gap={};return result
+        sampled={}
+        def few(j):
+            # About 8 points a fragment: enough for a median and a spread.
+            if j not in sampled:q=fragments[j]['lane'].points;sampled[j]=q[::max(1,len(q)//8)]
+            return sampled[j]
+        lengths=np.array([float(a['lane'].points[-1,0]-a['lane'].points[0,0]) for a in fragments])
+        yellow=np.array([bool(a['yellow']) for a in fragments])
+        mid=np.array([a['lane'].points[len(a['lane'].points)//2] for a in fragments])
+        ext=c.carla_outer_extend_m;low=max(c.carla_outer_gap_min_m,self.lane_width-c.carla_outer_width_miss_m)
+        high=min(c.carla_outer_gap_max_m,self.lane_width+c.carla_outer_width_miss_m)
+        for side,(sample,smooth) in own.items():
+            if len(sample)<2 or sample[-1]-sample[0]<1.:continue
+            sign=1. if side=='left' else -1.
+            x=np.arange(sample[0]-ext,sample[-1]+ext+1e-9,.5);y=interp(x,sample,smooth)
+            # Straight past both ends, along the end directions (over about 1 m).
+            k=max(1,min(len(sample)-1,round(1./max(float(sample[1]-sample[0]),1e-3))))  # samples in about 1 m
+            before=x<sample[0];after=x>sample[-1]
+            y[before]=smooth[0]+(x[before]-sample[0])*(smooth[k]-smooth[0])/(sample[k]-sample[0])
+            y[after]=smooth[-1]+(x[after]-sample[-1])*(smooth[-1]-smooth[-1-k])/(sample[-1]-sample[-1-k])
+            # Cheap lateral test first (a curve's lateral offset exceeds its normal one, up to the +-6 m view).
+            lateral=sign*(mid[:,1]-interp(mid[:,0],x,y))
+            near=np.flatnonzero((lateral>=.8*low)&(lateral<=2.*high)&(mid[:,0]>=x[0]-1.)&(mid[:,0]<=x[-1]+1.))
+            if not len(near):continue
+            Q=np.column_stack([x,y]);dy=np.gradient(y,.5);T=np.column_stack([np.ones(len(x)),dy])/np.sqrt(1.+dy*dy)[:,None];N=np.column_stack([-T[:,1],T[:,0]])
+            parts=[few(j) for j in near];counts=np.array([len(q) for q in parts])
+            # Nearest own-line sample: within +-8 samples (4 m) of the same forward distance, enough
+            # for a 4.7 m offset at 60 degrees of heading.
+            p=np.vstack(parts);base=np.clip(np.rint((p[:,0]-x[0])/.5).astype(int),0,len(x)-1)
+            window=np.clip(base[:,None]+np.arange(-8,9),0,len(x)-1);D=p[:,None,:]-Q[window]
+            nearest=window[np.arange(len(p)),np.argmin(D[...,0]**2+D[...,1]**2,axis=1)]
+            d=p-Q[nearest];along=np.abs(d[:,0]*T[nearest,0]+d[:,1]*T[nearest,1]);gap=sign*(d[:,0]*N[nearest,0]+d[:,1]*N[nearest,1])
+            ok=along<=.3;edges=np.r_[0,np.cumsum(counts)]
+            # Per fragment p10/p50/p90 of its usable points, all fragments at once (nearest rank).
+            owner=np.repeat(np.arange(len(near)),counts);order=np.lexsort((np.where(ok,gap,1e9),owner))
+            ranked=np.where(ok,gap,1e9)[order];valid=np.add.reduceat(ok.astype(int),edges[:-1]);start=edges[:-1]
+            q=lambda f:ranked[start+(f*np.maximum(valid-1,0)+.5).astype(int)]
+            lo,middle,hi=q(.1),q(.5),q(.9)
+            good=(valid>=3)&(middle>=low)&(middle<=high)&(hi-lo<=c.carla_outer_parallel_m)
+            frag=[(near[n],float(middle[n]),slice(edges[n],edges[n+1])) for n in np.flatnonzero(good)]
+            best=None;prior=self.outer_gap.get(side)
+            if frag:
+                # Groups around each fragment's distance, ranked by a paint-weighted estimate; the best
+                # ones are then checked on all their points (spread) in that order.
+                ids=np.array([j for j,_,_ in frag]);mids=np.array([g for _,g,_ in frag]);lens=lengths[ids];yel=yellow[ids]
+                width=c.carla_outer_cluster_m*np.where(yel,1.75,1.)
+                member=(np.abs(mids[None,:]-mids[:,None])<=width[:,None])&(yel[None,:]==yel[:,None])
+                paint=member@lens;centre=(member@(lens*mids))/np.maximum(paint,1e-9)
+                score=paint-np.abs(centre-self.lane_width)
+                if prior is not None:score=score+2.*(np.abs(centre-prior)<=c.carla_outer_keep_m)
+                for i in np.argsort(-score,kind='stable')[:4]:
+                    if paint[i]<c.carla_outer_min_paint_m:break
+                    members=[(ids[m],frag[m][2]) for m in np.flatnonzero(member[i])]
+                    values=np.concatenate([gap[sl][ok[sl]] for _,sl in members])
+                    lo,middle,hi=quantiles(values,(.1,.5,.9))
+                    if hi-lo>c.carla_outer_parallel_m*(1.5 if yel[i] else 1.):continue
+                    best=(float(score[i]),members,middle,float(paint[i]));break
+            if best is None:continue
+            _,members,centre,paint=best
+            take=np.concatenate([np.arange(sl.start,sl.stop)[ok[sl]] for _,sl in members])
+            stations=x[nearest[take]];values=gap[take];lo,hi=float(stations.min()),float(stations.max())
+            if hi-lo<c.carla_outer_min_paint_m:continue
+            if hi-lo>=8.:
+                sm=stations.mean();vm=values.mean();slope=float(((stations-sm)*(values-vm)).sum()/((stations-sm)**2).sum());offset=vm-slope*sm
+                width=np.clip(slope*x+offset,*quantiles(values,(.1,.9)))
+            else:width=np.full(len(x),centre)
+            keep=((x>=lo-ext)&(x<=hi+ext)&(x>=sample[0])&(x<=sample[-1]))|((x>=lo)&(x<=hi))
+            points=Q[keep]+sign*width[keep,None]*N[keep]
+            points=points[np.argsort(points[:,0],kind='stable')]
+            if len(points)<3:continue
+            line_yellow=bool(yellow[members[0][0]])
+            lane=Lane(side+'_outer',points,.8)
+            lane.corridor_m=.45 if line_yellow else c.carla_chain_band_m
+            lane.gap_m=centre;lane.paint_m=paint;lane.observed=(lo,hi);lane.yellow=line_yellow
+            lane.opposite=bool(own_yellow.get(side,False))
+            gaps[side]=centre;result.append(lane)
+        self.outer_gap=gaps
+        return result
+
     def paint_fragments(self,mask):
         """Publish observed paint fragments rather than a whole-road fitted arc.
 
@@ -749,13 +851,21 @@ class CarlaDetector(Detector):
         Local row medians retain curved paint without extrapolation.
         """
         c=self.c;tile=max(8,round(2./c.mpp));lanes=[];nodes=[];selected=np.zeros_like(mask);self.frame_index+=1
-        self.boundary_candidates=[]
+        self.boundary_candidates=[];self.outer_candidates=[]
+        # Outer lines only: near fragments farther out than the own lines may start. They never
+        # enter the own line selection below, which sees exactly the fragments it did without them.
+        outer=c.carla_outer_enabled;extra=[]
+        if outer:self.outer_paint=mask.copy()
+        def far_out(anchor,hi):
+            return c.forward_max-hi*c.mpp<=8. and not .65<=abs(anchor)<=4.2
         if c.carla_native_enabled and _native is not None:
-            for points,m,b,lo,hi,width,yellow,y,x in _native.extract_fragments(mask,self.yellow,c.mpp,c.forward_max,c.lateral_min):
+            for points,m,b,lo,hi,width,yellow,y,x in _native.extract_fragments(mask,self.yellow,c.mpp,c.forward_max,c.lateral_min,c.carla_outer_reach_m if outer else 4.2):
                 anchor=c.lateral_min+(m*((c.forward_max-3.)/c.mpp)+b)*c.mpp
                 if not yellow and self.edge_like(y,x):continue
                 lane=Lane('left' if anchor<0 else 'right',points,min(.95,max(.55,.9-width*2.)))
-                nodes.append(dict(lane=lane,fit=(m,b),lo=lo,hi=hi,yellow=yellow,pixels=(y,x),parent=len(nodes),anchor=anchor))
+                node=dict(lane=lane,fit=(m,b),lo=lo,hi=hi,yellow=yellow,pixels=(y,x),parent=len(nodes),anchor=anchor)
+                if outer and far_out(anchor,hi):extra.append(node)
+                else:nodes.append(node)
         else:
             for start in range(0,len(mask),tile):
                 part=mask[start:start+tile]
@@ -775,7 +885,8 @@ class CarlaDetector(Detector):
                     if axis_y2<.35**2 or normal_width>.10 or vy<=0:continue
                     slope=cov/vy;line=(slope,mx-slope*my)
                     anchor=c.lateral_min+(line[0]*((c.forward_max-3.)/c.mpp)+line[1])*c.mpp
-                    if c.forward_max-y.max()*c.mpp<=8. and not .65<=abs(anchor)<=4.2:continue
+                    beyond=c.forward_max-y.max()*c.mpp<=8. and not .65<=abs(anchor)<=4.2
+                    if beyond and not (outer and abs(anchor)<=c.carla_outer_reach_m):continue
                     rows=np.unique(y);cols=np.bincount(y,weights=x)[rows]/np.bincount(y)[rows]
                     residual=np.sort(np.abs(cols-(line[0]*rows+line[1])))
                     position=.9*(len(residual)-1);lower=int(position);fraction=position-lower
@@ -786,7 +897,9 @@ class CarlaDetector(Detector):
                     yellow=float(np.mean(self.yellow[y,x]))>.12
                     if not yellow and self.edge_like(y,x):continue
                     lane=Lane('left' if anchor<0 else 'right',points,confidence)
-                    nodes.append(dict(lane=lane,fit=line,lo=float(y.min()),hi=float(y.max()),yellow=yellow,pixels=(y,x),parent=len(nodes),anchor=anchor))
+                    node=dict(lane=lane,fit=line,lo=float(y.min()),hi=float(y.max()),yellow=yellow,pixels=(y,x),parent=len(nodes),anchor=anchor)
+                    if beyond:extra.append(node)
+                    else:nodes.append(node)
         if c.carla_path_filter_enabled and c.carla_chain_filter_enabled:
             groups=self.coherent_paths(nodes)
             if c.carla_tail_gap_m>0:groups={side:self.cut_tail(side,path) for side,path in groups.items()}
@@ -875,6 +988,10 @@ class CarlaDetector(Detector):
                 spine.corridor_m=band;remembered[side]=(sample,smooth+offset)
                 accepted_groups.append(merged);self.boundary_candidates.append(spine)
             self.last_spines=remembered
+            if outer:
+                used={id(a) for value in support.values() for a in value}|{id(a) for group in groups.values() for a in group}
+                self.outer_candidates=self.outer_lines([a for a in nodes+extra if id(a) not in used],remembered,
+                                                       {side:spines[side][3] for side in remembered})
         for group in accepted_groups:
             lanes.extend(a['lane'] for a in group)
             for a in group:selected[a['pixels']]=255

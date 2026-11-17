@@ -8,7 +8,7 @@ namespace py=pybind11;
 using Bytes=py::array_t<unsigned char,py::array::c_style|py::array::forcecast>;
 using Points=py::array_t<double,py::array::c_style|py::array::forcecast>;
 struct Fragment {std::vector<int>x,y;std::vector<double>points;double m,b,lo,hi,width;bool yellow;};
-py::list extract(Bytes mask,Bytes yellow,double mpp,double forward,double lateral){
+py::list extract(Bytes mask,Bytes yellow,double mpp,double forward,double lateral,double reach){
  auto mb=mask.request(),yb=yellow.request();
  if(mb.ndim!=2||yb.ndim!=2||mb.shape!=yb.shape||mpp<=0)throw std::invalid_argument("Invalid fragment images");
  int h=mb.shape[0],w=mb.shape[1],tile=std::max(8,int(std::nearbyint(2./mpp)));
@@ -30,9 +30,10 @@ py::list extract(Bytes mask,Bytes yellow,double mpp,double forward,double latera
    if(axis<.35*.35||normal>.10||vy<=0)continue;
    double m=cov/vy,b=mx-m*my,anchor=lateral+(m*((forward-3.)/mpp)+b)*mpp;
    // A straight extrapolation is only meaningful near the car; far curved
-   // fragments get their side from the chain they join.
+   // fragments get their side from the chain they join.  reach > 4.2 also keeps
+   // near fragments up to that far out (a neighbouring lane's outer line).
    bool near=forward-y.back()*mpp<=8.;
-   if(near&&(std::abs(anchor)<.65||std::abs(anchor)>4.2))continue;
+   if(near&&(std::abs(anchor)<.65||std::abs(anchor)>std::max(4.2,reach)))continue;
    int lo=y.front(),hi=y.back();std::vector<double>sums(hi-lo+1,0.);std::vector<int>nums(hi-lo+1,0);
    for(int k=0;k<n;++k){sums[y[k]-lo]+=x[k];nums[y[k]-lo]++;}
    std::vector<double> residual,pts;
@@ -66,4 +67,4 @@ py::list match(py::list current,py::list previous,py::list sides,py::list old_si
  std::sort(pairs.begin(),pairs.end(),[](const Item&a,const Item&b){if(a.error!=b.error)return a.error<b.error;if(a.i!=b.i)return a.i<b.i;return a.j<b.j;});std::vector<bool>useda(a.size()),usedb(b.size());py::list result;
  for(auto pair:pairs)if(!useda[pair.i]&&!usedb[pair.j]){useda[pair.i]=usedb[pair.j]=true;result.append(py::make_tuple(pair.i,pair.j));}return result;
 }
-PYBIND11_MODULE(_native,m){m.def("extract_fragments",&extract);m.def("visible",&visible);m.def("match_fragments",&match);}
+PYBIND11_MODULE(_native,m){m.def("extract_fragments",&extract,py::arg("mask"),py::arg("yellow"),py::arg("mpp"),py::arg("forward"),py::arg("lateral"),py::arg("reach")=4.2);m.def("visible",&visible);m.def("match_fragments",&match);}

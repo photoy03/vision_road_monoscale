@@ -1,0 +1,597 @@
+--- a/src/vision_road/vision_road/carla.py
++++ b/src/vision_road/vision_road/carla.py
+@@ -41,6 +41,12 @@
+     return np.take(image,indices,axis=axis)
+ 
+ 
++def quantiles(values,qs):
++    """Nearest-rank quantiles of a small array (np.percentile costs ~30 us a call)."""
++    v=np.sort(values);n=len(v)-1
++    return [float(v[int(q*n+.5)]) for q in qs]
++
++
+ def grouped_median(points):
+     """Exact row medians without one Python/NumPy reduction per BEV row."""
+     forward,inverse,counts=np.unique(points[:,0],return_inverse=True,return_counts=True)
+@@ -77,6 +83,8 @@
+         self.pose=None  # (odometer m, x, y, yaw) of this frame, set by TemporalDetector when odometry is available
+         self.learned=None  # BEV learned lane mask for the current frame, set by the caller (optional)
+         self.learned_outside=None;self.replaced_paint=None
++        self.outer_candidates=[]  # carla_outer_enabled: this frame's neighbouring lane outer lines (side 'left_outer'/'right_outer')
++        self.outer_gap={};self.outer_paint=None  # side -> last chosen distance from the own line; this frame's paint before selection
+ 
+     def binary(self,bev,valid):
+         c=self.c
+@@ -658,7 +666,7 @@
+         """Drop frame-to-frame memory after a time jump or reset."""
+         self.last_spines={};self.lane_width=3.3;self.strand_gap={};self.strand_memory={}
+         self.tracking_priors={};self.path_tracking.reset()
+-        self.turn_history=[]
++        self.turn_history=[];self.outer_gap={};self.outer_candidates=[]
+ 
+     def coherent_paths(self,nodes):
+         """DAG maximum-support paths; an attached branch cannot pull the fit.
+@@ -744,6 +752,100 @@
+             chosen[side]=path
+         return chosen
+ 
++    def outer_lines(self,fragments,own,own_yellow):
++        """Each side's neighbouring lane outer line: leftover paint about a lane width outside the own line, parallel to it.
++
++        The distance is measured along the own line's normal at every paint point, not at one
++        station, so it holds in a curve; a fragment whose distance changes along it (more than
++        carla_outer_parallel_m) is not parallel and is left out, and so is a group whose
++        fragments disagree by more.  The distance must also be within carla_outer_width_miss_m
++        of the own lane width.  Among the groups the most paint wins, less the distance's miss
++        from the own lane width, plus a bonus for last frame's distance.  The line is the own
++        line moved out by that distance: over its paint, and up to carla_outer_extend_m past it
++        where the own line is (the own line straightened past its ends only to measure paint
++        there).  No own line, no outer line.
++        """
++        c=self.c;result=[];gaps={}
++        if not fragments or not own:
++            self.outer_gap={};return result
++        sampled={}
++        def few(j):
++            # About 8 points a fragment: enough for a median and a spread.
++            if j not in sampled:q=fragments[j]['lane'].points;sampled[j]=q[::max(1,len(q)//8)]
++            return sampled[j]
++        lengths=np.array([float(a['lane'].points[-1,0]-a['lane'].points[0,0]) for a in fragments])
++        yellow=np.array([bool(a['yellow']) for a in fragments])
++        mid=np.array([a['lane'].points[len(a['lane'].points)//2] for a in fragments])
++        ext=c.carla_outer_extend_m;low=max(c.carla_outer_gap_min_m,self.lane_width-c.carla_outer_width_miss_m)
++        high=min(c.carla_outer_gap_max_m,self.lane_width+c.carla_outer_width_miss_m)
++        for side,(sample,smooth) in own.items():
++            if len(sample)<2 or sample[-1]-sample[0]<1.:continue
++            sign=1. if side=='left' else -1.
++            x=np.arange(sample[0]-ext,sample[-1]+ext+1e-9,.5);y=interp(x,sample,smooth)
++            # Straight past both ends, along the end directions (over about 1 m).
++            k=max(1,min(len(sample)-1,round(1./max(float(sample[1]-sample[0]),1e-3))))  # samples in about 1 m
++            before=x<sample[0];after=x>sample[-1]
++            y[before]=smooth[0]+(x[before]-sample[0])*(smooth[k]-smooth[0])/(sample[k]-sample[0])
++            y[after]=smooth[-1]+(x[after]-sample[-1])*(smooth[-1]-smooth[-1-k])/(sample[-1]-sample[-1-k])
++            # Cheap lateral test first (a curve's lateral offset exceeds its normal one, up to the +-6 m view).
++            lateral=sign*(mid[:,1]-interp(mid[:,0],x,y))
++            near=np.flatnonzero((lateral>=.8*low)&(lateral<=2.*high)&(mid[:,0]>=x[0]-1.)&(mid[:,0]<=x[-1]+1.))
++            if not len(near):continue
++            Q=np.column_stack([x,y]);dy=np.gradient(y,.5);T=np.column_stack([np.ones(len(x)),dy])/np.sqrt(1.+dy*dy)[:,None];N=np.column_stack([-T[:,1],T[:,0]])
++            parts=[few(j) for j in near];counts=np.array([len(q) for q in parts])
++            # Nearest own-line sample: within +-8 samples (4 m) of the same forward distance, enough
++            # for a 4.7 m offset at 60 degrees of heading.
++            p=np.vstack(parts);base=np.clip(np.rint((p[:,0]-x[0])/.5).astype(int),0,len(x)-1)
++            window=np.clip(base[:,None]+np.arange(-8,9),0,len(x)-1);D=p[:,None,:]-Q[window]
++            nearest=window[np.arange(len(p)),np.argmin(D[...,0]**2+D[...,1]**2,axis=1)]
++            d=p-Q[nearest];along=np.abs(d[:,0]*T[nearest,0]+d[:,1]*T[nearest,1]);gap=sign*(d[:,0]*N[nearest,0]+d[:,1]*N[nearest,1])
++            ok=along<=.3;edges=np.r_[0,np.cumsum(counts)]
++            # Per fragment p10/p50/p90 of its usable points, all fragments at once (nearest rank).
++            owner=np.repeat(np.arange(len(near)),counts);order=np.lexsort((np.where(ok,gap,1e9),owner))
++            ranked=np.where(ok,gap,1e9)[order];valid=np.add.reduceat(ok.astype(int),edges[:-1]);start=edges[:-1]
++            q=lambda f:ranked[start+(f*np.maximum(valid-1,0)+.5).astype(int)]
++            lo,middle,hi=q(.1),q(.5),q(.9)
++            good=(valid>=3)&(middle>=low)&(middle<=high)&(hi-lo<=c.carla_outer_parallel_m)
++            frag=[(near[n],float(middle[n]),slice(edges[n],edges[n+1])) for n in np.flatnonzero(good)]
++            best=None;prior=self.outer_gap.get(side)
++            if frag:
++                # Groups around each fragment's distance, ranked by a paint-weighted estimate; the best
++                # ones are then checked on all their points (spread) in that order.
++                ids=np.array([j for j,_,_ in frag]);mids=np.array([g for _,g,_ in frag]);lens=lengths[ids];yel=yellow[ids]
++                width=c.carla_outer_cluster_m*np.where(yel,1.75,1.)
++                member=(np.abs(mids[None,:]-mids[:,None])<=width[:,None])&(yel[None,:]==yel[:,None])
++                paint=member@lens;centre=(member@(lens*mids))/np.maximum(paint,1e-9)
++                score=paint-np.abs(centre-self.lane_width)
++                if prior is not None:score=score+2.*(np.abs(centre-prior)<=c.carla_outer_keep_m)
++                for i in np.argsort(-score,kind='stable')[:4]:
++                    if paint[i]<c.carla_outer_min_paint_m:break
++                    members=[(ids[m],frag[m][2]) for m in np.flatnonzero(member[i])]
++                    values=np.concatenate([gap[sl][ok[sl]] for _,sl in members])
++                    lo,middle,hi=quantiles(values,(.1,.5,.9))
++                    if hi-lo>c.carla_outer_parallel_m*(1.5 if yel[i] else 1.):continue
++                    best=(float(score[i]),members,middle,float(paint[i]));break
++            if best is None:continue
++            _,members,centre,paint=best
++            take=np.concatenate([np.arange(sl.start,sl.stop)[ok[sl]] for _,sl in members])
++            stations=x[nearest[take]];values=gap[take];lo,hi=float(stations.min()),float(stations.max())
++            if hi-lo<c.carla_outer_min_paint_m:continue
++            if hi-lo>=8.:
++                sm=stations.mean();vm=values.mean();slope=float(((stations-sm)*(values-vm)).sum()/((stations-sm)**2).sum());offset=vm-slope*sm
++                width=np.clip(slope*x+offset,*quantiles(values,(.1,.9)))
++            else:width=np.full(len(x),centre)
++            keep=((x>=lo-ext)&(x<=hi+ext)&(x>=sample[0])&(x<=sample[-1]))|((x>=lo)&(x<=hi))
++            points=Q[keep]+sign*width[keep,None]*N[keep]
++            points=points[np.argsort(points[:,0],kind='stable')]
++            if len(points)<3:continue
++            line_yellow=bool(yellow[members[0][0]])
++            lane=Lane(side+'_outer',points,.8)
++            lane.corridor_m=.45 if line_yellow else c.carla_chain_band_m
++            lane.gap_m=centre;lane.paint_m=paint;lane.observed=(lo,hi);lane.yellow=line_yellow
++            lane.opposite=bool(own_yellow.get(side,False))
++            gaps[side]=centre;result.append(lane)
++        self.outer_gap=gaps
++        return result
++
+     def paint_fragments(self,mask):
+         """Publish observed paint fragments rather than a whole-road fitted arc.
+ 
+@@ -751,13 +853,21 @@
+         Local row medians retain curved paint without extrapolation.
+         """
+         c=self.c;tile=max(8,round(2./c.mpp));lanes=[];nodes=[];selected=np.zeros_like(mask);self.frame_index+=1
+-        self.boundary_candidates=[]
++        self.boundary_candidates=[];self.outer_candidates=[]
++        # Outer lines only: near fragments farther out than the own lines may start. They never
++        # enter the own line selection below, which sees exactly the fragments it did without them.
++        outer=c.carla_outer_enabled;extra=[]
++        if outer:self.outer_paint=mask.copy()
++        def far_out(anchor,hi):
++            return c.forward_max-hi*c.mpp<=8. and not .65<=abs(anchor)<=4.2
+         if c.carla_native_enabled and _native is not None:
+-            for points,m,b,lo,hi,width,yellow,y,x in _native.extract_fragments(mask,self.yellow,c.mpp,c.forward_max,c.lateral_min):
++            for points,m,b,lo,hi,width,yellow,y,x in _native.extract_fragments(mask,self.yellow,c.mpp,c.forward_max,c.lateral_min,c.carla_outer_reach_m if outer else 4.2):
+                 anchor=c.lateral_min+(m*((c.forward_max-3.)/c.mpp)+b)*c.mpp
+                 if not yellow and self.edge_like(y,x):continue
+                 lane=Lane('left' if anchor<0 else 'right',points,min(.95,max(.55,.9-width*2.)))
+-                nodes.append(dict(lane=lane,fit=(m,b),lo=lo,hi=hi,yellow=yellow,pixels=(y,x),parent=len(nodes),anchor=anchor))
++                node=dict(lane=lane,fit=(m,b),lo=lo,hi=hi,yellow=yellow,pixels=(y,x),parent=len(nodes),anchor=anchor)
++                if outer and far_out(anchor,hi):extra.append(node)
++                else:nodes.append(node)
+         else:
+             for start in range(0,len(mask),tile):
+                 part=mask[start:start+tile]
+@@ -777,7 +887,8 @@
+                     if axis_y2<.35**2 or normal_width>.10 or vy<=0:continue
+                     slope=cov/vy;line=(slope,mx-slope*my)
+                     anchor=c.lateral_min+(line[0]*((c.forward_max-3.)/c.mpp)+line[1])*c.mpp
+-                    if c.forward_max-y.max()*c.mpp<=8. and not .65<=abs(anchor)<=4.2:continue
++                    beyond=c.forward_max-y.max()*c.mpp<=8. and not .65<=abs(anchor)<=4.2
++                    if beyond and not (outer and abs(anchor)<=c.carla_outer_reach_m):continue
+                     rows=np.unique(y);cols=np.bincount(y,weights=x)[rows]/np.bincount(y)[rows]
+                     residual=np.sort(np.abs(cols-(line[0]*rows+line[1])))
+                     position=.9*(len(residual)-1);lower=int(position);fraction=position-lower
+@@ -788,7 +899,9 @@
+                     yellow=float(np.mean(self.yellow[y,x]))>.12
+                     if not yellow and self.edge_like(y,x):continue
+                     lane=Lane('left' if anchor<0 else 'right',points,confidence)
+-                    nodes.append(dict(lane=lane,fit=line,lo=float(y.min()),hi=float(y.max()),yellow=yellow,pixels=(y,x),parent=len(nodes),anchor=anchor))
++                    node=dict(lane=lane,fit=line,lo=float(y.min()),hi=float(y.max()),yellow=yellow,pixels=(y,x),parent=len(nodes),anchor=anchor)
++                    if beyond:extra.append(node)
++                    else:nodes.append(node)
+         if c.carla_path_filter_enabled and c.carla_chain_filter_enabled:
+             groups=self.coherent_paths(nodes)
+             if c.carla_tail_gap_m>0:groups={side:self.cut_tail(side,path) for side,path in groups.items()}
+@@ -877,6 +990,10 @@
+                 spine.corridor_m=band;remembered[side]=(sample,smooth+offset)
+                 accepted_groups.append(merged);self.boundary_candidates.append(spine)
+             self.last_spines=remembered
++            if outer:
++                used={id(a) for value in support.values() for a in value}|{id(a) for group in groups.values() for a in group}
++                self.outer_candidates=self.outer_lines([a for a in nodes+extra if id(a) not in used],remembered,
++                                                       {side:spines[side][3] for side in remembered})
+         for group in accepted_groups:
+             lanes.extend(a['lane'] for a in group)
+             for a in group:selected[a['pixels']]=255
+--- a/src/vision_road/vision_road/temporal.py
++++ b/src/vision_road/vision_road/temporal.py
+@@ -80,6 +80,7 @@
+         self.paint_history=[];self.style_binary=None
+         self.next_fragment_id=0
+         self.boundaries={};self.boundary_lanes=[];self.confirmed_tracking={}
++        self.outer_state={};self.outer_lanes=[];self.outer_style={};self.outer_frames=0
+         self.detector.previous.clear(); self.detector.hits.clear()
+         if hasattr(self.detector,'forget'):self.detector.forget()
+ 
+@@ -219,6 +220,68 @@
+                 self.boundary_lanes.append(Lane(side,points,.6,hits=hits,reprojected=True,source_time=observed_time))
+         self.boundaries=current
+ 
++    def _outer(self,valid,matrix,t):
++        """Neighbouring lane outer lines, confirmed and blended frame to frame as _boundaries does
++        the own lines (same EMA, confirmation count and short carry-over), shown only beside a
++        confirmed own line of that side.  Style per side from this frame's paint along the line's
++        observed part, confirmed over two frames and held for style_hold_sec."""
++        c=self.c;previous=self.outer_state;current={};lanes=[];alpha=c.carla_spine_ema_alpha;self.outer_frames+=1
++        own={lane.side for lane in self.boundary_lanes}
++        paint=getattr(self.detector,'outer_paint',None)
++        for candidate in self.detector.outer_candidates:
++            points=self._visible(candidate.points,valid)
++            if points is None:continue
++            old=previous.get(candidate.side);hits=1
++            if old is not None and self.last_time is not None and 0<t-self.last_time<=max(.4,c.temporal_max_age_sec):
++                prior,old_hits,_,_=old
++                if matrix is not None:
++                    prior=self.metric(self.pixel(prior)@matrix[:,:2].T+matrix[:,2]);prior=prior[np.argsort(prior[:,0])]
++                lo=max(points[0,0],prior[0,0]);hi=min(points[-1,0],prior[-1,0])
++                if hi-lo>=.6:
++                    sample=np.linspace(lo,min(hi,lo+8.),20)
++                    error=median(np.abs(interp(sample,points[:,0],points[:,1])-interp(sample,prior[:,0],prior[:,1])))
++                    if error<=(.30 if matrix is not None else .60):
++                        hits=old_hits+1
++                        if matrix is not None:
++                            overlap=(points[:,0]>=lo)&(points[:,0]<=hi)
++                            points[overlap,1]=alpha*points[overlap,1]+(1-alpha)*interp(points[overlap,0],prior[:,0],prior[:,1])
++            current[candidate.side]=(points,hits,float(t),candidate)
++            if hits>=c.carla_chain_confirm_frames and candidate.side[:-6] in own:
++                lane=Lane(candidate.side,points,.8,hits=hits,source_time=float(t))
++                lane.outer=dict(gap_m=round(float(candidate.gap_m),3),yellow=candidate.yellow,opposite=candidate.opposite,
++                                observed=[round(float(v),2) for v in candidate.observed],paint_m=round(float(candidate.paint_m),2))
++                lanes.append(lane)
++        for side,(prior,hits,observed_time,candidate) in previous.items():
++            if side in current or t-observed_time>min(.15,c.temporal_max_age_sec):continue
++            if matrix is None:
++                current[side]=(prior,hits,observed_time,candidate);continue
++            points=self._visible(self.metric(self.pixel(prior)@matrix[:,:2].T+matrix[:,2]),valid)
++            if points is None:continue
++            current[side]=(points,hits,observed_time,candidate)
++            if hits>=c.carla_chain_confirm_frames and side[:-6] in own:
++                lane=Lane(side,points,.6,hits=hits,reprojected=True,source_time=observed_time)
++                lane.outer=dict(gap_m=round(float(candidate.gap_m),3),yellow=candidate.yellow,opposite=candidate.opposite,
++                                observed=[],paint_m=0.)
++                lanes.append(lane)
++        self.outer_state=current
++        # Style: this frame's evidence on the observed part, two agreeing frames, held while unknown.
++        for lane in lanes:
++            state=self.outer_style.get(lane.side,dict(kind='unknown',candidate='unknown',streak=0,time=-math.inf,confidence=0.))
++            evidence=None
++            # Every third frame, the two sides on different frames (the style changes slowly; two agreeing evidences, held 1 s).
++            if paint is not None and not lane.reprojected and ((self.outer_frames+(lane.side=='right_outer'))%3==0 or state['kind']=='unknown'):
++                lo,hi=lane.outer['observed'];p=lane.points[(lane.points[:,0]>=lo-.5)&(lane.points[:,0]<=hi+.5)]
++                if len(p)>=2 and p[-1,0]-p[0,0]>=c.style_min_span_m-1.:evidence=classify_lane(Lane(lane.side,p,.8),paint,valid,c)
++            if evidence is not None and evidence.kind!='unknown':
++                state['streak']=state['streak']+1 if state['candidate']==evidence.kind else 1;state['candidate']=evidence.kind
++                if state['streak']>=c.style_confirm_frames:
++                    state.update(kind=evidence.kind,time=float(t),confidence=evidence.confidence)
++            # Held at least over the frames between checks.
++            if state['kind']!='unknown' and t-state['time']>max(c.style_hold_sec,.2):state.update(kind='unknown',confidence=0.)
++            self.outer_style[lane.side]=state
++            lane.style=state['kind'];lane.style_confidence=state['confidence']
++        self.outer_lanes=lanes
++
+     def process(self,bev,valid,t,pose=None,observation_mask=None,paint_mask=None):
+         if self.last_time is not None and t<=self.last_time: self.reset()
+         c=self.c
+@@ -269,6 +332,7 @@
+         chain_filter=(getattr(self.detector,'fragment_tracks',False) and c.carla_chain_filter_enabled)
+         if chain_filter:
+             self._boundaries(final_valid,matrix,t)
++            if c.carla_outer_enabled:self._outer(final_valid,matrix,t)
+             if c.carla_tracking_enabled:
+                 for lane in self.boundary_lanes:
+                     if not lane.reprojected:self.confirmed_tracking[lane.side]=(lane.points.copy(),float(t))
+--- a/src/vision_road/vision_road/core.py
++++ b/src/vision_road/vision_road/core.py
+@@ -95,6 +95,16 @@
+     carla_width_reject_m: float = 0.0  # >0: a candidate this far off the lane width from the other side's tracked boundary is not taken
+     carla_yellow_relative_min: float = 0.0  # >0: paint whose yellowness (r+g)/2-b is this much above the local road level (and itself) is yellow
+     carla_yellow_relative_window_m: float = 1.5  # square window of the local road level (median)
++    carla_outer_enabled: bool = False  # also pick each side's neighbouring lane outer line from the paint left over (own lines unchanged)
++    carla_outer_reach_m: float = 6.0  # near fragments are kept this far out (lateral at 3 m) for it; the own lines still see only 0.65-4.2 m
++    carla_outer_gap_min_m: float = 2.3  # distance from the own line, along its normal
++    carla_outer_gap_max_m: float = 4.7
++    carla_outer_width_miss_m: float = 0.9  # ... and within this of the own lane width
++    carla_outer_parallel_m: float = 0.3  # the distance may vary at most this much along the outer paint (p10-p90)
++    carla_outer_cluster_m: float = 0.2  # fragments within this of one distance form one line
++    carla_outer_min_paint_m: float = 2.0  # paint along the line, at least
++    carla_outer_extend_m: float = 6.0  # past its paint the line follows the own line's shape this far
++    carla_outer_keep_m: float = 0.3  # a candidate within this of last frame's distance is preferred
+ 
+ 
+ class Projector:
+--- a/src/vision_road/vision_road/node.py
++++ b/src/vision_road/vision_road/node.py
+@@ -147,6 +147,11 @@
+         self.binary_pub = self.create_publisher(Image, '/parking/cpp/binary', qos_profile_sensor_data)
+         self.bev_pub = self.create_publisher(Image, '/parking/cpp/vector_bev', qos_profile_sensor_data)
+         self.overlay_pub = self.create_publisher(Image, '/road/overlay', qos_profile_sensor_data)
++        # carla_outer_enabled: the neighbouring lanes' outer lines, apart from the two own lines the HUD and display filter use.
++        self.outer_enabled=bool(getattr(self.detector.c,'carla_outer_enabled',False))
++        if self.outer_enabled:
++            self.outer_marker_pub=self.create_publisher(MarkerArray,'/road/lane_outer_markers',10)
++            self.outer_pub=self.create_publisher(String,'/road/lane_outer',10)
+         self.display_stage=None
+         if self.display_settings is not None:
+             from .display_filter import DisplayStage
+@@ -343,7 +348,7 @@
+             lanes=result['lanes'];binary=result['binary'];bev=result['bev'];markings=result.get('markings',[])
+             self.detector.boundary_lanes=result['boundaries'];self.detector.measured_count=result['measured'];self.detector.predicted_count=result['predicted']
+             self.detector.registration=result['registration'];self.detector.detector.diagnostics=result['diagnostics']
+-            precomputed={k:result[k] for k in ('display','display_lanes','display_boundaries','display_published') if k in result}
++            precomputed={k:result[k] for k in ('display','display_lanes','display_boundaries','display_published','outer') if k in result}
+             phase('detector')
+             if self.performance_path and 'worker_ms' in result:self.last_phases.update({'worker.'+k:v for k,v in result['worker_ms'].items()})
+         else:
+@@ -355,7 +360,7 @@
+             if isinstance(self.detector.detector,CarlaDetector):self.detector.detector.learned=self.learned.next(t,frame)
+             lanes, binary = self.detector.process(bev, valid, t, pose)
+             markings=self.extras.after(self.detector,bev,valid,pose) if self.extras is not None else []
+-            precomputed={}
++            precomputed=dict(outer=list(getattr(self.detector,'outer_lanes',[])))
+             phase('detector')
+         job=(frame,header,t,pose,lanes,self.detector.boundary_lanes,binary,bev,markings,precomputed)
+         if self.output_jobs is not None:
+@@ -378,7 +383,7 @@
+                 self.last_image=t;self.frames+=1
+                 self.detector.boundary_lanes=result['boundaries'];self.detector.measured_count=result['measured'];self.detector.predicted_count=result['predicted']
+                 self.detector.registration=result['registration'];self.detector.detector.diagnostics=result['diagnostics']
+-                precomputed={k:result[k] for k in ('display','display_lanes','display_boundaries','display_published','debug_frame','debug_scale') if k in result}
++                precomputed={k:result[k] for k in ('display','display_lanes','display_boundaries','display_published','debug_frame','debug_scale','outer') if k in result}
+                 job=(None,header,t,result['pose'],result['lanes'],result['boundaries'],result['binary'],result['bev'],result['markings'],precomputed)
+                 if self.output_jobs is not None:self.output_jobs.put(job)
+                 else:self.publish_outputs(*job,lambda name:None)
+@@ -419,6 +424,11 @@
+             phase('display_filter')
+         self.paint_marker_pub.publish(self.markers(display_lanes,header.stamp,'observed_paint'));self.style_pub.publish(style_msg)
+         self.boundary_marker_pub.publish(self.markers(boundaries,header.stamp,'boundary_fit'))
++        outer=[]
++        if self.outer_enabled:
++            outer=[replace(lane,points=self.display_points(lane.points)) for lane in precomputed.get('outer',[])]
++            for old,new in zip(precomputed.get('outer',[]),outer):new.outer=old.outer
++            self.publish_outer(outer,header.stamp,t)
+         phase('markers')
+         self.local_pub.publish(self.array(display_lanes, header.stamp, self.base_frame, pose))
+         self.marking_pub.publish(self.road_marking_markers(markings,header.stamp))
+@@ -430,9 +440,9 @@
+             if debug_frame is not None:frame=debug_frame
+             if self.debug_jobs is not None:
+                 # Drawing waits for the next frame's lanes otherwise; a busy drawer skips this one.
+-                try:self.debug_jobs.put_nowait((frame,header,boundaries,display_lanes,markings,binary,bev,debug_scale))
++                try:self.debug_jobs.put_nowait((frame,header,boundaries,display_lanes,markings,binary,bev,debug_scale,outer))
+                 except queue.Full:pass
+-            else:self.draw_debug(frame,header,boundaries,display_lanes,markings,binary,bev,debug_scale,phase)
++            else:self.draw_debug(frame,header,boundaries,display_lanes,markings,binary,bev,debug_scale,phase,outer)
+         phase('bev_debug')
+         if not self.map_enabled:
+             self.flush();return
+@@ -445,11 +455,12 @@
+         while not self.worker_stop.is_set():
+             try:job=self.debug_jobs.get(timeout=.1)
+             except queue.Empty:continue
+-            try:self.draw_debug(*job,phase=lambda name:None)
++            try:self.draw_debug(*job[:8],phase=lambda name:None,outer=job[8])
+             except Exception as exc:self.get_logger().error('Debug images: '+str(exc),throttle_duration_sec=5)
+ 
+-    def draw_debug(self,frame,header,boundaries,display_lanes,markings,binary,bev,given_scale=None,phase=lambda name:None):
+-        """given_scale: the frame is already reduced by it (image_in_worker)."""
++    def draw_debug(self,frame,header,boundaries,display_lanes,markings,binary,bev,given_scale=None,phase=lambda name:None,outer=()):
++        """given_scale: the frame is already reduced by it (image_in_worker).  outer: neighbouring lane
++        outer lines, magenta (carried over: dark magenta), labelled with style, colour and OPP."""
+         if given_scale is not None:scale=given_scale;overlay=frame
+         else:
+             scale=min(1.,self.overlay_max_width/frame.shape[1]) if self.overlay_max_width else 1.
+@@ -468,6 +479,21 @@
+             if lane_index<len(boundaries):continue
+             if lane.side not in label_candidates or np.ptp(lane.points[:,0])>np.ptp(label_candidates[lane.side][0].points[:,0]):label_candidates[lane.side]=(lane,pixels)
+         for lane,pixels in label_candidates.values():draw_style_label(overlay,lane,pixels)
++        for lane in outer:
++            pixels,visible=self.projector.image_points(lane.points);pixels*=scale
++            safe=visible&np.isfinite(pixels).all(axis=1)&(np.max(np.abs(pixels),axis=1)<1e6)
++            color=(110,0,110) if lane.reprojected else (255,0,255)
++            edges=np.flatnonzero(np.r_[True,np.diff(safe.astype(int))!=0,True])
++            for lo,hi in zip(edges[:-1],edges[1:]):
++                if safe[lo] and hi-lo>=2:cv2.polylines(overlay,[np.rint(pixels[lo:hi]).astype(np.int32)],False,color,3)
++            if safe.any():
++                anchor=pixels[safe][len(pixels[safe])//3];info=getattr(lane,'outer',{})
++                text=('L+1' if lane.side.startswith('left') else 'R+1')+':'+lane.style.upper()+(' Y' if info.get('yellow') else '')+(' OPP' if info.get('opposite') else '')
++                size,_=cv2.getTextSize(text,cv2.FONT_HERSHEY_SIMPLEX,.55,2)
++                x=int(anchor[0])-(size[0]+12 if lane.side.startswith('left') else -12);y=int(anchor[1])-10
++                x=max(2,min(overlay.shape[1]-size[0]-4,x));y=max(size[1]+4,min(overlay.shape[0]-4,y))
++                cv2.rectangle(overlay,(x-2,y-size[1]-3),(x+size[0]+2,y+3),(0,0,0),-1)
++                cv2.putText(overlay,text,(x,y),cv2.FONT_HERSHEY_SIMPLEX,.55,(255,0,255),2)
+         for mark in markings:
+             outline=mark['points'] if mark['kind']=='stop_line' else np.vstack([mark['points'],mark['points'][:1]])
+             dense=np.vstack([np.linspace(a,b,8) for a,b in zip(outline[:-1],outline[1:])])
+@@ -526,6 +552,36 @@
+             msg.markers.append(marker)
+         return msg
+ 
++    def publish_outer(self,lanes,stamp,t):
++        """/road/lane_outer_markers: one LINE_STRIP per outer line (ns outer/left_outer|right_outer, base_link,
++        magenta; color.r halved when carried over, yellow paint: color.g=1).
++        /road/lane_outer (std_msgs/String, JSON): per line side, base side, points [x, y] (base_link),
++        style solid|dashed|unknown, style_confidence, yellow, opposite_direction (the own line of that
++        side is yellow: the lane beyond it is oncoming), gap_m (distance from the own line along its
++        normal), observed_m (forward range of its paint this frame; [] when carried over), paint_m,
++        hits, reprojected.  The markers (RViz only) go out at the debug image rate, the JSON every frame."""
++        markers=self.debug_hz<=0 or t-getattr(self,'last_outer_markers',-math.inf)>=1/self.debug_hz-1e-8
++        msg=MarkerArray()
++        clear=Marker();clear.header=Header(stamp=stamp,frame_id=self.base_frame);clear.action=Marker.DELETEALL
++        msg.markers.append(clear);items=[]
++        for ident,lane in enumerate(lanes):
++            info=getattr(lane,'outer',{})
++            if markers:
++                marker=Marker();marker.header=clear.header;marker.ns='outer/'+lane.side;marker.id=ident
++                marker.type=Marker.LINE_STRIP;marker.action=Marker.ADD;marker.pose.orientation.w=1.;marker.scale.x=.05
++                marker.color.a=.9;marker.color.r=.5 if lane.reprojected else 1.;marker.color.b=1.;marker.color.g=1. if info.get('yellow') else 0.
++                marker.lifetime.nanosec=300000000
++                marker.text=lane.style+(' yellow' if info.get('yellow') else '')+(' opposite' if info.get('opposite') else '')
++                marker.points=[Point(x=float(p[0]),y=float(p[1]),z=.02) for p in lane.points]
++                msg.markers.append(marker)
++            items.append(dict(side=lane.side,base_side=lane.side[:-6],points=np.round(lane.points,3).tolist(),style=lane.style,
++                              style_confidence=round(float(lane.style_confidence),3),yellow=bool(info.get('yellow')),
++                              opposite_direction=bool(info.get('opposite')),gap_m=info.get('gap_m'),observed_m=info.get('observed',[]),
++                              paint_m=info.get('paint_m'),hits=int(lane.hits),reprojected=bool(lane.reprojected)))
++        if markers:
++            self.outer_marker_pub.publish(msg);self.last_outer_markers=t
++        self.outer_pub.publish(String(data=json.dumps(dict(stamp=stamp.sec+stamp.nanosec*1e-9,frame_id=self.base_frame,lanes=items),separators=(',',':'))))
++
+     def road_marking_markers(self,markings,stamp):
+         """Stop lines as a 2-point strip, crosswalks and other markings as a closed outline, base_link.
+         ns is the kind; color.r=1 marks a confirmed marking not seen this frame."""
+--- a/src/vision_road/vision_road/rt_worker.py
++++ b/src/vision_road/vision_road/rt_worker.py
+@@ -114,7 +114,7 @@
+                 markers.publish(out[0]);styles.publish(out[1]);shown['display_published']=True
+         # Time spent here, for the node's performance report (ms): warp, detector, display filter.
+         worker=dict(warp=(warped-begin)*1e3,detect=(detected-warped)*1e3,display=(time.perf_counter()-detected)*1e3)
+-        return dict(**shown,worker_ms=worker,lanes=lanes,binary=binary,bev=bev,boundaries=detector.boundary_lanes,markings=markings,
++        return dict(**shown,worker_ms=worker,lanes=lanes,binary=binary,bev=bev,boundaries=detector.boundary_lanes,markings=markings,outer=detector.outer_lanes,
+                     measured=detector.measured_count,predicted=detector.predicted_count,
+                     registration=detector.registration,diagnostics=getattr(detector.detector,'diagnostics',{}))
+ 
+--- a/src/vision_road/vision_road/native.cpp
++++ b/src/vision_road/vision_road/native.cpp
+@@ -8,7 +8,7 @@
+ using Bytes=py::array_t<unsigned char,py::array::c_style|py::array::forcecast>;
+ using Points=py::array_t<double,py::array::c_style|py::array::forcecast>;
+ struct Fragment {std::vector<int>x,y;std::vector<double>points;double m,b,lo,hi,width;bool yellow;};
+-py::list extract(Bytes mask,Bytes yellow,double mpp,double forward,double lateral){
++py::list extract(Bytes mask,Bytes yellow,double mpp,double forward,double lateral,double reach){
+  auto mb=mask.request(),yb=yellow.request();
+  if(mb.ndim!=2||yb.ndim!=2||mb.shape!=yb.shape||mpp<=0)throw std::invalid_argument("Invalid fragment images");
+  int h=mb.shape[0],w=mb.shape[1],tile=std::max(8,int(std::nearbyint(2./mpp)));
+@@ -30,9 +30,10 @@
+    if(axis<.35*.35||normal>.10||vy<=0)continue;
+    double m=cov/vy,b=mx-m*my,anchor=lateral+(m*((forward-3.)/mpp)+b)*mpp;
+    // A straight extrapolation is only meaningful near the car; far curved
+-   // fragments get their side from the chain they join.
++   // fragments get their side from the chain they join.  reach > 4.2 also keeps
++   // near fragments up to that far out (a neighbouring lane's outer line).
+    bool near=forward-y.back()*mpp<=8.;
+-   if(near&&(std::abs(anchor)<.65||std::abs(anchor)>4.2))continue;
++   if(near&&(std::abs(anchor)<.65||std::abs(anchor)>std::max(4.2,reach)))continue;
+    int lo=y.front(),hi=y.back();std::vector<double>sums(hi-lo+1,0.);std::vector<int>nums(hi-lo+1,0);
+    for(int k=0;k<n;++k){sums[y[k]-lo]+=x[k];nums[y[k]-lo]++;}
+    std::vector<double> residual,pts;
+@@ -66,4 +67,4 @@
+  std::sort(pairs.begin(),pairs.end(),[](const Item&a,const Item&b){if(a.error!=b.error)return a.error<b.error;if(a.i!=b.i)return a.i<b.i;return a.j<b.j;});std::vector<bool>useda(a.size()),usedb(b.size());py::list result;
+  for(auto pair:pairs)if(!useda[pair.i]&&!usedb[pair.j]){useda[pair.i]=usedb[pair.j]=true;result.append(py::make_tuple(pair.i,pair.j));}return result;
+ }
+-PYBIND11_MODULE(_native,m){m.def("extract_fragments",&extract);m.def("visible",&visible);m.def("match_fragments",&match);}
++PYBIND11_MODULE(_native,m){m.def("extract_fragments",&extract,py::arg("mask"),py::arg("yellow"),py::arg("mpp"),py::arg("forward"),py::arg("lateral"),py::arg("reach")=4.2);m.def("visible",&visible);m.def("match_fragments",&match);}
+--- a/src/vision_road/config/carla.yaml
++++ b/src/vision_road/config/carla.yaml
+@@ -66,6 +66,10 @@
+     carla_turn_curvature: 0.03
+     # Real time: the median filter and the paint-history warps run on a second thread (same results).
+     carla_parallel_ops: true
++    # Neighbouring lanes (Town05): after the two own lines are chosen (unchanged), each side's next line out,
++    # from the paint they left: 2.3-4.7 m (and within 0.9 m of the own lane width) outside the own line along
++    # its normal, parallel to it (distance varies <= 0.3 m).  /road/lane_outer, /road/lane_outer_markers.
++    carla_outer_enabled: true
+     # Real time: only the newest image waits (a slow frame drops the older one, latency does not pile up),
+     # and the image is read in place from its serialized form.
+     image_job_depth: 1
+--- a/tests/test_outer_lines.py
++++ b/tests/test_outer_lines.py
+@@ -0,0 +1,103 @@
++"""Plan 19: neighbouring lane outer lines (carla_outer_enabled)."""
++from dataclasses import replace
++import numpy as np
++import pytest
++from vision_road.core import Settings
++from vision_road.carla import CarlaDetector
++from vision_road.temporal import TemporalDetector
++
++MPP=.05
++
++
++def col(y):return round((6-y)/MPP)
++
++
++def row(x):return round((35-x)/MPP)
++
++
++def scene(left_outer=True,right_outer=True,right_own=True,diagonal=False):
++    """Own left yellow solid at +1.75 m, own right white dashes at -1.65 m, outer right white solid at
++    -5.15 m, outer left white dashes at +5.25 m (3.5 m lanes), 4-30 m ahead."""
++    c=Settings(forward_min=3,forward_max=35,lateral_min=-6,lateral_max=6,mpp=MPP,min_span_m=.4)
++    im=np.full((640,240,3),100,np.uint8)
++    im[row(30):row(4),col(1.75):col(1.75)+3]=(60,200,220)
++    if right_own:
++        for lo in range(4,30,4):im[row(lo+2):row(lo),col(-1.65):col(-1.65)+3]=220
++    if right_outer:im[row(30):row(4),col(-5.15):col(-5.15)+3]=220
++    if left_outer:
++        for lo in range(4,30,4):im[row(lo+2):row(lo),col(5.25):col(5.25)+3]=220
++    if diagonal:
++        # A line leaving the own line: 2.6 m out at 5 m, 4.6 m out at 25 m (not parallel).
++        for x in np.arange(5.,25.,.05):
++            y=-1.65-(2.6+(x-5.)*.1);im[row(x),col(y):col(y)+3]=220
++    return c,im
++
++
++def run(c,im,frames=4):
++    d=TemporalDetector(c);d.detector=CarlaDetector(c);valid=np.full(im.shape[:2],255,np.uint8)
++    for i in range(frames):lanes,_=d.process(im,valid,1+i*.05,(.0,0.,0.))
++    return d,lanes
++
++
++def test_outer_lines_are_off_by_default():
++    assert Settings().carla_outer_enabled is False
++    c,im=scene();d,_=run(c,im)
++    assert d.detector.outer_candidates==[] and d.outer_lanes==[]
++
++
++def test_own_lines_do_not_change_when_outer_lines_are_on():
++    c,im=scene()
++    off,a=run(c,im);on,b=run(replace(c,carla_outer_enabled=True),im)
++    assert [(l.side,l.style,l.reprojected) for l in a]==[(l.side,l.style,l.reprojected) for l in b]
++    for x,y in zip(a,b):assert np.array_equal(x.points,y.points)
++    for x,y in zip(off.boundary_lanes,on.boundary_lanes):
++        assert x.side==y.side and np.array_equal(x.points,y.points)
++    assert on.outer_lanes
++
++
++def test_each_side_gets_its_outer_line_a_lane_width_out_with_style_and_oncoming_flag():
++    c,im=scene();d,_=run(replace(c,carla_outer_enabled=True),im,6)
++    outer={l.side:l for l in d.outer_lanes}
++    assert set(outer)=={'left_outer','right_outer'}
++    right,left=outer['right_outer'],outer['left_outer']
++    assert abs(right.outer['gap_m']-3.5)<.12 and abs(left.outer['gap_m']-3.5)<.12
++    for lane,y in ((right,-5.15),(left,5.25)):
++        p=lane.points[(lane.points[:,0]>=6)&(lane.points[:,0]<=25)]
++        assert len(p) and np.max(np.abs(p[:,1]-y))<.12
++    # The own left line is yellow: the lane beyond it is oncoming.
++    assert left.outer['opposite'] and not right.outer['opposite']
++    assert not left.outer['yellow'] and not right.outer['yellow']
++    assert right.style=='solid' and left.style=='dashed'
++
++
++def test_a_line_that_is_not_parallel_to_the_own_line_is_not_an_outer_line():
++    c,im=scene(right_outer=False,diagonal=True);d,_=run(replace(c,carla_outer_enabled=True),im)
++    assert 'right_outer' not in {l.side for l in d.outer_lanes}
++
++
++def test_no_own_line_no_outer_line_on_that_side():
++    c,im=scene(right_own=False);d,_=run(replace(c,carla_outer_enabled=True),im)
++    assert 'right' not in {l.side for l in d.boundary_lanes}
++    assert 'right_outer' not in {l.side for l in d.outer_lanes}
++
++
++def test_outer_line_is_confirmed_over_frames_and_carried_over_briefly():
++    c,im=scene();c=replace(c,carla_outer_enabled=True)
++    d=TemporalDetector(c);d.detector=CarlaDetector(c);valid=np.full(im.shape[:2],255,np.uint8)
++    seen=[]
++    for i in range(3):
++        d.process(im,valid,1+i*.05,(.0,0.,0.));seen.append({l.side for l in d.outer_lanes})
++    assert 'right_outer' not in seen[0] and 'right_outer' in seen[2]
++    _,blank=scene(right_outer=False)  # the right outer paint goes; the own lines stay
++    d.process(blank,valid,1.15,(.0,0.,0.))
++    right=[l for l in d.outer_lanes if l.side=='right_outer']
++    assert right and right[0].reprojected
++
++
++def test_native_and_python_fragments_give_the_same_outer_lines():
++    from vision_road.carla import _native
++    if _native is None:pytest.skip('Optional native acceleration is not built')
++    c,im=scene();c=replace(c,carla_outer_enabled=True)
++    a,_=run(c,im);b,_=run(replace(c,carla_native_enabled=False),im)
++    assert [l.side for l in a.outer_lanes]==[l.side for l in b.outer_lanes]
++    for x,y in zip(a.outer_lanes,b.outer_lanes):assert np.allclose(x.points,y.points,atol=1e-9)

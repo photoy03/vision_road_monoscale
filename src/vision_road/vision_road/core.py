@@ -95,6 +95,16 @@ class Settings:
     carla_width_reject_m: float = 0.0  # >0: a candidate this far off the lane width from the other side's tracked boundary is not taken
     carla_yellow_relative_min: float = 0.0  # >0: paint whose yellowness (r+g)/2-b is this much above the local road level (and itself) is yellow
     carla_yellow_relative_window_m: float = 1.5  # square window of the local road level (median)
+    carla_outer_enabled: bool = False  # also pick each side's neighbouring lane outer line from the paint left over (own lines unchanged)
+    carla_outer_reach_m: float = 6.0  # near fragments are kept this far out (lateral at 3 m) for it; the own lines still see only 0.65-4.2 m
+    carla_outer_gap_min_m: float = 2.3  # distance from the own line, along its normal
+    carla_outer_gap_max_m: float = 4.7
+    carla_outer_width_miss_m: float = 0.9  # ... and within this of the own lane width
+    carla_outer_parallel_m: float = 0.3  # the distance may vary at most this much along the outer paint (p10-p90)
+    carla_outer_cluster_m: float = 0.2  # fragments within this of one distance form one line
+    carla_outer_min_paint_m: float = 2.0  # paint along the line, at least
+    carla_outer_extend_m: float = 6.0  # past its paint the line follows the own line's shape this far
+    carla_outer_keep_m: float = 0.3  # a candidate within this of last frame's distance is preferred
 
 
 class Projector:

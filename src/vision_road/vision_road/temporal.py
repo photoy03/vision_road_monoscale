@@ -80,6 +80,7 @@ class TemporalDetector:
         self.paint_history=[];self.style_binary=None
         self.next_fragment_id=0
         self.boundaries={};self.boundary_lanes=[];self.confirmed_tracking={}
+        self.outer_state={};self.outer_lanes=[];self.outer_style={};self.outer_frames=0
         self.detector.previous.clear(); self.detector.hits.clear()
         if hasattr(self.detector,'forget'):self.detector.forget()
 
@@ -219,6 +220,68 @@ class TemporalDetector:
                 self.boundary_lanes.append(Lane(side,points,.6,hits=hits,reprojected=True,source_time=observed_time))
         self.boundaries=current
 
+    def _outer(self,valid,matrix,t):
+        """Neighbouring lane outer lines, confirmed and blended frame to frame as _boundaries does
+        the own lines (same EMA, confirmation count and short carry-over), shown only beside a
+        confirmed own line of that side.  Style per side from this frame's paint along the line's
+        observed part, confirmed over two frames and held for style_hold_sec."""
+        c=self.c;previous=self.outer_state;current={};lanes=[];alpha=c.carla_spine_ema_alpha;self.outer_frames+=1
+        own={lane.side for lane in self.boundary_lanes}
+        paint=getattr(self.detector,'outer_paint',None)
+        for candidate in self.detector.outer_candidates:
+            points=self._visible(candidate.points,valid)
+            if points is None:continue
+            old=previous.get(candidate.side);hits=1
+            if old is not None and self.last_time is not None and 0<t-self.last_time<=max(.4,c.temporal_max_age_sec):
+                prior,old_hits,_,_=old
+                if matrix is not None:
+                    prior=self.metric(self.pixel(prior)@matrix[:,:2].T+matrix[:,2]);prior=prior[np.argsort(prior[:,0])]
+                lo=max(points[0,0],prior[0,0]);hi=min(points[-1,0],prior[-1,0])
+                if hi-lo>=.6:
+                    sample=np.linspace(lo,min(hi,lo+8.),20)
+                    error=median(np.abs(interp(sample,points[:,0],points[:,1])-interp(sample,prior[:,0],prior[:,1])))
+                    if error<=(.30 if matrix is not None else .60):
+                        hits=old_hits+1
+                        if matrix is not None:
+                            overlap=(points[:,0]>=lo)&(points[:,0]<=hi)
+                            points[overlap,1]=alpha*points[overlap,1]+(1-alpha)*interp(points[overlap,0],prior[:,0],prior[:,1])
+            current[candidate.side]=(points,hits,float(t),candidate)
+            if hits>=c.carla_chain_confirm_frames and candidate.side[:-6] in own:
+                lane=Lane(candidate.side,points,.8,hits=hits,source_time=float(t))
+                lane.outer=dict(gap_m=round(float(candidate.gap_m),3),yellow=candidate.yellow,opposite=candidate.opposite,
+                                observed=[round(float(v),2) for v in candidate.observed],paint_m=round(float(candidate.paint_m),2))
+                lanes.append(lane)
+        for side,(prior,hits,observed_time,candidate) in previous.items():
+            if side in current or t-observed_time>min(.15,c.temporal_max_age_sec):continue
+            if matrix is None:
+                current[side]=(prior,hits,observed_time,candidate);continue
+            points=self._visible(self.metric(self.pixel(prior)@matrix[:,:2].T+matrix[:,2]),valid)
+            if points is None:continue
+            current[side]=(points,hits,observed_time,candidate)
+            if hits>=c.carla_chain_confirm_frames and side[:-6] in own:
+                lane=Lane(side,points,.6,hits=hits,reprojected=True,source_time=observed_time)
+                lane.outer=dict(gap_m=round(float(candidate.gap_m),3),yellow=candidate.yellow,opposite=candidate.opposite,
+                                observed=[],paint_m=0.)
+                lanes.append(lane)
+        self.outer_state=current
+        # Style: this frame's evidence on the observed part, two agreeing frames, held while unknown.
+        for lane in lanes:
+            state=self.outer_style.get(lane.side,dict(kind='unknown',candidate='unknown',streak=0,time=-math.inf,confidence=0.))
+            evidence=None
+            # Every third frame, the two sides on different frames (the style changes slowly; two agreeing evidences, held 1 s).
+            if paint is not None and not lane.reprojected and ((self.outer_frames+(lane.side=='right_outer'))%3==0 or state['kind']=='unknown'):
+                lo,hi=lane.outer['observed'];p=lane.points[(lane.points[:,0]>=lo-.5)&(lane.points[:,0]<=hi+.5)]
+                if len(p)>=2 and p[-1,0]-p[0,0]>=c.style_min_span_m-1.:evidence=classify_lane(Lane(lane.side,p,.8),paint,valid,c)
+            if evidence is not None and evidence.kind!='unknown':
+                state['streak']=state['streak']+1 if state['candidate']==evidence.kind else 1;state['candidate']=evidence.kind
+                if state['streak']>=c.style_confirm_frames:
+                    state.update(kind=evidence.kind,time=float(t),confidence=evidence.confidence)
+            # Held at least over the frames between checks.
+            if state['kind']!='unknown' and t-state['time']>max(c.style_hold_sec,.2):state.update(kind='unknown',confidence=0.)
+            self.outer_style[lane.side]=state
+            lane.style=state['kind'];lane.style_confidence=state['confidence']
+        self.outer_lanes=lanes
+
     def process(self,bev,valid,t,pose=None,observation_mask=None,paint_mask=None):
         if self.last_time is not None and t<=self.last_time: self.reset()
         c=self.c
@@ -269,6 +332,7 @@ class TemporalDetector:
         chain_filter=(getattr(self.detector,'fragment_tracks',False) and c.carla_chain_filter_enabled)
         if chain_filter:
             self._boundaries(final_valid,matrix,t)
+            if c.carla_outer_enabled:self._outer(final_valid,matrix,t)
             if c.carla_tracking_enabled:
                 for lane in self.boundary_lanes:
                     if not lane.reprojected:self.confirmed_tracking[lane.side]=(lane.points.copy(),float(t))

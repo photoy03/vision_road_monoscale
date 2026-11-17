@@ -114,7 +114,7 @@ class Perception:
                 markers.publish(out[0]);styles.publish(out[1]);shown['display_published']=True
         # Time spent here, for the node's performance report (ms): warp, detector, display filter.
         worker=dict(warp=(warped-begin)*1e3,detect=(detected-warped)*1e3,display=(time.perf_counter()-detected)*1e3)
-        return dict(**shown,worker_ms=worker,lanes=lanes,binary=binary,bev=bev,boundaries=detector.boundary_lanes,markings=markings,
+        return dict(**shown,worker_ms=worker,lanes=lanes,binary=binary,bev=bev,boundaries=detector.boundary_lanes,markings=markings,outer=detector.outer_lanes,
                     measured=detector.measured_count,predicted=detector.predicted_count,
                     registration=detector.registration,diagnostics=getattr(detector.detector,'diagnostics',{}))
 

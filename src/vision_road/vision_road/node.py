@@ -147,6 +147,11 @@ class RoadNode(Node):
         self.binary_pub = self.create_publisher(Image, '/parking/cpp/binary', qos_profile_sensor_data)
         self.bev_pub = self.create_publisher(Image, '/parking/cpp/vector_bev', qos_profile_sensor_data)
         self.overlay_pub = self.create_publisher(Image, '/road/overlay', qos_profile_sensor_data)
+        # carla_outer_enabled: the neighbouring lanes' outer lines, apart from the two own lines the HUD and display filter use.
+        self.outer_enabled=bool(getattr(self.detector.c,'carla_outer_enabled',False))
+        if self.outer_enabled:
+            self.outer_marker_pub=self.create_publisher(MarkerArray,'/road/lane_outer_markers',10)
+            self.outer_pub=self.create_publisher(String,'/road/lane_outer',10)
         self.display_stage=None
         if self.display_settings is not None:
             from .display_filter import DisplayStage
@@ -343,7 +348,7 @@ class RoadNode(Node):
             lanes=result['lanes'];binary=result['binary'];bev=result['bev'];markings=result.get('markings',[])
             self.detector.boundary_lanes=result['boundaries'];self.detector.measured_count=result['measured'];self.detector.predicted_count=result['predicted']
             self.detector.registration=result['registration'];self.detector.detector.diagnostics=result['diagnostics']
-            precomputed={k:result[k] for k in ('display','display_lanes','display_boundaries','display_published') if k in result}
+            precomputed={k:result[k] for k in ('display','display_lanes','display_boundaries','display_published','outer') if k in result}
             phase('detector')
             if self.performance_path and 'worker_ms' in result:self.last_phases.update({'worker.'+k:v for k,v in result['worker_ms'].items()})
         else:
@@ -355,7 +360,7 @@ class RoadNode(Node):
             if isinstance(self.detector.detector,CarlaDetector):self.detector.detector.learned=self.learned.next(t,frame)
             lanes, binary = self.detector.process(bev, valid, t, pose)
             markings=self.extras.after(self.detector,bev,valid,pose) if self.extras is not None else []
-            precomputed={}
+            precomputed=dict(outer=list(getattr(self.detector,'outer_lanes',[])))
             phase('detector')
         job=(frame,header,t,pose,lanes,self.detector.boundary_lanes,binary,bev,markings,precomputed)
         if self.output_jobs is not None:
@@ -378,7 +383,7 @@ class RoadNode(Node):
                 self.last_image=t;self.frames+=1
                 self.detector.boundary_lanes=result['boundaries'];self.detector.measured_count=result['measured'];self.detector.predicted_count=result['predicted']
                 self.detector.registration=result['registration'];self.detector.detector.diagnostics=result['diagnostics']
-                precomputed={k:result[k] for k in ('display','display_lanes','display_boundaries','display_published','debug_frame','debug_scale') if k in result}
+                precomputed={k:result[k] for k in ('display','display_lanes','display_boundaries','display_published','debug_frame','debug_scale','outer') if k in result}
                 job=(None,header,t,result['pose'],result['lanes'],result['boundaries'],result['binary'],result['bev'],result['markings'],precomputed)
                 if self.output_jobs is not None:self.output_jobs.put(job)
                 else:self.publish_outputs(*job,lambda name:None)
@@ -419,6 +424,11 @@ class RoadNode(Node):
             phase('display_filter')
         self.paint_marker_pub.publish(self.markers(display_lanes,header.stamp,'observed_paint'));self.style_pub.publish(style_msg)
         self.boundary_marker_pub.publish(self.markers(boundaries,header.stamp,'boundary_fit'))
+        outer=[]
+        if self.outer_enabled:
+            outer=[replace(lane,points=self.display_points(lane.points)) for lane in precomputed.get('outer',[])]
+            for old,new in zip(precomputed.get('outer',[]),outer):new.outer=old.outer
+            self.publish_outer(outer,header.stamp,t)
         phase('markers')
         self.local_pub.publish(self.array(display_lanes, header.stamp, self.base_frame, pose))
         self.marking_pub.publish(self.road_marking_markers(markings,header.stamp))
@@ -430,9 +440,9 @@ class RoadNode(Node):
             if debug_frame is not None:frame=debug_frame
             if self.debug_jobs is not None:
                 # Drawing waits for the next frame's lanes otherwise; a busy drawer skips this one.
-                try:self.debug_jobs.put_nowait((frame,header,boundaries,display_lanes,markings,binary,bev,debug_scale))
+                try:self.debug_jobs.put_nowait((frame,header,boundaries,display_lanes,markings,binary,bev,debug_scale,outer))
                 except queue.Full:pass
-            else:self.draw_debug(frame,header,boundaries,display_lanes,markings,binary,bev,debug_scale,phase)
+            else:self.draw_debug(frame,header,boundaries,display_lanes,markings,binary,bev,debug_scale,phase,outer)
         phase('bev_debug')
         if not self.map_enabled:
             self.flush();return
@@ -445,11 +455,12 @@ class RoadNode(Node):
         while not self.worker_stop.is_set():
             try:job=self.debug_jobs.get(timeout=.1)
             except queue.Empty:continue
-            try:self.draw_debug(*job,phase=lambda name:None)
+            try:self.draw_debug(*job[:8],phase=lambda name:None,outer=job[8])
             except Exception as exc:self.get_logger().error('Debug images: '+str(exc),throttle_duration_sec=5)
 
-    def draw_debug(self,frame,header,boundaries,display_lanes,markings,binary,bev,given_scale=None,phase=lambda name:None):
-        """given_scale: the frame is already reduced by it (image_in_worker)."""
+    def draw_debug(self,frame,header,boundaries,display_lanes,markings,binary,bev,given_scale=None,phase=lambda name:None,outer=()):
+        """given_scale: the frame is already reduced by it (image_in_worker).  outer: neighbouring lane
+        outer lines, magenta (carried over: dark magenta), labelled with style, colour and OPP."""
         if given_scale is not None:scale=given_scale;overlay=frame
         else:
             scale=min(1.,self.overlay_max_width/frame.shape[1]) if self.overlay_max_width else 1.
@@ -468,6 +479,21 @@ class RoadNode(Node):
             if lane_index<len(boundaries):continue
             if lane.side not in label_candidates or np.ptp(lane.points[:,0])>np.ptp(label_candidates[lane.side][0].points[:,0]):label_candidates[lane.side]=(lane,pixels)
         for lane,pixels in label_candidates.values():draw_style_label(overlay,lane,pixels)
+        for lane in outer:
+            pixels,visible=self.projector.image_points(lane.points);pixels*=scale
+            safe=visible&np.isfinite(pixels).all(axis=1)&(np.max(np.abs(pixels),axis=1)<1e6)
+            color=(110,0,110) if lane.reprojected else (255,0,255)
+            edges=np.flatnonzero(np.r_[True,np.diff(safe.astype(int))!=0,True])
+            for lo,hi in zip(edges[:-1],edges[1:]):
+                if safe[lo] and hi-lo>=2:cv2.polylines(overlay,[np.rint(pixels[lo:hi]).astype(np.int32)],False,color,3)
+            if safe.any():
+                anchor=pixels[safe][len(pixels[safe])//3];info=getattr(lane,'outer',{})
+                text=('L+1' if lane.side.startswith('left') else 'R+1')+':'+lane.style.upper()+(' Y' if info.get('yellow') else '')+(' OPP' if info.get('opposite') else '')
+                size,_=cv2.getTextSize(text,cv2.FONT_HERSHEY_SIMPLEX,.55,2)
+                x=int(anchor[0])-(size[0]+12 if lane.side.startswith('left') else -12);y=int(anchor[1])-10
+                x=max(2,min(overlay.shape[1]-size[0]-4,x));y=max(size[1]+4,min(overlay.shape[0]-4,y))
+                cv2.rectangle(overlay,(x-2,y-size[1]-3),(x+size[0]+2,y+3),(0,0,0),-1)
+                cv2.putText(overlay,text,(x,y),cv2.FONT_HERSHEY_SIMPLEX,.55,(255,0,255),2)
         for mark in markings:
             outline=mark['points'] if mark['kind']=='stop_line' else np.vstack([mark['points'],mark['points'][:1]])
             dense=np.vstack([np.linspace(a,b,8) for a,b in zip(outline[:-1],outline[1:])])
@@ -525,6 +551,36 @@ class RoadNode(Node):
             marker.points=[Point(x=float(p[0]),y=float(p[1]),z=.02) for p in lane.points]
             msg.markers.append(marker)
         return msg
+
+    def publish_outer(self,lanes,stamp,t):
+        """/road/lane_outer_markers: one LINE_STRIP per outer line (ns outer/left_outer|right_outer, base_link,
+        magenta; color.r halved when carried over, yellow paint: color.g=1).
+        /road/lane_outer (std_msgs/String, JSON): per line side, base side, points [x, y] (base_link),
+        style solid|dashed|unknown, style_confidence, yellow, opposite_direction (the own line of that
+        side is yellow: the lane beyond it is oncoming), gap_m (distance from the own line along its
+        normal), observed_m (forward range of its paint this frame; [] when carried over), paint_m,
+        hits, reprojected.  The markers (RViz only) go out at the debug image rate, the JSON every frame."""
+        markers=self.debug_hz<=0 or t-getattr(self,'last_outer_markers',-math.inf)>=1/self.debug_hz-1e-8
+        msg=MarkerArray()
+        clear=Marker();clear.header=Header(stamp=stamp,frame_id=self.base_frame);clear.action=Marker.DELETEALL
+        msg.markers.append(clear);items=[]
+        for ident,lane in enumerate(lanes):
+            info=getattr(lane,'outer',{})
+            if markers:
+                marker=Marker();marker.header=clear.header;marker.ns='outer/'+lane.side;marker.id=ident
+                marker.type=Marker.LINE_STRIP;marker.action=Marker.ADD;marker.pose.orientation.w=1.;marker.scale.x=.05
+                marker.color.a=.9;marker.color.r=.5 if lane.reprojected else 1.;marker.color.b=1.;marker.color.g=1. if info.get('yellow') else 0.
+                marker.lifetime.nanosec=300000000
+                marker.text=lane.style+(' yellow' if info.get('yellow') else '')+(' opposite' if info.get('opposite') else '')
+                marker.points=[Point(x=float(p[0]),y=float(p[1]),z=.02) for p in lane.points]
+                msg.markers.append(marker)
+            items.append(dict(side=lane.side,base_side=lane.side[:-6],points=np.round(lane.points,3).tolist(),style=lane.style,
+                              style_confidence=round(float(lane.style_confidence),3),yellow=bool(info.get('yellow')),
+                              opposite_direction=bool(info.get('opposite')),gap_m=info.get('gap_m'),observed_m=info.get('observed',[]),
+                              paint_m=info.get('paint_m'),hits=int(lane.hits),reprojected=bool(lane.reprojected)))
+        if markers:
+            self.outer_marker_pub.publish(msg);self.last_outer_markers=t
+        self.outer_pub.publish(String(data=json.dumps(dict(stamp=stamp.sec+stamp.nanosec*1e-9,frame_id=self.base_frame,lanes=items),separators=(',',':'))))
 
     def road_marking_markers(self,markings,stamp):
         """Stop lines as a 2-point strip, crosswalks and other markings as a closed outline, base_link.
