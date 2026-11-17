@@ -1,0 +1,9 @@
+38a39
+>                                        [--ros-output] [--ros-no-dashcam]
+116a118,123
+>   --ros-output          Also publish ROS 2 topics (pose, vehicle state,
+>                         steering wheel, dashcam, clock); see
+>                         hero_ros_output.py. Without ROS 2 the tool runs as
+>                         without this option. (default: False)
+>   --ros-no-dashcam      With --ros-output: do not add the 1920x1080 dashcam
+>                         camera. (default: False)

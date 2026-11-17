@@ -1,0 +1,2 @@
+plain python import ok, carla: None ROS_OUTPUT: None module: hero_ros_output
+rclpy loaded: False

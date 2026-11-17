@@ -1,0 +1,123 @@
+usage: prius_wheel_based_driver_eye.py [-h] [--host HOST] [--port PORT]
+                                       [--timeout TIMEOUT]
+                                       [--spawn-index SPAWN_INDEX]
+                                       [--max-spawn-attempts MAX_SPAWN_ATTEMPTS]
+                                       [--calibration-file CALIBRATION_FILE]
+                                       [--api-audit-output API_AUDIT_OUTPUT]
+                                       [--initial-wheel X Y Z | --wheel-center X Y Z]
+                                       [--ignore-saved-calibration]
+                                       [--accept-api-candidate]
+                                       [--rearward REARWARD]
+                                       [--lateral-offset LATERAL_OFFSET]
+                                       [--upward UPWARD]
+                                       [--screen-width SCREEN_WIDTH]
+                                       [--viewing-distance VIEWING_DISTANCE]
+                                       [--monitor-lateral-offset MONITOR_LATERAL_OFFSET]
+                                       [--monitor-vertical-offset MONITOR_VERTICAL_OFFSET]
+                                       [--preview-eye-camera] [--pitch PITCH]
+                                       [--pitch-step PITCH_STEP] [--yaw YAW]
+                                       [--roll ROLL] [--fov FOV]
+                                       [--preview-width PREVIEW_WIDTH]
+                                       [--preview-height PREVIEW_HEIGHT]
+                                       [--fullscreen]
+                                       [--display-index DISPLAY_INDEX]
+                                       [--wheel-drive] [--ui-fps UI_FPS]
+                                       [--text-ui] [--non-interactive]
+                                       [--run-seconds RUN_SECONDS]
+                                       [--auto-save]
+                                       [--debug-geometry | --clean-preview]
+                                       [--debug-life-time DEBUG_LIFE_TIME]
+                                       [--debug-point-size DEBUG_POINT_SIZE]
+                                       [--marker-axis-length MARKER_AXIS_LENGTH]
+                                       [--forward-line-length FORWARD_LINE_LENGTH]
+                                       [--monitor-line-thickness MONITOR_LINE_THICKNESS]
+                                       [--monitor-center-point-size MONITOR_CENTER_POINT_SIZE]
+                                       [--gaze-line-thickness GAZE_LINE_THICKNESS]
+                                       [--guide-line-thickness GUIDE_LINE_THICKNESS]
+                                       [--gaze-line-gray GAZE_LINE_GRAY]
+                                       [--hide-gaze-line] [--hide-gaze-label]
+                                       [--ros-output] [--ros-no-dashcam]
+
+Calibrate a vehicle-local Prius driver eye from the steering-wheel rotation-
+axis centre.
+
+options:
+  -h, --help            show this help message and exit
+  --host HOST
+  --port PORT
+  --timeout TIMEOUT
+  --spawn-index SPAWN_INDEX
+  --max-spawn-attempts MAX_SPAWN_ATTEMPTS
+  --calibration-file CALIBRATION_FILE
+  --api-audit-output API_AUDIT_OUTPUT
+  --initial-wheel X Y Z
+                        Unconfirmed vehicle-local cursor seed supplied by the
+                        user. (default: None)
+  --wheel-center X Y Z  Explicit user-measured vehicle-local wheel centre;
+                        treated as confirmed. (default: None)
+  --ignore-saved-calibration
+                        Do not load an existing confirmed calibration JSON.
+                        (default: False)
+  --accept-api-candidate
+                        Accept a unique semantic API pivot without pressing
+                        Enter. (default: False)
+  --rearward REARWARD
+  --lateral-offset LATERAL_OFFSET
+  --upward UPWARD
+  --screen-width SCREEN_WIDTH
+                        Physical flat-display width used for geometry and
+                        automatic HFOV. (default: 0.6984)
+  --viewing-distance VIEWING_DISTANCE
+                        Eye-to-monitor distance along vehicle-local +X.
+                        (default: 0.71)
+  --monitor-lateral-offset MONITOR_LATERAL_OFFSET
+  --monitor-vertical-offset MONITOR_VERTICAL_OFFSET
+  --preview-eye-camera
+  --pitch PITCH
+  --pitch-step PITCH_STEP
+  --yaw YAW
+  --roll ROLL
+  --fov FOV             Camera horizontal FOV; default is calculated from
+                        width/distance. (default: None)
+  --preview-width PREVIEW_WIDTH
+  --preview-height PREVIEW_HEIGHT
+  --fullscreen          Use exclusive fullscreen on the selected SDL display.
+                        (default: False)
+  --display-index DISPLAY_INDEX
+                        SDL/Pygame display index used for the preview window.
+                        (default: 0)
+  --wheel-drive         Drive the Prius with a T300RS wheel (button 4 toggles
+                        reverse). (default: False)
+  --ui-fps UI_FPS
+  --text-ui
+  --non-interactive
+  --run-seconds RUN_SECONDS
+  --auto-save
+  --debug-geometry      Draw dim wheel/eye/axes/monitor validation primitives.
+                        (default: False)
+  --clean-preview       Explicit clean mode (also the default): create no
+                        debug primitives. (default: False)
+  --debug-life-time DEBUG_LIFE_TIME
+  --debug-point-size DEBUG_POINT_SIZE
+  --marker-axis-length MARKER_AXIS_LENGTH
+  --forward-line-length FORWARD_LINE_LENGTH
+  --monitor-line-thickness MONITOR_LINE_THICKNESS
+  --monitor-center-point-size MONITOR_CENTER_POINT_SIZE
+  --gaze-line-thickness GAZE_LINE_THICKNESS
+                        Thin low-luminance gaze guide thickness in metres.
+                        (default: 0.006)
+  --guide-line-thickness GUIDE_LINE_THICKNESS
+                        Wheel-to-eye guide thickness in metres. (default:
+                        0.006)
+  --gaze-line-gray GAZE_LINE_GRAY
+                        Gaze-line grayscale intensity, 0 (black) to 255
+                        (white). (default: 70)
+  --hide-gaze-line      Do not draw the eye-to-forward gaze guide. (default:
+                        False)
+  --hide-gaze-label     Hide only the gaze-line text label. (default: False)
+  --ros-output          Also publish ROS 2 topics (pose, vehicle state,
+                        steering wheel, dashcam, clock); see
+                        hero_ros_output.py. Without ROS 2 the tool runs as
+                        without this option. (default: False)
+  --ros-no-dashcam      With --ros-output: do not add the 1920x1080 dashcam
+                        camera. (default: False)

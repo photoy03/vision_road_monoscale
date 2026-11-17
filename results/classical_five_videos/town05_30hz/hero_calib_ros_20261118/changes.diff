@@ -1,0 +1,646 @@
+diff --git a/src/hero_calib/README.md b/src/hero_calib/README.md
+index 86d3f5d..0c01977 100644
+--- a/src/hero_calib/README.md
++++ b/src/hero_calib/README.md
+@@ -140,3 +140,104 @@ property. The tool checks for semantic component, bone, and socket inspection
+ methods when available, then falls back to the confirmed manual calibration.
+ Debug primitives cannot guarantee a non-emissive material, so clean preview is
+ the default and draws no debug geometry.
++
++## ROS 2 outputs (added in vision-road, `--ros-output`)
++
++This copy lives in `vision-road/src/hero_calib`. The original is `~/Desktop/HERO_Calib-main`, which was not changed.
++`prius_wheel_based_driver_eye.py` only gained added lines:
++- one optional import,
++- two new options,
++- three calls into `hero_ros_output.py`.
++
++Every existing option, default, keyboard and wheel input, calibration, physics value and eye-camera
++setting is the same. Without `--ros-output` nothing new runs. With it but without ROS 2, the tool prints
++one warning and runs as before.
++
++### 출력
++
++| 토픽 | 형식 | 내용 |
++|---|---|---|
++| `/clock` | `rosgraph_msgs/Clock` | 시뮬레이터 시각, 월드 틱마다 |
++| `/carla/ground_truth/pose` | `geometry_msgs/PoseWithCovarianceStamped` | `map`, 차 액터 위치·자세. CARLA 왼손 좌표를 오른손으로(y, yaw 부호 바꿈). Town05 녹화와 같은 약속 |
++| `/hero/vehicle_state` | `hero_hud/VehicleState` | 기어(D/R: 도구의 후진 전환, 차를 붙잡아 둔 동안 P), 속도(m/s, 후진 음수), 앞바퀴 조향각(rad, 왼쪽 +, CARLA 의 실제 바퀴 각도), 요레이트(rad/s, 왼쪽 +) |
++| `/hero/steering_wheel` | `sensor_msgs/JointState` | `steering_wheel`: 운전자가 돌린 핸들 각도(rad, 왼쪽 +, T300RS 축 × 540°), `road_wheel`: 앞바퀴 조향각(rad, 왼쪽 +). velocity 는 프레임 간 변화 |
++| `/sensing/camera/dashcam/image_raw` | `sensor_msgs/Image` | bgr8 1920×1080, 30 Hz(시뮬레이터 시각) |
++| `/sensing/camera/dashcam/camera_info` | `sensor_msgs/CameraInfo` | fx = fy = 960(수평 90°), 중심 (960, 540), 왜곡 없음, frame `dashcam_optical_link` |
++
++- 대시캠은 차선 인식이 가정하는 자리에 단다: 뒤축(base_link)에서 앞으로 2.2 m, 땅에서 1.4 m, 정면.
++  - vision_road `maploop.launch.py` 의 static TF 와 같다.
++  - 뒤축은 뒷바퀴 위치의 가운데, 땅은 차 경계 상자의 바닥으로 잡는다. 시작할 때 둘을 출력한다.
++- 차선 인식의 `reference_pose` 는 액터 위치에서 1.4096 m 뒤를 뒤축으로 본다(Town05 녹화의 차).
++  - 이 도구는 시작할 때 "actor_to_rear_axle_m should be ..." 를 출력한다. 값이 다르면 그 값으로 바꿔 띄워야 한다(아래 점검표 4).
++
++### 띄우기
++
++```bash
++# CARLA 0.9.16 서버가 떠 있고, Town05 가 열려 있어야 한다.
++source /opt/ros/humble/setup.bash
++source /home/jaehun/Desktop/vision-road/install/setup.bash   # hero_hud 메시지(/hero/vehicle_state)
++cd /home/jaehun/Desktop/vision-road/src/hero_calib
++./run_fullscreen.sh --wheel-drive --ros-output
++# 화면이 느리면 대시캠을 빼고 위치·차 상태만: --ros-output --ros-no-dashcam
++```
++
++### 녹화
++
++```bash
++source /opt/ros/humble/setup.bash
++ros2 bag record -s sqlite3 -o town05_drive_$(date +%Y%m%d_%H%M) \
++  /clock /carla/ground_truth/pose /hero/vehicle_state /hero/steering_wheel \
++  /sensing/camera/dashcam/image_raw /sensing/camera/dashcam/camera_info
++```
++
++녹화할 장면(Town05, 같은 방향 차로가 둘 이상인 구간에서):
++
++| 장면 | 내용 | 길이 |
++|---|---|---|
++| 차로 안 비틀거림 | 선을 넘지 않고 좌우로 0.3–0.6 m | 20초 이상 |
++| 노란 선 넘었다 돌아오기 | 중앙선을 차 반쯤 넘었다가 돌아옴. 두세 번 | 20초 이상 |
++| 점선에 걸쳤다 돌아오기 | 오른쪽 점선을 밟았다가 원래 차로로 | 20초 이상 |
++| 오른쪽 차로로 옮기기 | 확실하게 옮김. 다시 왼쪽으로 돌아오기도 | 각 두세 번 |
++| 그냥 따라가기 | 비교용 | 20초 |
++
++### 녹화를 차선 인식과 HUD 로 돌리기 (vision-road 컴퓨터)
++
++1. 녹화 폴더를 옮긴다(예: `/media/jaehun/38F7-677B/rosbag/town05_drive1/`).
++2. 영상 캐시를 만든다(무손실, 녹화 원본은 읽기만 한다):
++   `python3 tools/cache_maploop_cdr.py --bag <녹화>/<이름>_0.db3 --output /media/jaehun/38F7-677B/vision-road-cache/town05_drive1_native.cdrz`
++3. 터미널 하나에서 `./run_lane_hud.sh live` 를 띄운다(검출기, 표시 필터, 안내, HUD).
++4. 다른 터미널에서 재생한다:
++   `python3 tools/replay_maploop.py --bag <녹화> --cache <위 캐시> --rate 1`
++   - `run_lane_hud.sh` 는 지금 maploop, town04, town05 이름만 알고 있다. 이름으로 부르려면 거기에 녹화 줄을 하나 더해야 한다.
++   - 재생 도구는 영상, camera_info, 위치, /clock 만 다시 낸다. `/hero/vehicle_state` 와 `/hero/steering_wheel` 은 분석용으로 녹화에 남는다.
++
++### 실제 실행에서 생길 수 있는 문제
++
++- 화면이 느려질 수 있다. 대시캠(1920×1080, 30 Hz)을 하나 더 그리고 6 MB 영상을 매 프레임 ROS 로 보낸다. 운전 화면이 느리면 `--ros-no-dashcam` 으로 비교해 본다.
++- carla 파이썬 패키지와 rclpy(ROS 2 Humble, Python 3.10)가 같은 파이썬에서 import 되어야 한다. carla 패키지가 다른 파이썬용이면 `--ros-output` 은 rclpy 를 찾지 못했다는 경고만 내고 출력 없이 돈다.
++- 이 도구는 월드 설정을 바꾸지 않으므로 보통 비동기 모드로 돈다.
++  - 위치와 /clock 은 월드 틱마다, 영상은 그 틱의 시각으로 찍힌다.
++  - 서버가 30 fps 보다 느리면 영상도 그만큼 줄어든다.
++  - 영상과 위치의 시각 차이는 아래 점검표 5 로 확인한다.
++- 앞바퀴의 실제 각도는 `Vehicle.get_wheel_steer_angle` (CARLA 0.9.13 이상)로 읽는다. 없으면 명령값 × 최대 조향각으로 대신한다.
++- 핸들 각도는 축 값에서 계산하므로 0.01 축(약 5°)의 데드존 안도 그대로 나온다. 차에 들어가는 명령은 원래 도구처럼 데드존이 적용된다.
++
++### CARLA 컴퓨터에서 확인할 순서 (점검표)
++
++1. `python3 prius_wheel_based_driver_eye.py --help` 에 새 옵션 둘(`--ros-output`, `--ros-no-dashcam`)만 더 있는지 본다.
++2. `--ros-output` 없이 `./run_fullscreen.sh --wheel-drive` 가 전과 같이 도는지 본다(화면, 핸들, 후진 버튼, 손 브레이크).
++3. `--ros-output` 을 붙여 띄우고 `ros2 topic hz` 로 확인한다. 대시캠은 30 Hz 쯤, 위치는 서버 fps 쯤이어야 한다. 다음 여섯 토픽이 나와야 한다:
++   `/clock`, `/carla/ground_truth/pose`, `/hero/vehicle_state`, `/hero/steering_wheel`, `/sensing/camera/dashcam/image_raw`, `/sensing/camera/dashcam/camera_info`
++4. 시작할 때 출력되는 값을 확인한다:
++   - "rear axle at x=..." 는 Prius 라면 약 −1.3 m.
++   - "dashcam at vehicle-local (...)" 는 앞으로 약 0.9 m, 높이 약 1.4 m.
++   - "actor_to_rear_axle_m should be ..." 가 1.4096 과 많이 다르면, vision_road 의 `reference_pose` 를 그 값으로 띄워야 위치가 맞는다.
++5. 직진하면서 `ros2 topic echo /hero/vehicle_state` 를 본다:
++   - 앞으로 갈 때 speed_mps 가 +, 후진 버튼 뒤에는 − 이다.
++   - 핸들을 왼쪽으로 돌리면 steering_angle_rad 와 `/hero/steering_wheel` 의 steering_wheel 이 + 이다.
++   - 왼쪽으로 돌 때 yaw_rate_rps 가 + 이다.
++6. 짧게 녹화해서 vision-road 에서 위 "녹화를 돌리기"로 돌린다:
++   - HUD 에 차선이 나오는지 본다.
++   - 영상의 차선과 위치가 맞는지 본다(`./view_lane_coordinates.sh` 등).
++   - 영상 시각과 위치 시각의 차이가 1/60초 안인지 본다.
++7. 그다음 위 표의 장면들을 녹화한다.
+diff --git a/src/hero_calib/prius_wheel_based_driver_eye.py b/src/hero_calib/prius_wheel_based_driver_eye.py
+index 94f1970..eea31a6 100644
+--- a/src/hero_calib/prius_wheel_based_driver_eye.py
++++ b/src/hero_calib/prius_wheel_based_driver_eye.py
+@@ -45,6 +45,13 @@ try:
+ except ImportError:
+     np = None  # type: ignore[assignment]
+ 
++# Added (ROS output): optional ROS 2 topics beside the tool, see hero_ros_output.py and --ros-output.
++try:
++    import hero_ros_output
++except ImportError:  # pragma: no cover - the module sits next to this script
++    hero_ros_output = None  # type: ignore[assignment]
++ROS_OUTPUT: Optional[Any] = None
++
+ 
+ VEHICLE_BLUEPRINT = "vehicle.toyota.prius"
+ VEHICLE_LABEL = "Toyota Prius"
+@@ -1223,6 +1230,8 @@ def run_pygame_ui(
+                 velocity = vehicle.get_velocity()
+                 speed_mps = math.hypot(velocity.x, velocity.y)
+                 vehicle.apply_control(wheel_vehicle_control(joystick, reverse, speed_mps))
++                if ROS_OUTPUT is not None:  # Added (ROS output)
++                    ROS_OUTPUT.set_drive(joystick.get_axis(WHEEL_STEER_AXIS), reverse)
+             if changed or pitch_changed:
+                 eye = _refresh(state, world, vehicle, camera, args)
+             if now - last_debug >= max(0.1, args.debug_life_time * 0.5):
+@@ -1425,6 +1434,18 @@ def build_parser() -> argparse.ArgumentParser:
+         action="store_true",
+         help="Hide only the gaze-line text label.",
+     )
++    # Added (ROS output): new options only; every option above keeps its meaning and default.
++    parser.add_argument(
++        "--ros-output",
++        action="store_true",
++        help="Also publish ROS 2 topics (pose, vehicle state, steering wheel, dashcam, clock); "
++        "see hero_ros_output.py. Without ROS 2 the tool runs as without this option.",
++    )
++    parser.add_argument(
++        "--ros-no-dashcam",
++        action="store_true",
++        help="With --ros-output: do not add the 1920x1080 dashcam camera.",
++    )
+     return parser
+ 
+ 
+@@ -1592,6 +1613,10 @@ def run(args: argparse.Namespace) -> int:
+                 "pitch/yaw/roll/FOV remain unchanged."
+             )
+ 
++        if getattr(args, "ros_output", False) and hero_ros_output is not None:  # Added (ROS output)
++            global ROS_OUTPUT
++            ROS_OUTPUT = hero_ros_output.start(world, vehicle, args, carla, WHEEL_RANGE_DEG)
++
+         if args.auto_save:
+             if not state.confirmed:
+                 raise RuntimeError(
+@@ -1657,6 +1682,8 @@ def run(args: argparse.Namespace) -> int:
+             print("Final wheel-centre status: UNRESOLVED; no final eye is claimed")
+         return 0
+     finally:
++        if ROS_OUTPUT is not None:  # Added (ROS output): before the Prius it is attached to goes
++            ROS_OUTPUT.close()
+         cleanup(camera, vehicle)
+         print("Cleanup complete: created camera/Prius actors destroyed.")
+         print("World settings were not changed.")
+--- /dev/null
++++ b/src/hero_calib/hero_ros_output.py
+@@ -0,0 +1,285 @@
++"""ROS 2 outputs for prius_wheel_based_driver_eye.py (--ros-output), added beside it.
++
++The driving tool itself is unchanged: its inputs, parameters, calibration, physics, eye camera and
++window are the same with or without this.  With --ros-output it also publishes what the lane
++detector (vision_road) and the HUD (hero_hud) read, in the Town05 recording's names and conventions:
++
++  /clock                                rosgraph_msgs/Clock            simulation time, every world tick
++  /carla/ground_truth/pose              geometry_msgs/PoseWithCovarianceStamped  frame 'map', every tick:
++                                        the vehicle actor's location and rotation, CARLA's left-handed axes
++                                        turned right-handed (y and yaw negated), as in the recording
++  /hero/vehicle_state                   hero_hud/VehicleState          every tick: gear (D/R from the tool's
++                                        reverse toggle; P while the tool holds the car fixed), signed speed
++                                        (m/s, reverse negative), front road-wheel angle (rad, left +),
++                                        yaw rate (rad/s, left +)
++  /hero/steering_wheel                  sensor_msgs/JointState         every tick: 'steering_wheel' = the
++                                        handwheel angle the driver turned (rad, left +, from the T300RS axis),
++                                        'road_wheel' = the front road-wheel angle (rad, left +)
++  /sensing/camera/dashcam/image_raw     sensor_msgs/Image              bgr8 1920x1080, 30 Hz sim time
++  /sensing/camera/dashcam/camera_info   sensor_msgs/CameraInfo         fx = fy = 960 (90 deg HFOV), plumb_bob
++
++The dashcam is a second RGB camera rigidly attached where the lane detector expects it: 2.2 m ahead of
++the rear axle (base_link) and 1.4 m above the ground, looking straight ahead (vision_road
++maploop.launch.py static TF base_link -> dashcam_optical_link).  The rear axle is taken from the
++vehicle's rear wheel positions, the ground from the bottom of its bounding box.
++
++rclpy and the message packages are imported only by start(): without ROS the tool runs as before and
++--ros-output only prints a warning."""
++from __future__ import annotations
++
++import math
++import threading
++from typing import Any, Optional, Sequence, Tuple
++
++DASHCAM_FORWARD_M = 2.2   # ahead of the rear axle (base_link), vision_road maploop.launch.py static TF
++DASHCAM_HEIGHT_M = 1.4    # above the ground
++DASHCAM_WIDTH = 1920
++DASHCAM_HEIGHT = 1080
++DASHCAM_HFOV_DEG = 90.0   # fx = fy = 960 at 1920 px, as the Town05 recording's camera_info
++DASHCAM_RATE_HZ = 30.0
++DASHCAM_FRAME = "dashcam_optical_link"
++WORLD_FRAME = "map"
++
++
++# --------------------------------------------------------------------------- conversions (pure)
++def ros_position(x: float, y: float, z: float) -> Tuple[float, float, float]:
++    """CARLA (x forward/east, y right/south, z up; left-handed) to ROS right-handed: y negated."""
++    return (float(x), -float(y), float(z))
++
++
++def ros_rpy(roll_deg: float, pitch_deg: float, yaw_deg: float) -> Tuple[float, float, float]:
++    """CARLA rotation (degrees, left-handed) to ROS roll, pitch, yaw (radians, right-handed)."""
++    return (math.radians(roll_deg), -math.radians(pitch_deg), -math.radians(yaw_deg))
++
++
++def quaternion(roll: float, pitch: float, yaw: float) -> Tuple[float, float, float, float]:
++    """(x, y, z, w) of roll-pitch-yaw (ZYX)."""
++    cr, sr = math.cos(roll*.5), math.sin(roll*.5)
++    cp, sp = math.cos(pitch*.5), math.sin(pitch*.5)
++    cy, sy = math.cos(yaw*.5), math.sin(yaw*.5)
++    return (sr*cp*cy-cr*sp*sy, cr*sp*cy+sr*cp*sy, cr*cp*sy-sr*sp*cy, cr*cp*cy+sr*sp*sy)
++
++
++def road_wheel_angle_rad(left_deg: float, right_deg: float) -> float:
++    """CARLA front wheel steer angles (degrees, + = right) to one road-wheel angle (rad, left +)."""
++    return -math.radians(0.5*(float(left_deg)+float(right_deg)))
++
++
++def handwheel_angle_rad(axis: float, range_deg: float) -> float:
++    """T300RS steering axis (-1..1, + = right) to the handwheel angle (rad, left +): the axis spans the
++    wheel's whole rotation range (range_deg lock to lock)."""
++    axis = max(-1., min(1., float(axis)))
++    return -math.radians(axis*range_deg*.5)
++
++
++def signed_speed(velocity: Sequence[float], forward: Sequence[float]) -> float:
++    """Longitudinal speed (m/s): the velocity along the vehicle's forward vector (reverse: negative)."""
++    return float(sum(v*f for v, f in zip(velocity, forward)))
++
++
++def yaw_rate_rps(angular_z_deg_s: float) -> float:
++    """CARLA angular velocity about z (deg/s, left-handed: + turns right) to ROS (rad/s, + turns left)."""
++    return -math.radians(float(angular_z_deg_s))
++
++
++def rear_axle_local(wheels: Sequence[Tuple[float, float, float, float]]) -> Tuple[float, float]:
++    """(x, y) of the rear axle centre in vehicle-local metres from wheels (x, y, z, max_steer_deg),
++    their positions in vehicle-local metres: the mean of the non-steering wheels (else the rear half)."""
++    rear = [w for w in wheels if abs(w[3]) < 1e-6] or sorted(wheels, key=lambda w: w[0])[:max(1, len(wheels)//2)]
++    return (sum(w[0] for w in rear)/len(rear), sum(w[1] for w in rear)/len(rear))
++
++
++def dashcam_local(rear_x: float, ground_z: float) -> Tuple[float, float, float]:
++    """Dashcam location in vehicle-local metres: 2.2 m ahead of the rear axle, on the centre line, 1.4 m
++    above the ground."""
++    return (rear_x+DASHCAM_FORWARD_M, 0., ground_z+DASHCAM_HEIGHT_M)
++
++
++def camera_matrix(width: int = DASHCAM_WIDTH, height: int = DASHCAM_HEIGHT, hfov_deg: float = DASHCAM_HFOV_DEG):
++    """K (row-major 3x3) of CARLA's pinhole RGB camera: f = (width / 2) / tan(HFOV / 2), square pixels,
++    principal point at the image centre."""
++    f = (width*.5)/math.tan(math.radians(hfov_deg)*.5)
++    return [f, 0., width*.5, 0., f, height*.5, 0., 0., 1.]
++
++
++def bgra_to_bgr(raw: Any, width: int, height: int) -> bytes:
++    """CARLA's BGRA pixels to packed bgr8 (numpy when available)."""
++    try:
++        import numpy as np
++        return np.frombuffer(raw, dtype=np.uint8).reshape(height, width, 4)[:, :, :3].tobytes()
++    except ImportError:
++        raw = bytes(raw); bgr = bytearray(width*height*3)
++        bgr[0::3] = raw[0::4]; bgr[1::3] = raw[1::4]; bgr[2::3] = raw[2::4]
++        return bytes(bgr)
++
++
++def stamp_of(seconds: float) -> Tuple[int, int]:
++    ns = int(round(float(seconds)*1e9))
++    return ns//1000000000, ns % 1000000000
++
++
++# --------------------------------------------------------------------------- publisher
++class RosOutput:
++    """Started by start(); set_drive() from the tool's driving loop; close() before the vehicle goes."""
++
++    def __init__(self, world: Any, vehicle: Any, args: Any, carla_module: Any, rclpy_module: Any, msgs: dict,
++                 range_deg: float):
++        self.world = world; self.vehicle = vehicle; self.carla = carla_module; self.rclpy = rclpy_module
++        self.msgs = msgs; self.range_deg = range_deg
++        self.axis: Optional[float] = None; self.reverse = False
++        self.lock = threading.Lock(); self.snapshot = None; self.new = threading.Event(); self.stop = threading.Event()
++        self.camera = None; self.tick_id = None; self.max_steer_deg = 0.; self.last_wheel = None
++        rclpy_module.init(args=None)
++        self.node = rclpy_module.create_node("hero_calib_ros_output")
++        from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
++        # Reliable: both reliable subscribers (vision_road live mode) and best-effort ones accept it.
++        reliable = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.VOLATILE)
++        node = self.node
++        self.pub_clock = node.create_publisher(msgs["Clock"], "/clock", 10)
++        self.pub_pose = node.create_publisher(msgs["PoseWithCovarianceStamped"], "/carla/ground_truth/pose",
++                                              QoSProfile(depth=50, reliability=ReliabilityPolicy.RELIABLE))
++        self.pub_wheel = node.create_publisher(msgs["JointState"], "/hero/steering_wheel", reliable)
++        self.pub_state = node.create_publisher(msgs["VehicleState"], "/hero/vehicle_state", reliable) if msgs.get("VehicleState") else None
++        self.pub_image = node.create_publisher(msgs["Image"], "/sensing/camera/dashcam/image_raw", reliable)
++        self.pub_info = node.create_publisher(msgs["CameraInfo"], "/sensing/camera/dashcam/camera_info", reliable)
++        self.rear_x, self.ground_z = self._vehicle_geometry()
++        print(f"ROS output: rear axle at x={self.rear_x:.4f} m, ground at z={self.ground_z:.4f} m (vehicle-local)")
++        print(f"ROS output: vision_road reference_pose actor_to_rear_axle_m should be {-self.rear_x:.4f} "
++              "(its default 1.4096 is the Town05 recording's vehicle)")
++        if not getattr(args, "ros_no_dashcam", False):self.camera = self._spawn_dashcam()
++        self.worker = threading.Thread(target=self._run, name="hero-ros-output", daemon=True); self.worker.start()
++        self.tick_id = world.on_tick(self._on_tick)
++
++    # vehicle geometry (rear axle from the wheels, ground from the bounding box)
++    def _vehicle_geometry(self) -> Tuple[float, float]:
++        transform = self.vehicle.get_transform(); physics = self.vehicle.get_physics_control(); wheels = []
++        for wheel in physics.wheels:
++            p = wheel.position  # world, centimetres
++            local = transform.inverse_transform(self.carla.Location(x=p.x/100., y=p.y/100., z=p.z/100.))
++            wheels.append((local.x, local.y, local.z, wheel.max_steer_angle))
++            self.max_steer_deg = max(self.max_steer_deg, wheel.max_steer_angle)
++        box = self.vehicle.bounding_box
++        return rear_axle_local(wheels)[0], box.location.z-box.extent.z
++
++    def _spawn_dashcam(self) -> Any:
++        carla = self.carla
++        blueprint = self.world.get_blueprint_library().find("sensor.camera.rgb")
++        blueprint.set_attribute("image_size_x", str(DASHCAM_WIDTH))
++        blueprint.set_attribute("image_size_y", str(DASHCAM_HEIGHT))
++        blueprint.set_attribute("fov", str(DASHCAM_HFOV_DEG))
++        blueprint.set_attribute("sensor_tick", str(1./DASHCAM_RATE_HZ))
++        x, y, z = dashcam_local(self.rear_x, self.ground_z)
++        camera = self.world.spawn_actor(blueprint, carla.Transform(carla.Location(x=x, y=y, z=z), carla.Rotation(pitch=0., yaw=0., roll=0.)),
++                                        attach_to=self.vehicle, attachment_type=carla.AttachmentType.Rigid)
++        camera.listen(self._on_image)
++        print(f"ROS output: dashcam at vehicle-local ({x:.3f}, {y:.3f}, {z:.3f}) m, {DASHCAM_WIDTH}x{DASHCAM_HEIGHT}, "
++              f"HFOV {DASHCAM_HFOV_DEG} deg, {DASHCAM_RATE_HZ} Hz")
++        return camera
++
++    # inputs
++    def set_drive(self, axis: float, reverse: bool) -> None:
++        """From the tool's driving loop: the raw steering axis and its reverse toggle."""
++        with self.lock:self.axis = float(axis); self.reverse = bool(reverse)
++
++    def _on_tick(self, snapshot: Any) -> None:
++        # CARLA's callback thread: no client calls here, only hand the snapshot on.
++        with self.lock:self.snapshot = snapshot
++        self.new.set()
++
++    # outputs
++    def _header(self, msg: Any, seconds: float, frame: str) -> None:
++        msg.header.stamp.sec, msg.header.stamp.nanosec = stamp_of(seconds); msg.header.frame_id = frame
++
++    def _run(self) -> None:
++        while not self.stop.is_set():
++            if not self.new.wait(.5):continue
++            self.new.clear()
++            with self.lock:snapshot = self.snapshot; axis = self.axis; reverse = self.reverse
++            try:self._publish_state(snapshot, axis, reverse)
++            except Exception as exc:  # noqa: BLE001 - keep driving whatever ROS does
++                print(f"WARNING: ROS output: {type(exc).__name__}: {exc}")
++
++    def _publish_state(self, snapshot: Any, axis: Optional[float], reverse: bool) -> None:
++        msgs = self.msgs; t = snapshot.timestamp.elapsed_seconds
++        clock = msgs["Clock"](); clock.clock.sec, clock.clock.nanosec = stamp_of(t); self.pub_clock.publish(clock)
++        actor = snapshot.find(self.vehicle.id)
++        if actor is None:return
++        tr = actor.get_transform(); v = actor.get_velocity(); w = actor.get_angular_velocity()
++        pose = msgs["PoseWithCovarianceStamped"](); self._header(pose, t, WORLD_FRAME)
++        x, y, z = ros_position(tr.location.x, tr.location.y, tr.location.z)
++        qx, qy, qz, qw = quaternion(*ros_rpy(tr.rotation.roll, tr.rotation.pitch, tr.rotation.yaw))
++        p = pose.pose.pose; p.position.x, p.position.y, p.position.z = x, y, z
++        p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w = qx, qy, qz, qw
++        self.pub_pose.publish(pose)
++        forward = tr.get_forward_vector()
++        speed = signed_speed((v.x, v.y, v.z), (forward.x, forward.y, forward.z))
++        # The front wheels' actual angle (CARLA >= 0.9.13); else the applied command times the lock.
++        try:
++            loc = self.carla.VehicleWheelLocation
++            road = road_wheel_angle_rad(self.vehicle.get_wheel_steer_angle(loc.FL_Wheel), self.vehicle.get_wheel_steer_angle(loc.FR_Wheel))
++        except (AttributeError, RuntimeError):
++            road = -math.radians(self.vehicle.get_control().steer*self.max_steer_deg)
++        if axis is None:  # not driving (the tool holds the car): the applied command
++            handwheel = -math.radians(self.vehicle.get_control().steer*self.range_deg*.5); gear = "P"
++        else:
++            handwheel = handwheel_angle_rad(axis, self.range_deg); gear = "R" if reverse else "D"
++        joint = msgs["JointState"](); self._header(joint, t, "base_link")
++        joint.name = ["steering_wheel", "road_wheel"]; joint.position = [handwheel, road]
++        if self.last_wheel is not None and t > self.last_wheel[0]:
++            joint.velocity = [(handwheel-self.last_wheel[1])/(t-self.last_wheel[0]), (road-self.last_wheel[2])/(t-self.last_wheel[0])]
++        self.last_wheel = (t, handwheel, road); self.pub_wheel.publish(joint)
++        if self.pub_state is not None:
++            state = msgs["VehicleState"](); self._header(state, t, "base_link")
++            state.gear = {"P": state.GEAR_PARK, "R": state.GEAR_REVERSE, "D": state.GEAR_DRIVE}[gear]
++            state.speed_mps = speed; state.steering_angle_rad = road; state.yaw_rate_rps = yaw_rate_rps(w.z)
++            self.pub_state.publish(state)
++
++    def _on_image(self, image: Any) -> None:
++        # CARLA's sensor thread: BGRA -> bgr8 and publish, stamped with the frame's simulation time.
++        try:
++            msgs = self.msgs; t = image.timestamp; w, h = image.width, image.height
++            bgr = bgra_to_bgr(image.raw_data, w, h)
++            out = msgs["Image"](); self._header(out, t, DASHCAM_FRAME)
++            out.height, out.width, out.encoding, out.is_bigendian, out.step = h, w, "bgr8", 0, w*3; out.data = bgr
++            info = msgs["CameraInfo"](); self._header(info, t, DASHCAM_FRAME)
++            info.height, info.width, info.distortion_model = h, w, "plumb_bob"
++            k = camera_matrix(w, h, float(image.fov)); info.k = k; info.d = [0.]*5
++            info.r = [1., 0., 0., 0., 1., 0., 0., 0., 1.]; info.p = [k[0], 0., k[2], 0., 0., k[4], k[5], 0., 0., 0., 1., 0.]
++            self.pub_image.publish(out); self.pub_info.publish(info)
++        except Exception as exc:  # noqa: BLE001
++            print(f"WARNING: ROS output dashcam: {type(exc).__name__}: {exc}")
++
++    def close(self) -> None:
++        self.stop.set(); self.new.set()
++        if self.tick_id is not None:
++            try:self.world.remove_on_tick(self.tick_id)
++            except RuntimeError:pass
++        self.worker.join(2.)
++        if self.camera is not None:
++            try:
++                if self.camera.is_listening:self.camera.stop()
++                if self.camera.is_alive:self.camera.destroy()
++            except RuntimeError as exc:print(f"WARNING: dashcam cleanup failed: {exc}")
++        try:self.node.destroy_node(); self.rclpy.try_shutdown()
++        except Exception:pass  # noqa: BLE001
++        print("ROS output stopped.")
++
++
++def start(world: Any, vehicle: Any, args: Any, carla_module: Any, range_deg: float) -> Optional[RosOutput]:
++    """RosOutput, or None (with a warning) when ROS 2 is not available: the tool then runs as without."""
++    try:
++        import rclpy
++        from rosgraph_msgs.msg import Clock
++        from geometry_msgs.msg import PoseWithCovarianceStamped
++        from sensor_msgs.msg import Image, CameraInfo, JointState
++    except ImportError as exc:
++        print(f"WARNING: --ros-output: ROS 2 is not available ({exc}); running without ROS outputs")
++        return None
++    msgs = dict(Clock=Clock, PoseWithCovarianceStamped=PoseWithCovarianceStamped, Image=Image, CameraInfo=CameraInfo, JointState=JointState)
++    try:
++        from hero_hud.msg import VehicleState
++        msgs["VehicleState"] = VehicleState
++    except ImportError:
++        print("WARNING: --ros-output: hero_hud messages not found (source the vision-road install); "
++              "/hero/vehicle_state is not published")
++    return RosOutput(world, vehicle, args, carla_module, rclpy, msgs, range_deg)
+--- /dev/null
++++ b/src/hero_calib/tests/test_ros_output.py
+@@ -0,0 +1,180 @@
++"""hero_ros_output.py: conversions, and the publisher driven by a fake CARLA world (no simulator needed).
++Needs ROS 2 (rclpy) and, for /hero/vehicle_state, the vision-road install sourced (hero_hud messages)."""
++import math
++import sys
++import time
++from pathlib import Path
++from types import SimpleNamespace
++
++import pytest
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++import hero_ros_output as R  # noqa: E402
++
++
++def test_carla_axes_turn_right_handed():
++    # A car heading 30 deg in CARLA (towards +y = right/south) heads -30 deg in ROS; its motion agrees.
++    assert R.ros_position(10., 5., .3) == (10., -5., .3)
++    roll, pitch, yaw = R.ros_rpy(0., 2., 30.)
++    assert math.isclose(yaw, -math.radians(30.)) and math.isclose(pitch, -math.radians(2.))
++    vx, vy, _ = R.ros_position(math.cos(math.radians(30.)), math.sin(math.radians(30.)), 0.)
++    assert math.isclose(math.atan2(vy, vx), yaw)
++    x, y, z, w = R.quaternion(0., 0., yaw)
++    assert math.isclose(math.atan2(2*(w*z+x*y), 1-2*(y*y+z*z)), yaw)
++
++
++def test_steering_and_yaw_rate_are_left_positive():
++    assert math.isclose(R.road_wheel_angle_rad(10., 12.), -math.radians(11.))  # CARLA + = right
++    assert math.isclose(R.handwheel_angle_rad(.5, 1080.), -math.radians(270.))  # axis + = right
++    assert math.isclose(R.handwheel_angle_rad(-2., 1080.), math.radians(540.))  # clipped at the stop
++    assert math.isclose(R.yaw_rate_rps(10.), -math.radians(10.))  # CARLA yaw grows turning right
++    assert R.signed_speed((-3., 0., 0.), (1., 0., 0.)) == -3.  # reversing
++
++
++def test_rear_axle_dashcam_and_camera_info():
++    wheels = [(1.37, -.78, .33, 70.), (1.37, .78, .33, 70.), (-1.33, -.78, .33, 0.), (-1.33, .78, .33, 0.)]
++    assert R.rear_axle_local(wheels) == pytest.approx((-1.33, 0.))
++    assert R.dashcam_local(-1.33, 0.) == pytest.approx((.87, 0., 1.4))
++    k = R.camera_matrix()
++    # The Town05 recording's camera_info: K = [960, 0, 960, 0, 960, 540, 0, 0, 1].
++    assert k == pytest.approx([960., 0., 960., 0., 960., 540., 0., 0., 1.], abs=1e-9)
++    assert R.stamp_of(2.5666667) == (2, 566666700)
++
++
++def test_bgra_to_bgr():
++    raw = bytes([1, 2, 3, 255, 4, 5, 6, 255])
++    assert R.bgra_to_bgr(raw, 2, 1) == bytes([1, 2, 3, 4, 5, 6])
++
++
++# ---------------------------------------------------------------- fake CARLA
++class V:
++    def __init__(self, x=0., y=0., z=0.):self.x, self.y, self.z = x, y, z
++
++
++class Rot:
++    def __init__(self, pitch=0., yaw=0., roll=0.):self.pitch, self.yaw, self.roll = pitch, yaw, roll
++
++
++class Tr:
++    def __init__(self, location, rotation):self.location, self.rotation = location, rotation
++
++    def get_forward_vector(self):
++        c, s = math.cos(math.radians(self.rotation.yaw)), math.sin(math.radians(self.rotation.yaw));return V(c, s, 0.)
++
++    def transform(self, p):
++        c, s = math.cos(math.radians(self.rotation.yaw)), math.sin(math.radians(self.rotation.yaw))
++        return V(self.location.x+c*p.x-s*p.y, self.location.y+s*p.x+c*p.y, self.location.z+p.z)
++
++    def inverse_transform(self, p):
++        c, s = math.cos(math.radians(self.rotation.yaw)), math.sin(math.radians(self.rotation.yaw))
++        dx, dy = p.x-self.location.x, p.y-self.location.y;return V(c*dx+s*dy, -s*dx+c*dy, p.z-self.location.z)
++
++
++FAKE_CARLA = SimpleNamespace(Location=V, Rotation=Rot, Transform=lambda l, r: Tr(l, r),
++                             VehicleWheelLocation=SimpleNamespace(FL_Wheel='FL', FR_Wheel='FR'),
++                             AttachmentType=SimpleNamespace(Rigid='rigid'))
++
++
++class Camera:
++    def __init__(self, transform):self.transform, self.callback, self.is_listening, self.is_alive = transform, None, False, True
++    def listen(self, cb):self.callback, self.is_listening = cb, True
++    def stop(self):self.is_listening = False
++    def destroy(self):self.is_alive = False
++
++
++class Blueprint:
++    def __init__(self):self.attributes = {}
++    def set_attribute(self, k, v):self.attributes[k] = v
++
++
++class World:
++    def __init__(self):self.cb, self.camera, self.bp = None, None, Blueprint()
++    def on_tick(self, cb):self.cb = cb;return 7
++    def remove_on_tick(self, i):self.cb = None
++    def get_blueprint_library(self):return SimpleNamespace(find=lambda name: self.bp)
++    def spawn_actor(self, bp, transform, attach_to=None, attachment_type=None):self.camera = Camera(transform);return self.camera
++
++
++class Vehicle:
++    id = 42
++
++    def __init__(self):
++        self.tr = Tr(V(100., 50., 0.), Rot(yaw=30.))
++        local = [(1.37, -.78, .33, 70.), (1.37, .78, .33, 70.), (-1.33, -.78, .33, 0.), (-1.33, .78, .33, 0.)]
++        wheels = []
++        for x, y, z, steer in local:
++            p = self.tr.transform(V(x, y, z));wheels.append(SimpleNamespace(position=V(p.x*100., p.y*100., p.z*100.), max_steer_angle=steer))
++        self.physics = SimpleNamespace(wheels=wheels)
++        self.bounding_box = SimpleNamespace(location=V(0., 0., .75), extent=V(2.25, 1.0, .75))
++    def get_transform(self):return self.tr
++    def get_physics_control(self):return self.physics
++    def get_wheel_steer_angle(self, where):return 10. if where == 'FL' else 12.
++    def get_control(self):return SimpleNamespace(steer=.2, reverse=False)
++
++
++def test_publisher_on_a_fake_world():
++    rclpy = pytest.importorskip("rclpy")
++    from sensor_msgs.msg import Image, CameraInfo, JointState
++    from geometry_msgs.msg import PoseWithCovarianceStamped
++    from rosgraph_msgs.msg import Clock
++    world, vehicle = World(), Vehicle()
++    out = R.start(world, vehicle, SimpleNamespace(ros_no_dashcam=False), FAKE_CARLA, 1080.)
++    assert out is not None
++    try:
++        # The dashcam: 2.2 m ahead of the rear axle (local x -1.33), 1.4 m above the ground (box bottom 0).
++        loc = world.camera.transform.location
++        assert (loc.x, loc.y, loc.z) == pytest.approx((.87, 0., 1.4))
++        assert world.bp.attributes == {"image_size_x": "1920", "image_size_y": "1080", "fov": "90.0", "sensor_tick": str(1./30.)}
++        listener = rclpy.create_node("test_listener");got = {}
++        for topic, kind in (("/clock", Clock), ("/carla/ground_truth/pose", PoseWithCovarianceStamped), ("/hero/steering_wheel", JointState),
++                            ("/sensing/camera/dashcam/image_raw", Image), ("/sensing/camera/dashcam/camera_info", CameraInfo)):
++            listener.create_subscription(kind, topic, lambda m, t=topic: got.setdefault(t, m), 10)
++        try:
++            from hero_hud.msg import VehicleState
++            listener.create_subscription(VehicleState, "/hero/vehicle_state", lambda m: got.setdefault("/hero/vehicle_state", m), 10)
++            want_state = True
++        except ImportError:
++            want_state = False
++        out.set_drive(-.25, False)  # handwheel 135 deg to the left
++        actor = SimpleNamespace(get_transform=lambda: vehicle.tr, get_velocity=lambda: V(math.cos(math.radians(30.))*5., math.sin(math.radians(30.))*5., 0.),
++                                get_angular_velocity=lambda: V(0., 0., -6.))
++        snapshot = SimpleNamespace(timestamp=SimpleNamespace(elapsed_seconds=12.5), find=lambda i: actor if i == 42 else None)
++        image = SimpleNamespace(timestamp=12.5333333, width=1920, height=1080, fov=90., raw_data=bytes([10, 20, 30, 255])*(1920*1080))
++        end = time.monotonic()+5.
++        while time.monotonic() < end and len(got) < (6 if want_state else 5):
++            world.cb(snapshot);world.camera.callback(image);rclpy.spin_once(listener, timeout_sec=.05)
++        pose = got["/carla/ground_truth/pose"]
++        assert pose.header.frame_id == "map" and (pose.header.stamp.sec, pose.header.stamp.nanosec) == (12, 500000000)
++        p, q = pose.pose.pose.position, pose.pose.pose.orientation
++        assert (p.x, p.y, p.z) == pytest.approx((100., -50., 0.))
++        assert math.atan2(2*(q.w*q.z+q.x*q.y), 1-2*(q.y*q.y+q.z*q.z)) == pytest.approx(-math.radians(30.))
++        assert got["/clock"].clock.sec == 12
++        joint = got["/hero/steering_wheel"]
++        assert list(joint.name) == ["steering_wheel", "road_wheel"]
++        assert list(joint.position) == pytest.approx([math.radians(135.), -math.radians(11.)])
++        img, info = got["/sensing/camera/dashcam/image_raw"], got["/sensing/camera/dashcam/camera_info"]
++        assert (img.width, img.height, img.encoding, img.step, img.header.frame_id) == (1920, 1080, "bgr8", 5760, "dashcam_optical_link")
++        assert bytes(img.data[:6]) == bytes([10, 20, 30, 10, 20, 30])
++        assert (img.header.stamp.sec, img.header.stamp.nanosec) == (12, 533333300)
++        assert list(info.k) == pytest.approx([960., 0., 960., 0., 960., 540., 0., 0., 1.]) and info.distortion_model == "plumb_bob"
++        if want_state:
++            st = got["/hero/vehicle_state"]
++            assert st.gear == st.GEAR_DRIVE and st.speed_mps == pytest.approx(5., abs=1e-5)
++            assert st.steering_angle_rad == pytest.approx(-math.radians(11.), abs=1e-6)
++            assert st.yaw_rate_rps == pytest.approx(math.radians(6.), abs=1e-6)
++        listener.destroy_node()
++    finally:
++        out.close()
++    assert world.cb is None and not world.camera.is_alive
++
++
++def test_without_ros_it_only_warns(monkeypatch, capsys):
++    import builtins
++    real = builtins.__import__
++
++    def blocked(name, *a, **k):
++        if name == "rclpy" or name.startswith("rclpy."):raise ImportError("no rclpy here")
++        return real(name, *a, **k)
++    monkeypatch.setattr(builtins, "__import__", blocked)
++    assert R.start(World(), Vehicle(), SimpleNamespace(), FAKE_CARLA, 1080.) is None
++    assert "running without ROS outputs" in capsys.readouterr().out

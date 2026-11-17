@@ -45,6 +45,13 @@ try:
 except ImportError:
     np = None  # type: ignore[assignment]
 
+# Added (ROS output): optional ROS 2 topics beside the tool, see hero_ros_output.py and --ros-output.
+try:
+    import hero_ros_output
+except ImportError:  # pragma: no cover - the module sits next to this script
+    hero_ros_output = None  # type: ignore[assignment]
+ROS_OUTPUT: Optional[Any] = None
+
 
 VEHICLE_BLUEPRINT = "vehicle.toyota.prius"
 VEHICLE_LABEL = "Toyota Prius"
@@ -1223,6 +1230,8 @@ def run_pygame_ui(
                 velocity = vehicle.get_velocity()
                 speed_mps = math.hypot(velocity.x, velocity.y)
                 vehicle.apply_control(wheel_vehicle_control(joystick, reverse, speed_mps))
+                if ROS_OUTPUT is not None:  # Added (ROS output)
+                    ROS_OUTPUT.set_drive(joystick.get_axis(WHEEL_STEER_AXIS), reverse)
             if changed or pitch_changed:
                 eye = _refresh(state, world, vehicle, camera, args)
             if now - last_debug >= max(0.1, args.debug_life_time * 0.5):
@@ -1425,6 +1434,18 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Hide only the gaze-line text label.",
     )
+    # Added (ROS output): new options only; every option above keeps its meaning and default.
+    parser.add_argument(
+        "--ros-output",
+        action="store_true",
+        help="Also publish ROS 2 topics (pose, vehicle state, steering wheel, dashcam, clock); "
+        "see hero_ros_output.py. Without ROS 2 the tool runs as without this option.",
+    )
+    parser.add_argument(
+        "--ros-no-dashcam",
+        action="store_true",
+        help="With --ros-output: do not add the 1920x1080 dashcam camera.",
+    )
     return parser
 
 
@@ -1592,6 +1613,10 @@ def run(args: argparse.Namespace) -> int:
                 "pitch/yaw/roll/FOV remain unchanged."
             )
 
+        if getattr(args, "ros_output", False) and hero_ros_output is not None:  # Added (ROS output)
+            global ROS_OUTPUT
+            ROS_OUTPUT = hero_ros_output.start(world, vehicle, args, carla, WHEEL_RANGE_DEG)
+
         if args.auto_save:
             if not state.confirmed:
                 raise RuntimeError(
@@ -1657,6 +1682,8 @@ def run(args: argparse.Namespace) -> int:
             print("Final wheel-centre status: UNRESOLVED; no final eye is claimed")
         return 0
     finally:
+        if ROS_OUTPUT is not None:  # Added (ROS output): before the Prius it is attached to goes
+            ROS_OUTPUT.close()
         cleanup(camera, vehicle)
         print("Cleanup complete: created camera/Prius actors destroyed.")
         print("World settings were not changed.")
