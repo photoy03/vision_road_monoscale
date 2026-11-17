@@ -3,9 +3,11 @@
 # with the demo setting: outer lines, centrelines, lane guidance, fake vehicle state, display filter in the
 # perception worker, HUD copy.  Writes the computer's description and one folder per run, then SUMMARY.txt.
 #
-#   tools/measure_latency.sh                 3 runs with row-cropped images, 1 with full images, 3 with the AI
-#                                            filter (if data/models/yolopv2/yolopv2.pt is there)
+#   tools/measure_latency.sh                 3 runs with full images, 3 with the AI filter (full images; if
+#                                            data/models/yolopv2/yolopv2.pt is there)
 #   RUNS=1 FRAMES=600 tools/measure_latency.sh   a short check (600 frames = 20 s)
+#   CROP=1 tools/measure_latency.sh          also 3 runs with row-cropped images (off by default: full images are
+#                                            the standard)
 #
 # Needs: this workspace built (colcon build --symlink-install, see BUILD_AND_TEST.md), ROS 2 Humble, the HUD copy
 # built, and the Town05 recording: VISION_ROAD_DISK/rosbag/town05_30hz/ (27 GB) and
@@ -40,8 +42,8 @@ cat "$OUT/system.txt"
 A="display_filter_inline:=true lane_guidance:=true fake_vehicle_state:=true"
 W=$PWD/data/models/yolopv2/yolopv2.pt
 run(){ local n=$1;shift;echo "run $n ...";python3 tools/realtime_eval.py --video town05 --frames "$FRAMES" --output "$OUT/$n" "$@" > "$OUT/$n.log" 2>&1 && echo "  done" || echo "  FAILED (see $OUT/$n.log)"; }
-for i in $(seq 1 "$RUNS");do run crop$i --crop-rows 578:984 --launch-arg $A;done
-run full1 --launch-arg $A
+for i in $(seq 1 "$RUNS");do run full$i --launch-arg $A;done
+if [ "${CROP:-0}" = 1 ];then for i in $(seq 1 "$RUNS");do run crop$i --crop-rows 578:984 --launch-arg $A;done;fi
 if [ -f "$W" ];then for i in $(seq 1 "$RUNS");do run ai$i --launch-arg $A learned_weights:=$W;done;fi
 python3 tools/latency_summary.py "$OUT" | tee "$OUT/SUMMARY.txt"
 echo "results: $OUT (SUMMARY.txt, system.txt)"

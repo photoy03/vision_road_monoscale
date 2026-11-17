@@ -1,0 +1,198 @@
+{
+ "left": {
+  "frames": 1808,
+  "visible": 919,
+  "caught_measured": 0.9695,
+  "caught_shown": 0.9695,
+  "extra_measured": 0,
+  "gapvar_n": 890,
+  "gapvar_over_0_3": 0.0,
+  "gapvar_p95_m": 0.061,
+  "wobble": {
+   "outer": {
+    "n": 810,
+    "mean_cm": 0.35,
+    "p95_cm": 1.17,
+    "rms_cm": 0.51
+   },
+   "own": {
+    "n": 1408,
+    "mean_cm": 0.3,
+    "p95_cm": 1.04,
+    "rms_cm": 0.58
+   }
+  },
+  "style": {
+   "solid": 0.0,
+   "dashed": 0.921,
+   "unknown": 0.079
+  },
+  "yellow": 0.0,
+  "opposite": 0.999,
+  "per5s": {
+   "0-5": {
+    "visible": 148,
+    "measured": 1.0,
+    "shown": 1.0
+   },
+   "5-10": {
+    "visible": 105,
+    "measured": 0.99,
+    "shown": 0.99
+   },
+   "10-15": {
+    "visible": 33,
+    "measured": 0.64,
+    "shown": 0.64
+   },
+   "15-20": {
+    "visible": 34,
+    "measured": 0.91,
+    "shown": 0.91
+   },
+   "20-25": {
+    "visible": 0,
+    "measured": null,
+    "shown": null
+   },
+   "25-30": {
+    "visible": 6,
+    "measured": 0.67,
+    "shown": 0.67
+   },
+   "30-35": {
+    "visible": 119,
+    "measured": 0.98,
+    "shown": 0.98
+   },
+   "35-40": {
+    "visible": 31,
+    "measured": 1.0,
+    "shown": 1.0
+   },
+   "40-45": {
+    "visible": 147,
+    "measured": 0.99,
+    "shown": 0.99
+   },
+   "45-50": {
+    "visible": 57,
+    "measured": 0.96,
+    "shown": 0.96
+   },
+   "50-55": {
+    "visible": 81,
+    "measured": 0.95,
+    "shown": 0.95
+   },
+   "55-60": {
+    "visible": 150,
+    "measured": 1.0,
+    "shown": 1.0
+   },
+   "60-65": {
+    "visible": 8,
+    "measured": 1.0,
+    "shown": 1.0
+   }
+  }
+ },
+ "right": {
+  "frames": 1808,
+  "visible": 1491,
+  "caught_measured": 0.9966,
+  "caught_shown": 0.9973,
+  "extra_measured": 0,
+  "gapvar_n": 1482,
+  "gapvar_over_0_3": 0.0,
+  "gapvar_p95_m": 0.071,
+  "wobble": {
+   "outer": {
+    "n": 1408,
+    "mean_cm": 0.22,
+    "p95_cm": 0.83,
+    "rms_cm": 0.36
+   },
+   "own": {
+    "n": 1422,
+    "mean_cm": 0.29,
+    "p95_cm": 1.01,
+    "rms_cm": 0.53
+   }
+  },
+  "style": {
+   "solid": 0.972,
+   "dashed": 0.0,
+   "unknown": 0.028
+  },
+  "yellow": 0.0,
+  "opposite": 0.0,
+  "per5s": {
+   "0-5": {
+    "visible": 148,
+    "measured": 1.0,
+    "shown": 1.0
+   },
+   "5-10": {
+    "visible": 112,
+    "measured": 1.0,
+    "shown": 1.0
+   },
+   "10-15": {
+    "visible": 59,
+    "measured": 1.0,
+    "shown": 1.0
+   },
+   "15-20": {
+    "visible": 150,
+    "measured": 1.0,
+    "shown": 1.0
+   },
+   "20-25": {
+    "visible": 150,
+    "measured": 1.0,
+    "shown": 1.0
+   },
+   "25-30": {
+    "visible": 150,
+    "measured": 1.0,
+    "shown": 1.0
+   },
+   "30-35": {
+    "visible": 135,
+    "measured": 0.99,
+    "shown": 1.0
+   },
+   "35-40": {
+    "visible": 69,
+    "measured": 0.94,
+    "shown": 0.94
+   },
+   "40-45": {
+    "visible": 150,
+    "measured": 1.0,
+    "shown": 1.0
+   },
+   "45-50": {
+    "visible": 77,
+    "measured": 1.0,
+    "shown": 1.0
+   },
+   "50-55": {
+    "visible": 133,
+    "measured": 1.0,
+    "shown": 1.0
+   },
+   "55-60": {
+    "visible": 150,
+    "measured": 1.0,
+    "shown": 1.0
+   },
+   "60-65": {
+    "visible": 8,
+    "measured": 1.0,
+    "shown": 1.0
+   }
+  }
+ }
+}

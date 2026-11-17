@@ -1,0 +1,4 @@
+town05 off: both own lines 87.5% any own line 90.7% outer line 87.0% ego centreline 90.7% | paint-boundary {'left': 'n 1585 mean 12.99 p95 13.89 cm', 'right': 'n 1556 mean 0.74 p95 3.02 cm'}
+town05 on: both own lines 87.1% any own line 91.0% outer line 86.9% ego centreline 90.7% | paint-boundary {'left': 'n 1586 mean 13.09 p95 13.94 cm', 'right': 'n 1553 mean 0.73 p95 2.77 cm'}
+maploop off: both own lines 74.4% any own line 83.8% outer line 75.3% ego centreline 83.8% | paint-boundary {'left': 'n 1476 mean 10.43 p95 14.05 cm', 'right': 'n 1338 mean 1.35 p95 4.12 cm'}
+maploop on: both own lines 74.2% any own line 83.8% outer line 74.4% ego centreline 83.8% | paint-boundary {'left': 'n 1478 mean 10.46 p95 14.09 cm', 'right': 'n 1324 mean 1.33 p95 3.92 cm'}

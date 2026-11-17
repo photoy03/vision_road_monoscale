@@ -1,0 +1,199 @@
+{
+ "results": {
+  "own (boundaries)": {
+   "frames": 1807,
+   "compared": 1772,
+   "median_m": 0.00010363132717960966,
+   "p95_m": 0.04520767558477151,
+   "max_m": 2.1868556147883575,
+   "over_5cm_share": 0.044582392776523705,
+   "no_overlap_frames": 0,
+   "side_or_presence_change_frames": 35,
+   "style_change_frames": 0,
+   "identical_frames": 478
+  },
+  "own (paint lanes)": {
+   "frames": 1807,
+   "compared": 1364,
+   "median_m": 0.0,
+   "p95_m": 0.012357384228501756,
+   "max_m": 0.3081656462475879,
+   "over_5cm_share": 0.04912023460410557,
+   "no_overlap_frames": 39,
+   "side_or_presence_change_frames": 443,
+   "style_change_frames": 0,
+   "identical_frames": 685
+  },
+  "outer": {
+   "frames": 1807,
+   "compared": 1769,
+   "median_m": 2.58595407869322e-05,
+   "p95_m": 0.05706697763024973,
+   "max_m": 1.06080813851385,
+   "over_5cm_share": 0.0570944036178632,
+   "no_overlap_frames": 0,
+   "side_or_presence_change_frames": 38,
+   "style_change_frames": 39,
+   "identical_frames": 548
+  },
+  "centre": {
+   "frames": 1807,
+   "compared": 1756,
+   "median_m": 0.000376404833225763,
+   "p95_m": 0.07529992305878419,
+   "max_m": 2.0475380311475915,
+   "over_5cm_share": 0.06947608200455581,
+   "no_overlap_frames": 0,
+   "side_or_presence_change_frames": 51,
+   "style_change_frames": 0,
+   "identical_frames": 386
+  }
+ },
+ "examples": {
+  "own (boundaries)": {
+   "largest": [
+    [
+     775,
+     2.1868556147883575
+    ],
+    [
+     161,
+     0.645998926052298
+    ],
+    [
+     776,
+     0.5980273578524411
+    ],
+    [
+     162,
+     0.5899193105787246
+    ],
+    [
+     777,
+     0.5685132005700977
+    ]
+   ],
+   "changed": [
+    4,
+    5,
+    52,
+    556,
+    557,
+    558,
+    562,
+    563,
+    564,
+    582
+   ]
+  },
+  "own (paint lanes)": {
+   "largest": [
+    [
+     1100,
+     Infinity
+    ],
+    [
+     761,
+     Infinity
+    ],
+    [
+     1146,
+     Infinity
+    ],
+    [
+     763,
+     Infinity
+    ],
+    [
+     764,
+     Infinity
+    ]
+   ],
+   "changed": [
+    4,
+    5,
+    144,
+    146,
+    151,
+    154,
+    155,
+    160,
+    161,
+    162
+   ]
+  },
+  "outer": {
+   "largest": [
+    [
+     1279,
+     1.06080813851385
+    ],
+    [
+     1280,
+     1.0598076577889888
+    ],
+    [
+     1276,
+     1.05682521978318
+    ],
+    [
+     1266,
+     1.055869930128856
+    ],
+    [
+     1277,
+     1.0522587727344854
+    ]
+   ],
+   "changed": [
+    544,
+    545,
+    546,
+    547,
+    548,
+    549,
+    556,
+    557,
+    558,
+    559
+   ]
+  },
+  "centre": {
+   "largest": [
+    [
+     765,
+     2.0475380311475915
+    ],
+    [
+     1530,
+     0.742968084043008
+    ],
+    [
+     162,
+     0.6824622534520182
+    ],
+    [
+     163,
+     0.6551484828414815
+    ],
+    [
+     766,
+     0.604488816230401
+    ]
+   ],
+   "changed": [
+    4,
+    5,
+    544,
+    545,
+    546,
+    547,
+    548,
+    549,
+    556,
+    557
+   ]
+  }
+ },
+ "identical_whole_frames": 344
+}

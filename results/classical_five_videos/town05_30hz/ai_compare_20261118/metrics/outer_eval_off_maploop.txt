@@ -1,0 +1,4 @@
+maploop outeroff left  visible 1378/1807 caught 0.791 (shown 0.8425) extra 0 gapvar>0.3 0.0 (p95 0.088) wobble10 outer 1.28/2.65 own 0.48/0.87 cm style {'solid': 0.263, 'dashed': 0.606, 'unknown': 0.13} yellow 0.041 opp 1.0
+   per5s visible/measured: 0-5:104/0.69 5-10:150/1.0 10-15:150/1.0 15-20:115/0.8 20-25:40/0.93 25-30:150/0.99 30-35:150/0.96 35-40:150/0.99 40-45:134/0.75 45-50:55/0.24 50-55:40/0.03 55-60:133/0.23 60-65:7/0.14
+maploop outeroff right visible  876/1807 caught 0.9589 (shown 0.9715) extra 0 gapvar>0.3 0.0012 (p95 0.098) wobble10 outer 1.94/2.83 own 1.5/2.94 cm style {'solid': 0.944, 'dashed': 0.0, 'unknown': 0.056} yellow 0.0 opp 0.0
+   per5s visible/measured: 0-5:86/0.98 5-10:148/1.0 10-15:150/1.0 15-20:97/0.98 20-25:1/0.0 25-30:0/None 30-35:0/None 35-40:56/0.96 40-45:116/0.91 45-50:8/0.0 50-55:89/0.89 55-60:118/1.0 60-65:7/1.0
