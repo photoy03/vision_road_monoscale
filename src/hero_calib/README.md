@@ -149,11 +149,16 @@ This copy lives in `vision-road/src/hero_calib`. The original is `~/Desktop/HERO
 - two new options,
 - three calls into `hero_ros_output.py`.
 
+**이 사본에서 `publish_private_github.sh` 를 실행하지 말 것.** 이 사본은 vision-road 저장소 안에
+있어서, 실행하면 그 저장소의 원격(origin)을 바꾸고 push 한다. 원본 폴더 전용이다.
+
 Every existing option, default, keyboard and wheel input, calibration, physics value and eye-camera
 setting is the same. Without `--ros-output` nothing new runs. With it but without ROS 2, the tool prints
 one warning and runs as before.
 
 ### 출력
+
+한 장으로 정리한 출력 약속(토픽, 형식, 단위, 부호, 기준점, 주기, 미확정 항목): `OUTPUT_CONTRACT_KO.md`.
 
 | 토픽 | 형식 | 내용 |
 |---|---|---|
