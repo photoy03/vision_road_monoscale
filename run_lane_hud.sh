@@ -13,19 +13,22 @@
 #   --fake-vehicle-state  made-up /hero/vehicle_state and /hero/steering_wheel from the pose
 #                   (tools/fake_vehicle_state.py), until the driving node sends them: the HUD then
 #                   draws the current path and the guidance takes its speed
+#   --crop-rows LO:HI   the replay sends only image rows LO..HI-1 (e.g. 578:984, the rows the lane
+#                   BEV reads; CameraInfo roi says which), a third of the image bytes
 # The HUD is this workspace's copy (src/hero_hud), built into install/.
 set -euo pipefail
 ROAD="$(cd "$(dirname "$0")" && pwd)"
 HUD_CONFIG=$ROAD/src/hero_hud/config/hud.yaml
 DISK=/media/jaehun/38F7-677B
 VIDEO=${1:-}; shift || true
-HUD=1; LOOP=0; FRAMES=0; LEARNED=""; GUIDANCE=true; FAKE_VS=false
+HUD=1; LOOP=0; FRAMES=0; LEARNED=""; GUIDANCE=true; FAKE_VS=false; CROP=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-hud) HUD=0;; --loop) LOOP=1;; --frames) FRAMES=$2; shift;;
     --learned) LEARNED="learned_weights:=$ROAD/data/models/yolopv2/yolopv2.pt";;
     --no-guidance) GUIDANCE=false;;
     --fake-vehicle-state) FAKE_VS=true;;
+    --crop-rows) CROP=(--crop-rows "$2"); shift;;
     *) echo "unknown option $1"; exit 2;;
   esac; shift
 done
@@ -67,7 +70,7 @@ if [ -z "$BAG" ]; then
   wait
 else
   while true; do
-    /usr/bin/python3 "$ROAD/tools/replay_maploop.py" --bag "$BAG" --cache "$CACHE" --max-frames "$FRAMES" --rate 1
+    /usr/bin/python3 "$ROAD/tools/replay_maploop.py" --bag "$BAG" --cache "$CACHE" --max-frames "$FRAMES" --rate 1 ${CROP[@]+"${CROP[@]}"}
     [ "$LOOP" = 1 ] || break
   done
 fi

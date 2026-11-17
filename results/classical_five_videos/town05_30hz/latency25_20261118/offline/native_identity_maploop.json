@@ -1,0 +1,20 @@
+{
+ "frames": 1807,
+ "identical": 1807,
+ "max_diff_m": {
+  "lanes": 0.0,
+  "bounds": 0.0,
+  "outer": 0.0,
+  "centres": 0.0
+ },
+ "structural_frames": 0,
+ "side_or_presence_change_frames": 0,
+ "examples": {
+  "structural": [],
+  "changes": []
+ },
+ "lengths": [
+  1807,
+  1807
+ ]
+}

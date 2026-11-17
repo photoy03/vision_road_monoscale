@@ -66,6 +66,8 @@ vision_road:
     carla_turn_curvature: 0.03
     # Real time: the median filter and the paint-history warps run on a second thread (same results).
     carla_parallel_ops: true
+    # Plan 25: per-pixel binary steps, the curb test and per-lane loops in C++ (_native); outputs unchanged.
+    carla_native_fast: true
     # Neighbouring lanes (Town05): after the two own lines are chosen (unchanged), each side's next line out,
     # from the paint they left: 2.3-4.7 m (and within 0.9 m of the own lane width) outside the own line along
     # its normal, parallel to it (distance varies <= 0.3 m).  /road/lane_outer, /road/lane_outer_markers.
@@ -88,6 +90,9 @@ vision_road:
     display_publish_in_worker: true
     # The perception worker subscribes the camera and odometry itself: no image copy or hand-over in road_node.
     image_in_worker: true
+    # Plan 25: with learned_weights the worker takes the camera too and hands the frames to the model process
+    # (the image no longer goes through road_node).  Without learned weights nothing changes.
+    learned_in_worker: true
 lane_display_filter:
   ros__parameters:
     # HUD line reaches the rear axle (HUD path start, bottom of the screen); paint seen in the last

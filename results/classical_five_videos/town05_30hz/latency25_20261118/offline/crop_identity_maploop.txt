@@ -1,0 +1,1 @@
+maploop: rows read 580-981, sent 578-983 (406 of 1080 rows, 37.6%); BEV identical 1807/1807 frames

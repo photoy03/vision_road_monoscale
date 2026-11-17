@@ -65,6 +65,7 @@ class Settings:
     carla_tail_gap_m: float = 0.0  # >0: after a paint gap this long that holds a transverse bar (stop line), a chain is cut where it continues off its own near shape
     carla_tail_offset_m: float = 0.5  # ... by more than this (a line ending at a junction picks up the crossing road's edge)
     carla_tail_bar_m: float = 1.0  # transverse paint at least this wide counts as a bar
+    carla_native_fast: bool = False  # plan 25: the per-pixel binary steps, the edge test and the per-lane loops in _native (same results)
     carla_parallel_ops: bool = False  # True: independent OpenCV steps (median filter, history warps) on two threads; same results
     carla_turn_curvature: float = 0.0  # >0: while the vehicle turns this sharply (1/m, over its last metre), a candidate starting within 15 m is not taken
     carla_turn_angle_deg: float = 25.0  # ... when its first 2 m head against the turn and cross the vehicle's own arc at this angle (a crossing road's line)
@@ -142,12 +143,37 @@ class Projector:
         self.valid = ((cam[:, :, 2] > 0) & (self.mx >= 0) & (self.mx < width-1) & (self.my >= 0) & (self.my < height-1)).astype('uint8')*255
         self.source_size = (width, height)
 
-    def warp(self, frame):
+    def warp(self, frame, top=0):
+        """top: the frame holds only rows [top, top+height) of the full image (a row crop, see rows());
+        the BEV is then the same as from the full image wherever rows() covers."""
+        if top or (self.source_size is not None and frame.shape[1] == self.source_size[0] and frame.shape[0] < self.source_size[1]):
+            mx, my = self.crop_maps(top, frame.shape[0])
+            bev = cv2.remap(frame, mx, my, cv2.INTER_LINEAR)
+            return cv2.bitwise_and(bev, bev, mask=self.valid)
         size = (frame.shape[1], frame.shape[0])
         if size != self.source_size:
             self.initialize(*size)
         bev = cv2.remap(frame, self.mx, self.my, cv2.INTER_LINEAR)
         return cv2.bitwise_and(bev, bev, mask=self.valid)
+
+    def rows(self, roi_bottom=1.0):
+        """Source rows [lo, hi) the BEV reads (bilinear: floor and floor+1) for its valid pixels above
+        roi_bottom * height: a row crop covering these gives the same BEV as the full image."""
+        used = (self.valid > 0) & (self.my < self.source_size[1]*roi_bottom)
+        my = self.my[used]
+        return int(np.floor(my.min())), int(np.floor(my.max()))+2
+
+    def crop_maps(self, top, height):
+        """remap maps for a frame of rows [top, top+height) (shifted by an integer: the same sampling)."""
+        if self.source_size is None:
+            raise ValueError('Row crop before the projector knows the full image size')
+        if top < 0 or top+height > self.source_size[1]:
+            raise ValueError('Row crop outside the full image')
+        key = (top, height)
+        if getattr(self, '_crop_key', None) != key or getattr(self, '_crop_source', None) != self.source_size:
+            self._crop = (self.mx, self.my-np.float32(top))
+            self._crop_key, self._crop_source = key, self.source_size
+        return self._crop
 
 
     def image_points(self, points):

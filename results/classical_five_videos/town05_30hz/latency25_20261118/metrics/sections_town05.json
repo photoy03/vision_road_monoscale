@@ -1,0 +1,132 @@
+{
+ "carla.binary": {
+  "mean": 2.317,
+  "p95": 2.603,
+  "heavy_mean": 2.342
+ },
+ "carla.coherent_paths": {
+  "mean": 1.509,
+  "p95": 2.585,
+  "heavy_mean": 2.174
+ },
+ "carla.crossing": {
+  "mean": 0.107,
+  "p95": 0.966,
+  "heavy_mean": 0.225
+ },
+ "carla.cut_tail": {
+  "mean": 0.035,
+  "p95": 0.16,
+  "heavy_mean": 0.061
+ },
+ "carla.detect": {
+  "mean": 5.359,
+  "p95": 7.669,
+  "heavy_mean": 7.729
+ },
+ "carla.merge_strands": {
+  "mean": 1.836,
+  "p95": 3.031,
+  "heavy_mean": 2.983
+ },
+ "carla.paint_fragments": {
+  "mean": 5.352,
+  "p95": 7.662,
+  "heavy_mean": 7.722
+ },
+ "carla.pair_vote": {
+  "mean": 1.013,
+  "p95": 1.77,
+  "heavy_mean": 1.671
+ },
+ "carla.parallel_support": {
+  "mean": 0.053,
+  "p95": 0.061,
+  "heavy_mean": 0.044
+ },
+ "carla.recall_pairs": {
+  "mean": 0.355,
+  "p95": 0.611,
+  "heavy_mean": 0.562
+ },
+ "carla.share_shape": {
+  "mean": 0.087,
+  "p95": 0.22,
+  "heavy_mean": 0.119
+ },
+ "carla.spine": {
+  "mean": 0.538,
+  "p95": 0.672,
+  "heavy_mean": 0.639
+ },
+ "carla.store_pairs": {
+  "mean": 0.048,
+  "p95": 0.086,
+  "heavy_mean": 0.061
+ },
+ "classify_lane": {
+  "mean": 0.582,
+  "p95": 0.771,
+  "heavy_mean": 0.764
+ },
+ "finish": {
+  "mean": 2.367,
+  "p95": 3.743,
+  "heavy_mean": 3.253
+ },
+ "finish.carla.outer_lines": {
+  "mean": 0.692,
+  "p95": 1.025,
+  "heavy_mean": 0.914
+ },
+ "finish.classify_lane": {
+  "mean": 0.129,
+  "p95": 0.406,
+  "heavy_mean": 0.189
+ },
+ "finish.temporal._centres": {
+  "mean": 1.33,
+  "p95": 2.08,
+  "heavy_mean": 1.881
+ },
+ "finish.temporal._outer": {
+  "mean": 0.31,
+  "p95": 0.674,
+  "heavy_mean": 0.418
+ },
+ "finish.temporal._visible": {
+  "mean": 0.01,
+  "p95": 0.015,
+  "heavy_mean": 0.012
+ },
+ "process": {
+  "mean": 12.207,
+  "p95": 16.655,
+  "heavy_mean": 16.825
+ },
+ "temporal._accumulate_style": {
+  "mean": 0.42,
+  "p95": 0.594,
+  "heavy_mean": 0.535
+ },
+ "temporal._boundaries": {
+  "mean": 0.222,
+  "p95": 0.268,
+  "heavy_mean": 0.26
+ },
+ "temporal._fragment_keys": {
+  "mean": 0.066,
+  "p95": 0.128,
+  "heavy_mean": 0.125
+ },
+ "temporal._registration": {
+  "mean": 0.069,
+  "p95": 0.083,
+  "heavy_mean": 0.074
+ },
+ "temporal._visible": {
+  "mean": 0.299,
+  "p95": 0.51,
+  "heavy_mean": 0.499
+ }
+}

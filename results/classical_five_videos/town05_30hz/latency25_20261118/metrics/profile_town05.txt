@@ -1,0 +1,122 @@
+town05: process mean 55.29 p95 82.78 ms (with profiler overhead); finish mean 8.06
+         32082182 function calls (31158734 primitive calls) in 113.124 seconds
+
+   Ordered by: internal time
+   List reduced from 820 to 45 due to restriction <45>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+2272941/1349808    7.417    0.000   47.737    0.000 {built-in method numpy.core._multiarray_umath.implement_array_function}
+     1808    3.883    0.002   99.764    0.055 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/temporal.py:351(process)
+  1907994    2.436    0.000    2.436    0.000 {method 'append' of 'list' objects}
+  1839374    2.393    0.000    2.393    0.000 {built-in method builtins.getattr}
+     1808    2.328    0.001   57.622    0.032 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:875(paint_fragments)
+  1769355    2.253    0.000    2.253    0.000 {method 'get' of 'dict' objects}
+   178690    2.132    0.000    5.057    0.000 /home/jaehun/.local/lib/python3.10/site-packages/numpy/lib/shape_base.py:612(column_stack)
+    91522    1.993    0.000    3.755    0.000 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:31(clone)
+   581987    1.957    0.000    1.957    0.000 {method 'reduce' of 'numpy.ufunc' objects}
+   172887    1.864    0.000    3.459    0.000 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/core.py:370(median)
+    69952    1.805    0.000    7.737    0.000 /home/jaehun/.local/lib/python3.10/site-packages/numpy/core/function_base.py:23(linspace)
+   136126    1.656    0.000    3.746    0.000 /home/jaehun/.local/lib/python3.10/site-packages/numpy/core/_methods.py:163(_mean)
+  1238778    1.634    0.000    1.634    0.000 {built-in method numpy.asanyarray}
+1208610/1208546    1.563    0.000    1.563    0.000 {built-in method builtins.len}
+   358116    1.498    0.000    3.137    0.000 <__array_function__ internals>:177(concatenate)
+   644841    1.398    0.000    1.873    0.000 {built-in method builtins.max}
+    50422    1.379    0.000    2.797    0.000 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:274(edge_like)
+    29254    1.317    0.000    3.273    0.000 /home/jaehun/.local/lib/python3.10/site-packages/numpy/linalg/linalg.py:2165(lstsq)
+   295894    1.276    0.000    5.751    0.000 /home/jaehun/.local/lib/python3.10/site-packages/numpy/core/fromnumeric.py:51(_wrapfunc)
+     2816    1.274    0.000    2.482    0.001 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/temporal.py:69(<listcomp>)
+     1652    1.251    0.001    9.495    0.006 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:374(pair_vote)
+    39314    1.238    0.000    2.324    0.000 /home/jaehun/.local/lib/python3.10/site-packages/numpy/core/shape_base.py:81(atleast_2d)
+   476647    1.211    0.000    1.211    0.000 {built-in method numpy.core._multiarray_umath.interp}
+    30917    1.183    0.000    3.653    0.000 /home/jaehun/.local/lib/python3.10/site-packages/numpy/lib/index_tricks.py:322(__getitem__)
+     1808    1.164    0.001    5.536    0.003 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:107(binary)
+   899358    1.131    0.000    1.131    0.000 {built-in method builtins.abs}
+     3289    1.071    0.000   25.023    0.008 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:293(merge_strands)
+     4029    1.063    0.000    2.905    0.001 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/centreline.py:16(between)
+   580780    1.049    0.000    1.049    0.000 {built-in method numpy.array}
+   742481    0.997    0.000    0.997    0.000 {built-in method builtins.issubclass}
+   740549    0.984    0.000    0.984    0.000 {built-in method builtins.isinstance}
+     1808    0.951    0.001    5.642    0.003 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/temporal.py:39(_accumulate_style)
+   226411    0.927    0.000    2.655    0.000 <__array_function__ internals>:177(ndim)
+     1808    0.878    0.000    4.763    0.003 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:781(outer_lines)
+     3616    0.831    0.000   10.182    0.003 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:728(best_path)
+   371648    0.800    0.000    1.642    0.000 {built-in method builtins.sum}
+   489424    0.740    0.000    0.740    0.000 {built-in method numpy.asarray}
+   178690    0.734    0.000    7.508    0.000 <__array_function__ internals>:177(column_stack)
+    85052    0.728    0.000    1.322    0.000 {built-in method builtins.sorted}
+    63524    0.704    0.000    1.043    0.000 /home/jaehun/.local/lib/python3.10/site-packages/numpy/lib/function_base.py:1319(diff)
+   298922    0.693    0.000    0.693    0.000 {method 'astype' of 'numpy.ndarray' objects}
+   457155    0.690    0.000    1.029    0.000 {built-in method builtins.min}
+    85708    0.669    0.000    1.918    0.000 /home/jaehun/.local/lib/python3.10/site-packages/numpy/core/fromnumeric.py:69(_wrapreduction)
+     1808    0.668    0.000    0.668    0.000 {built-in method vision_road._native.extract_fragments}
+     1808    0.663    0.000   13.528    0.007 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:691(coherent_paths)
+
+
+         32082182 function calls (31158734 primitive calls) in 113.124 seconds
+
+   Ordered by: cumulative time
+   List reduced from 820 to 60 due to restriction <60>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+     1808    3.883    0.002   99.764    0.055 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/temporal.py:351(process)
+     1808    0.036    0.000   57.658    0.032 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:246(detect)
+     1808    2.328    0.001   57.622    0.032 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:875(paint_fragments)
+2272941/1349808    7.417    0.000   47.737    0.000 {built-in method numpy.core._multiarray_umath.implement_array_function}
+     3289    1.071    0.000   25.023    0.008 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:293(merge_strands)
+     1808    0.023    0.000   14.566    0.008 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/temporal.py:225(finish)
+     1808    0.663    0.000   13.528    0.007 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:691(coherent_paths)
+     3616    0.831    0.000   10.182    0.003 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:728(best_path)
+     1652    1.251    0.001    9.495    0.006 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:374(pair_vote)
+    69952    0.294    0.000    8.414    0.000 <__array_function__ internals>:177(linspace)
+    69952    1.805    0.000    7.737    0.000 /home/jaehun/.local/lib/python3.10/site-packages/numpy/core/function_base.py:23(linspace)
+   178690    0.734    0.000    7.508    0.000 <__array_function__ internals>:177(column_stack)
+     1808    0.186    0.000    7.392    0.004 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/temporal.py:236(_centres)
+     4036    0.357    0.000    7.094    0.002 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/marking_style.py:66(classify_lane)
+   295894    1.276    0.000    5.751    0.000 /home/jaehun/.local/lib/python3.10/site-packages/numpy/core/fromnumeric.py:51(_wrapfunc)
+     1808    0.951    0.001    5.642    0.003 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/temporal.py:39(_accumulate_style)
+     1808    1.164    0.001    5.536    0.003 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:107(binary)
+   131955    0.546    0.000    5.181    0.000 <__array_function__ internals>:177(mean)
+     4029    0.135    0.000    5.125    0.001 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/centreline.py:45(joined)
+   178690    2.132    0.000    5.057    0.000 /home/jaehun/.local/lib/python3.10/site-packages/numpy/lib/shape_base.py:612(column_stack)
+     1808    0.042    0.000    4.805    0.003 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:775(finish_outer)
+     4036    0.241    0.000    4.784    0.001 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/marking_style.py:21(classify_profile)
+     1808    0.878    0.000    4.763    0.003 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:781(outer_lines)
+    54116    0.232    0.000    4.312    0.000 <__array_function__ internals>:177(clip)
+   131955    0.458    0.000    4.079    0.000 /home/jaehun/.local/lib/python3.10/site-packages/numpy/core/fromnumeric.py:3313(mean)
+    39314    0.165    0.000    3.956    0.000 <__array_function__ internals>:177(vstack)
+    54116    0.180    0.000    3.842    0.000 /home/jaehun/.local/lib/python3.10/site-packages/numpy/core/fromnumeric.py:2085(clip)
+    91522    1.993    0.000    3.755    0.000 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:31(clone)
+   136126    1.656    0.000    3.746    0.000 /home/jaehun/.local/lib/python3.10/site-packages/numpy/core/_methods.py:163(_mean)
+    22534    0.374    0.000    3.715    0.000 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:622(width_error)
+    30917    1.183    0.000    3.653    0.000 /home/jaehun/.local/lib/python3.10/site-packages/numpy/lib/index_tricks.py:322(__getitem__)
+    29254    0.132    0.000    3.545    0.000 <__array_function__ internals>:177(lstsq)
+     3313    0.138    0.000    3.529    0.001 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:481(spine)
+   172887    1.864    0.000    3.459    0.000 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/core.py:370(median)
+    39314    0.247    0.000    3.402    0.000 /home/jaehun/.local/lib/python3.10/site-packages/numpy/core/shape_base.py:222(vstack)
+     1652    0.499    0.000    3.338    0.002 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:441(recall_pairs)
+    54116    0.170    0.000    3.333    0.000 {method 'clip' of 'numpy.ndarray' objects}
+    29254    1.317    0.000    3.273    0.000 /home/jaehun/.local/lib/python3.10/site-packages/numpy/linalg/linalg.py:2165(lstsq)
+    14452    0.192    0.000    3.189    0.000 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/marking_style.py:16(runs)
+    54116    0.513    0.000    3.163    0.000 /home/jaehun/.local/lib/python3.10/site-packages/numpy/core/_methods.py:126(_clip)
+   358116    1.498    0.000    3.137    0.000 <__array_function__ internals>:177(concatenate)
+    58662    0.513    0.000    2.973    0.000 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/temporal.py:89(pixel)
+     4029    1.063    0.000    2.905    0.001 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/centreline.py:16(between)
+    50422    1.379    0.000    2.797    0.000 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:274(edge_like)
+    55048    0.444    0.000    2.717    0.000 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/temporal.py:93(metric)
+    76920    0.326    0.000    2.696    0.000 <__array_function__ internals>:177(any)
+   226411    0.927    0.000    2.655    0.000 <__array_function__ internals>:177(ndim)
+    39314    0.163    0.000    2.653    0.000 <__array_function__ internals>:177(atleast_2d)
+    22534    0.244    0.000    2.539    0.000 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/path_tracking.py:7(path_points)
+     2816    1.274    0.000    2.482    0.001 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/temporal.py:69(<listcomp>)
+  1907994    2.436    0.000    2.436    0.000 {method 'append' of 'list' objects}
+     3315    0.281    0.000    2.433    0.001 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:492(robust)
+  1839374    2.393    0.000    2.393    0.000 {built-in method builtins.getattr}
+     1808    0.209    0.000    2.342    0.001 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/temporal.py:289(_outer)
+    39314    1.238    0.000    2.324    0.000 /home/jaehun/.local/lib/python3.10/site-packages/numpy/core/shape_base.py:81(atleast_2d)
+  1769355    2.253    0.000    2.253    0.000 {method 'get' of 'dict' objects}
+   104507    0.418    0.000    2.206    0.000 <__array_function__ internals>:177(ptp)
+    39738    0.166    0.000    2.191    0.000 <__array_function__ internals>:177(polyval)
+     6732    0.166    0.000    2.063    0.000 /home/jaehun/Desktop/vision-road/src/vision_road/vision_road/carla.py:67(grouped_median)
+    76920    0.267    0.000    1.983    0.000 /home/jaehun/.local/lib/python3.10/site-packages/numpy/core/fromnumeric.py:2307(any)
+
+

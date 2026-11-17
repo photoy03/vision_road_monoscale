@@ -14,21 +14,25 @@ class LearnedMask:
 
     Without weights, torch or CUDA it stays off and the detector runs unchanged."""
 
-    def __init__(self,projector,weights='',every=1,max_age=.2):
+    def __init__(self,projector,weights='',every=1,max_age=.2,client=None):
         # every=2 runs the model on every other frame: the mask is then 1-2 frames old,
         # which gated maploop as well, and the model's CPU share halves.
+        # client: a LaneMaskProcess.handle() from road_node (image_in_worker: the worker submits the frames).
         self.model=None;self.status='off';self.max_age=max_age;self.every=max(1,int(every));self.count=0
-        if weights:
+        if client is not None:
+            from .learned_mask import LaneMaskClient
+            self.model=LaneMaskClient(client);self.status='on (in the perception worker)'
+        elif weights:
             try:
                 from .learned_mask import LaneMaskProcess
                 self.model=LaneMaskProcess(weights,projector);self.status='on'
             except Exception as exc:self.status='unavailable: '+str(exc)
 
-    def next(self,stamp,frame):
-        """The newest finished mask no older than max_age, then queue this frame."""
+    def next(self,stamp,frame,top=None):
+        """The newest finished mask no older than max_age, then queue this frame (top: a row crop's first row)."""
         if self.model is None:return None
         latest=self.model.latest();self.count+=1
-        if self.count%self.every==0:self.model.submit(stamp,frame)
+        if self.count%self.every==0:self.model.submit(stamp,frame,top)
         return latest[1] if latest is not None and 0<=stamp-latest[0]<=self.max_age else None
 
     def reset(self):
@@ -65,6 +69,9 @@ class Perception:
     def __init__(self,projector,cfg,backend,roi,threads,extras=None,display=None,ros=False):
         cv2.setNumThreads(threads)
         projector.initialize(*projector.size);self.projector=projector;self.roi=roi;self.backend=backend
+        # The valid area above roi * full height (the same every frame), and the source rows the BEV reads:
+        # a row-cropped image (image_crop, CameraInfo roi) must hold at least these.
+        self._valid_size=None;self.valid_area()
         self.detector=TemporalDetector(cfg)
         if backend=='carla':self.detector.detector=CarlaDetector(cfg)
         elif backend=='paint_evidence':self.detector.detector=PaintEvidenceDetector(cfg)
@@ -83,17 +90,30 @@ class Perception:
                 self.publisher=(self.node.create_publisher(MarkerArray,'/road/lane_display_markers',10),
                                 self.node.create_publisher(LaneStyleArray,'/road/lane_display_styles',10),DisplayStage(display[0],display[3]),Time)
 
+    def valid_area(self):
+        """projector.valid above roi * full height, kept until the projector is set up for another image size."""
+        p=self.projector
+        if self._valid_size!=p.source_size:
+            self.valid_roi=p.valid.copy();self.valid_roi[p.my>=p.source_size[1]*self.roi]=0
+            self.rows=p.rows(self.roi);self._valid_size=p.source_size
+        return self.valid_roi
+
     def reset(self):
         self.detector.reset()
         if self.extra is not None:self.extra.reset()
 
-    def __call__(self,frame,stamp,pose,learned=None,side=True):
-        """side=False: leave the outer lines and centrelines to side_outputs() (after the result is sent)."""
+    def covers(self,top,height):
+        """Whether rows [top, top+height) of the full image hold every row the BEV reads."""
+        return top<=self.rows[0] and top+height>=self.rows[1]
+
+    def __call__(self,frame,stamp,pose,learned=None,side=True,top=0):
+        """side=False: leave the outer lines and centrelines to side_outputs() (after the result is sent).
+        top: frame is rows [top, top+height) of the full image (a row crop that covers self.rows)."""
         from .display_filter import simplify,lane_styles
         detector=self.detector;begin=time.perf_counter()
         if self.backend=='carla':detector.detector.learned=learned
-        bev=self.projector.warp(frame)
-        valid=self.projector.valid.copy();valid[self.projector.my>=frame.shape[0]*self.roi]=0
+        bev=self.projector.warp(frame,top)
+        valid=self.valid_area().copy()
         bev=cv2.bitwise_and(bev,bev,mask=valid)
         warped=time.perf_counter()
         lanes,binary=detector.process(bev,valid,stamp,pose,defer=True)
@@ -147,10 +167,10 @@ def compute_loop(connection,name,projector,cfg,backend,roi,threads,extras=None,d
         while True:
             command=connection.recv()
             if command is None:break
-            shape,stamp,pose,reset,learned=command
+            shape,stamp,pose,reset,learned,top=command
             if reset:perceive.reset()
             frame=np.ndarray(shape,np.uint8,buffer=memory.buf)
-            connection.send(perceive(frame,stamp,pose,learned))
+            connection.send(perceive(frame,stamp,pose,learned,top=top))
     except (EOFError,BrokenPipeError):pass
     except Exception as exc:
         try:connection.send(dict(error=str(exc)))
@@ -166,7 +186,7 @@ def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
     1/debug_hz, a frame reduced to the overlay width) go back to road_node for its other topics."""
     import math
     from rclpy.qos import QoSProfile,ReliabilityPolicy
-    from sensor_msgs.msg import Image
+    from sensor_msgs.msg import Image,CameraInfo
     from nav_msgs.msg import Odometry
     from rclpy.serialization import deserialize_message
     import struct
@@ -179,7 +199,19 @@ def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
             from .side_topics import SideTopics
             from builtin_interfaces.msg import Time
             topics=SideTopics(node,ros['base_frame'],ros['debug_hz'],error,outer,centre)
-        timeline=Timeline(ros['odom_max_gap_sec']);state=dict(shape=None,last=None,reset=False,last_debug=-math.inf)
+        learned=LearnedMask(projector,every=ros.get('learned_every',1),client=ros['learned']) if ros.get('learned') is not None else None
+        timeline=Timeline(ros['odom_max_gap_sec']);state=dict(shape=None,last=None,reset=False,last_debug=-math.inf,roi=None,skipped=0)
+        full_w,full_h=projector.source_size
+        def on_info(msg):
+            # A row-cropped image: CameraInfo keeps the full image size, roi says which rows the image holds.
+            r=msg.roi;state['roi']=(int(r.y_offset),int(r.height),int(r.x_offset),int(r.width)) if r.height else None
+        def crop_top(h,w):
+            """The full-image row of the image's first row, or None when it cannot be placed.  An image of
+            another width is not a crop (another resolution: the projector sets itself up for it, as before)."""
+            if (h,w)==(full_h,full_w) or w!=full_w or h>full_h:return 0
+            roi=state['roi']
+            if roi is None or roi[1]!=h or w!=full_w or roi[2]!=0 or roi[3] not in (0,full_w) or not perceive.covers(roi[0],h):return None
+            return roi[0]
         def on_odom(msg):
             if msg.header.frame_id!=ros['world_frame'] or msg.child_frame_id!=ros['base_frame']:return
             p,q=msg.pose.pose.position,msg.pose.pose.orientation
@@ -197,15 +229,31 @@ def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
                     raise ValueError('image_in_worker needs packed bgr8/rgb8 images')
                 state['shape']=(first.height,first.width,first.encoding,first.header.frame_id)
             h,w,encoding,frame_id=state['shape'];sec,nanosec=struct.unpack_from('<iI',raw,4);t=sec+nanosec*1e-9
-            if state['reset']:perceive.reset();state['last']=None;state['reset']=False
+            if state['reset']:
+                perceive.reset();state['last']=None;state['reset']=False
+                if learned is not None:learned.reset()
             if state['last'] is not None and t<=state['last']:return
-            state['last']=t;start=time.perf_counter_ns()
+            top=crop_top(h,w)
+            if top is None:
+                state['skipped']+=1
+                node.get_logger().warning(f'Skipping a {w}x{h} image: not the full {full_w}x{full_h} image, and no CameraInfo roi '
+                    f'placing rows {perceive.rows[0]}-{perceive.rows[1]-1} inside it ({state["skipped"]} so far)',throttle_duration_sec=5)
+                return
+            state['last']=t;start=time.perf_counter_ns();cropped=w==full_w and h<full_h
             frame=np.frombuffer(raw,np.uint8,h*w*3,len(raw)-h*w*3).reshape(h,w,3)
             if encoding=='rgb8':frame=cv2.cvtColor(frame,cv2.COLOR_RGB2BGR)
-            pose=timeline.at(t);result=perceive(frame,t,pose,side=topics is None)
+            mask=None
+            if learned is not None:
+                # As road_node does without image_in_worker: the newest finished mask, then this frame to the model.
+                mask=learned.next(t,frame,top if cropped else None);result_learned=time.perf_counter_ns()
+                state['learned_frames']=state.get('learned_frames',0)+1;state['learned_used']=state.get('learned_used',0)+(mask is not None)
+            pose=timeline.at(t);result=perceive(frame,t,pose,learned=mask,side=topics is None,top=top)
+            if learned is not None:result.setdefault('worker_ms',{})['learned']=(result_learned-start)/1e6
             result.update(stamp=(sec,nanosec),frame_id=frame_id,pose=pose,receive_ns=received,start_ns=start)
             if ros['debug_hz']>0 and t-state['last_debug']>=1/ros['debug_hz']-1e-8:
                 state['last_debug']=t;scale=min(1.,ros['overlay_max_width']/w) if ros['overlay_max_width'] else 1.
+                if cropped:  # a row crop: the overlay draws on the full image, black outside the rows
+                    padded=np.zeros((full_h,full_w,3),np.uint8);padded[top:top+h]=frame;frame=padded;h=full_h
                 result.update(debug_frame=cv2.resize(frame,(round(w*scale),round(h*scale))) if scale<1 else frame.copy(),debug_scale=scale)
             else:result.update(bev=None,binary=None)  # only the debug images use them
             result['computed_ns']=time.perf_counter_ns();connection.send(result)
@@ -214,6 +262,10 @@ def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
                 begin=time.perf_counter();side=perceive.side_outputs(Time(sec=sec,nanosec=nanosec),t,topics)
                 connection.send(dict(side=side,extra_ms=(time.perf_counter()-begin)*1e3))
         node.create_subscription(Odometry,ros['odom_topic'],on_odom,QoSProfile(depth=200,reliability=ReliabilityPolicy.BEST_EFFORT))
+        if ros.get('camera_info_topic'):
+            node.create_subscription(CameraInfo,ros['camera_info_topic'],on_info,QoSProfile(depth=5,reliability=ReliabilityPolicy.BEST_EFFORT))
+        node.get_logger().info(f'Perception worker: the BEV reads image rows {perceive.rows[0]}-{perceive.rows[1]-1} of {full_w}x{full_h}; '
+                               'a row-cropped image (CameraInfo roi) must hold them')
         node.create_subscription(Image,ros['image_topic'],on_image,QoSProfile(depth=1,reliability=ReliabilityPolicy.RELIABLE
                                  if ros['reliability']=='reliable' else ReliabilityPolicy.BEST_EFFORT),raw=True)
         import rclpy
@@ -226,6 +278,11 @@ def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
     finally:
         connection.close()
         if perceive is not None:perceive.close()
+        try:
+            if learned is not None:
+                print(f"Perception worker: learned mask used in {state.get('learned_used',0)} of {state.get('learned_frames',0)} frames",flush=True)
+                learned.close()
+        except NameError:pass
 
 
 class RosWorker:
@@ -259,10 +316,11 @@ class ComputeWorker:
         ready=self.connection.recv()
         if ready!='ready':self.close();raise RuntimeError('Perception worker failed: '+str(ready))
 
-    def compute(self,frame,stamp,pose,learned=None):
+    def compute(self,frame,stamp,pose,learned=None,top=0):
+        """top: frame is rows [top, top+height) of the full image (a row crop)."""
         if frame.nbytes>self.capacity:raise ValueError('Input exceeds calibrated shared-image capacity')
         target=np.ndarray(frame.shape,np.uint8,buffer=self.memory.buf);np.copyto(target,frame)
-        self.connection.send((frame.shape,stamp,pose,self.reset_pending,learned));self.reset_pending=False
+        self.connection.send((frame.shape,stamp,pose,self.reset_pending,learned,top));self.reset_pending=False
         if not self.connection.poll(5):raise RuntimeError('Perception worker timeout')
         result=self.connection.recv()
         if 'error' in result:raise RuntimeError(result['error'])

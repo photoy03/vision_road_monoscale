@@ -120,7 +120,10 @@ class RoadNode(Node):
         publish_in_worker=in_worker and param('display_publish_in_worker',False)
         # image_in_worker: the perception worker subscribes the camera and odometry itself (see rt_worker.ros_loop).
         isolated=param('isolated_compute',False)
-        self.image_in_worker=isolated and param('image_in_worker',False) and not weights
+        # learned_in_worker: with learned weights too, the worker takes the camera itself and hands the frames to
+        # the model process (started here); without it the learned mask keeps the road_node image path.
+        self.learned_in_worker=bool(weights) and self.learned.model is not None and param('learned_in_worker',False)
+        self.image_in_worker=isolated and param('image_in_worker',False) and (not weights or self.learned_in_worker)
         self.worker_display=(self.display_settings,self.display_error,publish_in_worker,self.base_frame) if in_worker else None
         if self.image_in_worker:
             self.compute_worker=None;self.extras=None;self.worker_extras=extras  # started with the subscriptions below
@@ -170,6 +173,11 @@ class RoadNode(Node):
         compressed = param('compressed', False)
         reliability = param('image_reliability', 'best_effort')
         depth = param('image_queue_depth', 2)
+        # A row-cropped image (only the rows the BEV reads, e.g. tools/replay_maploop.py --crop-rows): the camera's
+        # CameraInfo keeps the full image size and gives the rows in roi (y_offset, height).  Full images need no
+        # CameraInfo.  Default: <image topic's namespace>/camera_info; '' turns row crops off.
+        self.camera_info_topic=param('camera_info_topic',image_topic.rsplit('/',1)[0]+'/camera_info')
+        self.image_roi=None;self.crop_skipped=0
         if reliability not in ('reliable', 'best_effort') or depth < 1:
             raise ValueError('Invalid image QoS settings')
         image_qos = QoSProfile(depth=depth, reliability=ReliabilityPolicy.RELIABLE if reliability=='reliable' else ReliabilityPolicy.BEST_EFFORT)
@@ -180,12 +188,18 @@ class RoadNode(Node):
             from .rt_worker import RosWorker
             self.projector.initialize(*self.projector.size)
             self.compute_worker=RosWorker(self.projector,self.detector.c,backend,self.image_roi_bottom,threads,self.worker_extras,self.worker_display,
-                dict(image_topic=image_topic,reliability=reliability,odom_topic=self.odom_topic,
+                dict(image_topic=image_topic,reliability=reliability,odom_topic=self.odom_topic,camera_info_topic=self.camera_info_topic,
                      world_frame=self.world_frame,base_frame=self.base_frame,odom_max_gap_sec=self.timeline.max_gap,
-                     debug_hz=self.debug_hz if self.debug else 0.,overlay_max_width=self.overlay_max_width,side=self.side_config))
+                     debug_hz=self.debug_hz if self.debug else 0.,overlay_max_width=self.overlay_max_width,side=self.side_config,
+                     learned=self.learned.model.handle() if self.learned_in_worker else None,learned_every=self.learned.every))
             self.result_worker=threading.Thread(target=self.take_results,name='road-perception-results',daemon=True);self.result_worker.start()
         elif self.raw_cdr:self.create_subscription(Image,image_topic,self.on_image_cdr,image_qos,raw=True)
         else:self.create_subscription(CompressedImage if compressed else Image, image_topic, self.on_compressed if compressed else self.on_image, image_qos)
+        if not self.image_in_worker and self.camera_info_topic:
+            from sensor_msgs.msg import CameraInfo
+            def on_info(msg):
+                r=msg.roi;self.image_roi=(int(r.y_offset),int(r.height),int(r.x_offset),int(r.width)) if r.height else None
+            self.create_subscription(CameraInfo,self.camera_info_topic,on_info,QoSProfile(depth=5,reliability=ReliabilityPolicy.BEST_EFFORT))
         # Best effort accepts both reliable and best-effort odometry publishers.
         self.create_subscription(Odometry, self.odom_topic, self.on_odom, QoSProfile(depth=200, reliability=ReliabilityPolicy.BEST_EFFORT))
         self.create_timer(0.02, self.timer_flush, clock=Clock(clock_type=ClockType.STEADY_TIME))
@@ -341,14 +355,20 @@ class RoadNode(Node):
         if self.last_image is not None and t <= self.last_image:
             self.dropped += 1
             return
+        top=self.crop_top(frame)
+        if top is None:
+            self.dropped+=1;self.crop_skipped+=1
+            self.get_logger().warning(f'Skipping a {frame.shape[1]}x{frame.shape[0]} image: not the full image and no CameraInfo roi placing '
+                                      f'the rows the BEV reads inside it ({self.crop_skipped} so far)',throttle_duration_sec=5)
+            return
         self.last_image = t; self.frames += 1
         pose = self.pose_at(t)
         if self.compute_worker is not None:
-            if self.projector.source_size!=(frame.shape[1],frame.shape[0]):self.projector.initialize(frame.shape[1],frame.shape[0])
+            if top is False and self.projector.source_size!=(frame.shape[1],frame.shape[0]):self.projector.initialize(frame.shape[1],frame.shape[0])
             phase('projection')
-            learned=self.learned.next(t,frame)
+            learned=self.learned.next(t,frame if top is False else self.full_frame(frame,top))
             phase('learned_mask')
-            result=self.compute_worker.compute(frame,t,pose,learned)
+            result=self.compute_worker.compute(frame,t,pose,learned,top=top or 0)
             lanes=result['lanes'];binary=result['binary'];bev=result['bev'];markings=result.get('markings',[])
             self.detector.boundary_lanes=result['boundaries'];self.detector.measured_count=result['measured'];self.detector.predicted_count=result['predicted']
             self.detector.registration=result['registration'];self.detector.detector.diagnostics=result['diagnostics']
@@ -356,21 +376,38 @@ class RoadNode(Node):
             phase('detector')
             if self.performance_path and 'worker_ms' in result:self.last_phases.update({'worker.'+k:v for k,v in result['worker_ms'].items()})
         else:
-            bev = self.projector.warp(frame)
+            bev = self.projector.warp(frame,top or 0)
             valid=self.projector.valid.copy()
-            valid[self.projector.my>=frame.shape[0]*self.image_roi_bottom]=0
+            valid[self.projector.my>=self.projector.source_size[1]*self.image_roi_bottom]=0
             bev=cv2.bitwise_and(bev,bev,mask=valid)
             phase('projection')
-            if isinstance(self.detector.detector,CarlaDetector):self.detector.detector.learned=self.learned.next(t,frame)
+            if isinstance(self.detector.detector,CarlaDetector):self.detector.detector.learned=self.learned.next(t,frame if top is False else self.full_frame(frame,top))
             lanes, binary = self.detector.process(bev, valid, t, pose)
             markings=self.extras.after(self.detector,bev,valid,pose) if self.extras is not None else []
             precomputed=dict(outer=list(getattr(self.detector,'outer_lanes',[])),centres=list(getattr(self.detector,'centre_lanes',[])))
             phase('detector')
+        if top is not False and self.debug:frame=self.full_frame(frame,top)  # the overlay draws on the full image
         job=(frame,header,t,pose,lanes,self.detector.boundary_lanes,binary,bev,markings,precomputed)
         if self.output_jobs is not None:
             # The next frame's detection overlaps these outputs; frames stay in order and none is skipped.
             self.output_jobs.put(job);phase('handoff')
         else:self.publish_outputs(*job,phase)
+
+    def crop_top(self,frame):
+        """False: a full image (or another size, as before); an int: the full-image row of this row-cropped
+        frame's first row (CameraInfo roi); None: a smaller image that cannot be placed."""
+        h,w=frame.shape[:2];size=self.projector.source_size or self.projector.size
+        if (w,h)==tuple(size) or w!=size[0] or h>=size[1]:return False
+        roi=self.image_roi
+        if self.projector.source_size is None:self.projector.initialize(*self.projector.size)
+        if roi is None or roi[1]!=h or roi[2]!=0 or roi[3] not in (0,w):return None
+        lo,hi=self.projector.rows(self.image_roi_bottom)
+        return roi[0] if roi[0]<=lo and roi[0]+h>=hi else None
+
+    def full_frame(self,frame,top):
+        """The full image with only the cropped rows (black elsewhere), for the learned mask model; its mask
+        then differs from one made from the full image above and below the rows (not measured)."""
+        w,h=self.projector.source_size;full=np.zeros((h,w,3),np.uint8);full[top:top+frame.shape[0]]=frame;return full
 
     def take_results(self):
         """image_in_worker: each processed frame's result from the perception worker, in order."""

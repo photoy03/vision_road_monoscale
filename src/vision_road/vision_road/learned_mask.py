@@ -84,22 +84,9 @@ def _mask_loop(connection,frame_name,mask_name,weights,projector,device):
         frames.close();masks.close();connection.close()
 
 
-class LaneMaskProcess:
-    """LaneModel in its own process, so neither the GIL nor CPU work of the model
-    slows the detector.  One frame is in flight at a time: submit() is skipped while
-    the model is busy and latest() returns the newest finished (stamp, mask)."""
-
-    def __init__(self,weights,projector,device='cuda',startup=60.):
-        if not Path(weights).is_file():raise RuntimeError(f'learned lane weights not found: {weights}')
-        self.shape=projector.valid.shape
-        self.frames=shared_memory.SharedMemory(create=True,size=INPUT[0]*INPUT[1]*3)
-        self.masks=shared_memory.SharedMemory(create=True,size=int(np.prod(self.shape)))
-        context=mp.get_context('spawn');self.connection,child=context.Pipe()
-        self.process=context.Process(target=_mask_loop,args=(child,self.frames.name,self.masks.name,str(weights),projector,device),daemon=True)
-        self.process.start();child.close();self.busy=False;self.result=None
-        if not self.connection.poll(startup):self.close();raise RuntimeError('learned lane model startup timeout')
-        kind,detail=self.connection.recv()
-        if kind!='ready':self.close();raise RuntimeError(detail)
+class _MaskQueue:
+    """submit / poll / latest / reset on a model process's pipe and shared memory (LaneMaskProcess or, in
+    another process, LaneMaskClient)."""
 
     def poll(self):
         while self.busy and self.connection.poll():
@@ -107,9 +94,14 @@ class LaneMaskProcess:
             self.result=(stamp,np.ndarray(self.shape,np.uint8,buffer=self.masks.buf).copy())
         return self.result
 
-    def submit(self,stamp,frame):
+    def submit(self,stamp,frame,top=None):
+        """top: frame holds only rows [top, top+height) of a full image of full_shape (a row crop); the
+        model then sees that image black outside the rows (its mask there is not the full image's)."""
         self.poll()
         if self.busy:return False
+        if top is not None:
+            if getattr(self,'_full',None) is None or self._full.shape[:2]!=self.full_shape:self._full=np.zeros(self.full_shape+(3,),np.uint8)
+            self._full[top:top+frame.shape[0]]=frame;frame=self._full
         # The model input size is resized here: 0.7 MB to copy instead of a 6 MB frame.
         small=np.ndarray((INPUT[1],INPUT[0],3),np.uint8,buffer=self.frames.buf)
         cv2.resize(frame,INPUT,dst=small,interpolation=cv2.INTER_LINEAR)
@@ -119,6 +111,41 @@ class LaneMaskProcess:
     def latest(self):return self.poll()
 
     def reset(self):self.poll();self.result=None
+
+
+class LaneMaskClient(_MaskQueue):
+    """The model process of a LaneMaskProcess used from another process (the perception worker with
+    image_in_worker): handle() there, LaneMaskClient(handle) here.  The creating process must not use it too."""
+
+    def __init__(self,handle):
+        self.connection,frames,masks,self.shape,self.full_shape=handle
+        self.frames=shared_memory.SharedMemory(name=frames);self.masks=shared_memory.SharedMemory(name=masks)
+        self.busy=False;self.result=None
+
+    def close(self):
+        for memory in (self.frames,self.masks):memory.close()
+
+
+class LaneMaskProcess(_MaskQueue):
+    """LaneModel in its own process, so neither the GIL nor CPU work of the model
+    slows the detector.  One frame is in flight at a time: submit() is skipped while
+    the model is busy and latest() returns the newest finished (stamp, mask)."""
+
+    def __init__(self,weights,projector,device='cuda',startup=60.):
+        if not Path(weights).is_file():raise RuntimeError(f'learned lane weights not found: {weights}')
+        self.shape=projector.valid.shape;self.full_shape=(int(projector.size[1]),int(projector.size[0]))
+        self.frames=shared_memory.SharedMemory(create=True,size=INPUT[0]*INPUT[1]*3)
+        self.masks=shared_memory.SharedMemory(create=True,size=int(np.prod(self.shape)))
+        context=mp.get_context('spawn');self.connection,child=context.Pipe()
+        self.process=context.Process(target=_mask_loop,args=(child,self.frames.name,self.masks.name,str(weights),projector,device),daemon=True)
+        self.process.start();child.close();self.busy=False;self.result=None
+        if not self.connection.poll(startup):self.close();raise RuntimeError('learned lane model startup timeout')
+        kind,detail=self.connection.recv()
+        if kind!='ready':self.close();raise RuntimeError(detail)
+
+    def handle(self):
+        """For LaneMaskClient in another process (pass it as a Process argument; then only that process uses it)."""
+        return (self.connection,self.frames.name,self.masks.name,self.shape,self.full_shape)
 
     def close(self):
         if getattr(self,'process',None) is not None and self.process.is_alive():

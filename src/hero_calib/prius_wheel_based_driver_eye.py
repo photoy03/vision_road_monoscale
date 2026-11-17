@@ -1446,6 +1446,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="With --ros-output: do not add the 1920x1080 dashcam camera.",
     )
+    parser.add_argument(
+        "--ros-crop-rows",
+        default="",
+        help="With --ros-output: send only dashcam image rows LO:HI (end exclusive), e.g. 578:984, the rows the "
+        "lane detector reads (its log says which); camera_info keeps 1920x1080 and gives the rows in roi.",
+    )
     return parser
 
 

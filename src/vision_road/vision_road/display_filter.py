@@ -15,6 +15,7 @@ from collections import deque
 from dataclasses import dataclass, fields
 
 import numpy as np
+from numpy.core.multiarray import interp as _interp  # np.interp without its Python wrapper (same values)
 
 # The quadratic y=a+b·x+c·x² is carried as its lateral value at these forward
 # stations: the same three degrees of freedom, but all in metres, so one set of
@@ -84,7 +85,7 @@ def fit(points,ridge=1e-3,strength=None,near=0.,cubic=0.,cubic_ridge=1e-3):
     p=np.asarray(points,float);p=p[np.argsort(p[:,0])]
     x=np.arange(p[0,0],p[-1,0]+1e-6,.5)
     if len(x)<2:x=p[[0,-1],0]
-    y=np.interp(x,p[:,0],p[:,1]);span=float(x[-1]-x[0])
+    y=_interp(x,p[:,0],p[:,1]);span=float(x[-1]-x[0])
     A=np.column_stack([np.ones_like(x),x,x*x])
     lam=len(x)*float(np.mean(x*x))**2*(strength if strength is not None else ridge if span>=8 else 10.)
     w=np.ones_like(x) if near<=0 else np.minimum(1.,(near/np.maximum(x,1.))**2)
@@ -193,7 +194,9 @@ class SideTrack:
         if not self.seen:return None
         near=self.seen[-1][0]
         if len(self.memory):near=min(near,float(self.memory[:,0].min()))
-        return near,float(np.median([f for _,f in self.seen]))
+        # np.median of at most seen_frames values, without its per-call cost: the same value.
+        far=sorted(float(f) for _,f in self.seen);k=len(far)//2
+        return near,(far[k] if len(far)%2 else (far[k-1]+far[k])/2)
 
     def span_ok(self,stations,near,far):
         """The observation (stations over near..far) against the kept line at the near end, middle and
@@ -457,10 +460,16 @@ class DisplayStage:
 
     def messages(self,stamp,output):
         """/road/lane_display_markers and /road/lane_display_styles for one frame's filter output."""
-        from std_msgs.msg import Header
-        from geometry_msgs.msg import Point
-        from visualization_msgs.msg import Marker, MarkerArray
-        from vision_lane_interfaces.msg import LaneStyle, LaneStyleArray
+        if not hasattr(self,'_msgs'):
+            from std_msgs.msg import Header
+            from geometry_msgs.msg import Point
+            from visualization_msgs.msg import Marker, MarkerArray
+            from vision_lane_interfaces.msg import LaneStyle, LaneStyleArray
+            self._msgs=(Header,Point,Marker,MarkerArray,LaneStyle,LaneStyleArray)
+        Header,Point,Marker,MarkerArray,LaneStyle,LaneStyleArray=self._msgs
+        def point(x,y,new=Point.__new__):
+            # Point(x=, y=, z=) without the per-field checks of its constructor: the same message.
+            p=new(Point);p._x=x;p._y=y;p._z=.02;return p
         out=MarkerArray();head=Header(stamp=stamp,frame_id=self.frame)
         clear=Marker();clear.header=head;clear.action=Marker.DELETEALL;out.markers.append(clear)
         styles=LaneStyleArray();styles.header=head;styles.camera_id='front'
@@ -468,7 +477,7 @@ class DisplayStage:
             m=Marker();m.header=head;m.ns='display/'+side;m.id=ident;m.type=Marker.LINE_STRIP;m.action=Marker.ADD
             m.pose.orientation.w=1.;m.scale.x=.05;m.color.a=.9;m.color.g=1.;m.color.b=1.;m.color.r=1. if predicted else 0.
             m.lifetime.nanosec=300000000
-            m.points=[Point(x=float(x),y=float(y),z=.02) for x,y in points];out.markers.append(m)
+            m.points=[point(float(x),float(y)) for x,y in points.tolist()];out.markers.append(m)
             if style is not None:
                 lane=LaneStyle();lane.side=side;lane.style=self.kinds[style];lane.confidence=1.
                 lane.reprojected=False;lane.source_stamp=stamp;lane.style_source_stamp=stamp

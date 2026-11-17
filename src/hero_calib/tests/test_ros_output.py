@@ -41,6 +41,15 @@ def test_rear_axle_dashcam_and_camera_info():
     assert R.stamp_of(2.5666667) == (2, 566666700)
 
 
+def test_bgra_to_bgr_row_crop():
+    raw = bytes(range(2*3*4))  # 2 wide, 3 rows
+    assert R.bgra_to_bgr(raw, 2, 3, (1, 3)) == R.bgra_to_bgr(raw, 2, 3)[6:]
+    assert R.crop_rows("", 1080) is None and R.crop_rows("578:984", 1080) == (578, 984)
+    import pytest
+    with pytest.raises(ValueError):
+        R.crop_rows("900:1100", 1080)
+
+
 def test_bgra_to_bgr():
     raw = bytes([1, 2, 3, 255, 4, 5, 6, 255])
     assert R.bgra_to_bgr(raw, 2, 1) == bytes([1, 2, 3, 4, 5, 6])
@@ -157,6 +166,7 @@ def test_publisher_on_a_fake_world():
         assert bytes(img.data[:6]) == bytes([10, 20, 30, 10, 20, 30])
         assert (img.header.stamp.sec, img.header.stamp.nanosec) == (12, 533333300)
         assert list(info.k) == pytest.approx([960., 0., 960., 0., 960., 540., 0., 0., 1.]) and info.distortion_model == "plumb_bob"
+        assert info.roi.height == 0  # the full image (no --ros-crop-rows)
         if want_state:
             st = got["/hero/vehicle_state"]
             assert st.gear == st.GEAR_DRIVE and st.speed_mps == pytest.approx(5., abs=1e-5)

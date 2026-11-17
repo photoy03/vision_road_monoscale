@@ -1,0 +1,27 @@
+date: 2026-11-18T05:19:41+09:00
+host: ros
+os: Linux 6.8.0-149-generic x86_64
+--- CPU
+CPU(s):                                  16
+Model name:                              AMD Ryzen 7 5800H with Radeon Graphics
+Thread(s) per core:                      2
+Core(s) per socket:                      8
+Socket(s):                               1
+CPU max MHz:                             4463.0000
+CPU min MHz:                             400.0000
+L3 cache:                                16 MiB (1 instance)
+--- power and CPU frequency policy (read only)
+governor: powersave
+energy_performance_preference: performance
+power profile: performance
+AC AC0: 1 (1 = plugged in)
+--- GPU
+name, driver_version, memory.total [MiB], power.limit [W], pstate
+NVIDIA GeForce RTX 3050 Laptop GPU, 595.99.02, 4096 MiB, [N/A], P0
+--- memory
+               총계         사용        여분      공유    버퍼/캐시    가용
+메모리:         15           4           1           0           8          10
+--- load before the runs
+ 05:19:42 up 15:11,  1 user,  load average: 2.05, 2.59, 2.19
+--- software
+python 3.10.12 numpy 1.23.5 opencv 4.12.0

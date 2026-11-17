@@ -23,8 +23,12 @@ def main():
     ap.add_argument('--max-frames',type=int,default=0)
     ap.add_argument('--prefetch',type=int,default=24)
     ap.add_argument('--timing-report',type=Path)
+    ap.add_argument('--crop-rows',default='',help="send only image rows LO:HI (end exclusive), e.g. 578:984; CameraInfo keeps "
+                    "the full size and gives the rows in roi (y_offset, height). Default: the full image")
     a=ap.parse_args()
     if not 0<a.rate<=4 or min(a.start_frame,a.max_frames)<0 or not 1<=a.prefetch<=64:raise ValueError('Invalid replay limits')
+    crop=tuple(int(v) for v in a.crop_rows.split(':')) if a.crop_rows else None
+    if crop is not None and (len(crop)!=2 or not 0<=crop[0]<crop[1]):raise ValueError('--crop-rows LO:HI with 0 <= LO < HI')
     db=a.bag if a.bag.suffix=='.db3' else next(a.bag.glob('*.db3'))
     uri='file:'+str(db.resolve())+'?mode=ro&immutable=1'
     con=sqlite3.connect(uri,uri=True)
@@ -33,6 +37,9 @@ def main():
     poses=[deserialize_message(data,PoseWithCovarianceStamped) for data, in query('/carla/ground_truth/pose')]
     pts=[stamp(m) for m in poses]
     info=deserialize_message(next(query('/sensing/camera/dashcam/camera_info'))[0],CameraInfo)
+    if crop is not None:
+        if crop[1]>info.height:raise ValueError(f'--crop-rows past the image height {info.height}')
+        info.roi.x_offset=0;info.roi.y_offset=crop[0];info.roi.height=crop[1]-crop[0];info.roi.width=info.width;info.roi.do_rectify=False
     con.close()
     buffers=queue.Queue(maxsize=a.prefetch);ready=threading.Event();stop=threading.Event();errors=[]
     def produce():
@@ -81,6 +88,9 @@ def main():
             data=buffers.get()
             if data is None:break
             image=deserialize_message(data,Image);t=stamp(image)
+            if crop is not None:
+                # Only the rows the detector's BEV reads: a third of the bytes to send and to receive.
+                image.data=image.data[crop[0]*image.step:crop[1]*image.step];image.height=crop[1]-crop[0]
             if origin is None:
                 origin=t;pose_index=max(0,bisect.bisect_left(pts,t)-2)
                 # Seed the evaluation adapter before starting the 30 Hz clock.

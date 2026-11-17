@@ -94,6 +94,12 @@ class TemporalDetector:
         c=self.c
         return np.column_stack([c.forward_max-pixels[:,1]*c.mpp,-(c.lateral_min+pixels[:,0]*c.mpp)])
 
+    def moved(self,points,matrix):
+        """points carried by the BEV affine matrix: metric(pixel(points) @ matrix[:,:2].T + matrix[:,2])."""
+        c=self.c
+        if c.carla_native_fast and _native is not None:return _native.reproject(points,matrix,c.mpp,c.forward_max,c.lateral_min)
+        return self.metric(self.pixel(points) @ matrix[:,:2].T+matrix[:,2])
+
     def _registration(self,bev,valid,pose,t):
         self.registration='none'; c=self.c
         if self.last_time is None or not (0<t-self.last_time<=c.temporal_max_age_sec): return None,0.
@@ -360,8 +366,7 @@ class TemporalDetector:
         priors={}; records={}
         if c.temporal_enabled and matrix is not None:
             for side,track in self.tracks.items():
-                pixels=self.pixel(track.lane.points) @ matrix[:,:2].T+matrix[:,2]
-                points=self._visible(self.metric(pixels),valid)
+                points=self._visible(self.moved(track.lane.points,matrix),valid)
                 if points is None: continue
                 prior=clone(track.lane,points=points,reprojected=False,source_time=track.last_observed)
                 priors[side]=prior
@@ -372,8 +377,7 @@ class TemporalDetector:
                 for side,(points,observed) in self.confirmed_tracking.items():
                     age=t-observed
                     if not 0<=age<=c.carla_tracking_memory_sec:continue
-                    pixels=self.pixel(points)@matrix[:,:2].T+matrix[:,2]
-                    visible=self._visible(self.metric(pixels),valid)
+                    visible=self._visible(self.moved(points,matrix),valid)
                     if visible is None:continue
                     moved[side]=(visible,observed);context[side]=(visible,max(0.,1.-age/c.carla_tracking_memory_sec))
             self.confirmed_tracking=moved
@@ -433,7 +437,13 @@ class TemporalDetector:
             key=lane.track_key or lane.side
             old=records.get(key)
             matched=False
-            if old is not None:
+            weight=.95 if getattr(self.detector,'fragment_tracks',False) else .75
+            native=c.carla_native_fast and _native is not None and old is not None and lane.points.dtype==np.float64 and lane.points.flags.c_contiguous and lane.points.flags.writeable
+            if native:
+                # The same test and the same moved overlap, in _native (np.linspace / np.interp / median arithmetic).
+                if _native.track_match(lane.points,old.lane.points,c.temporal_match_m,weight)<c.temporal_match_m:
+                    matched=True;lane.hits=min(65535,old.lane.hits+1)
+            elif old is not None:
                 a=lane.points; b=old.lane.points
                 lo=max(a[0,0],b[0,0]); hi=min(a[-1,0],b[-1,0])
                 sample=np.linspace(lo,hi,12) if hi>lo else []
@@ -445,7 +455,6 @@ class TemporalDetector:
                     # Sorted points (as observed lanes are): the overlap is one slice, the same elements in order.
                     if (np.diff(xs)>=0).all():overlap=slice(int(np.searchsorted(xs,lo,'left')),int(np.searchsorted(xs,hi,'right')))
                     else:overlap=(xs>=lo)&(xs<=hi)
-                    weight=.95 if getattr(self.detector,'fragment_tracks',False) else .75
                     lane.points[overlap,1]=weight*a[overlap,1]+(1-weight)*interp(a[overlap,0],b[:,0],b[:,1])
             lane.source_time=float(t)
             style_lane=getattr(self.detector,'style_lanes',{}).get(lane.side,lane)
@@ -506,9 +515,13 @@ class TemporalDetector:
                 boundary=confirmed.get(lane.side)
                 if boundary is None:continue
                 p=lane.points;b=boundary.points
-                inside=(p[:,0]>=b[0,0])&(p[:,0]<=b[-1,0])
-                if np.count_nonzero(inside)<3:continue
-                error=median(np.abs(p[inside,1]-interp(p[inside,0],b[:,0],b[:,1])))
+                if c.carla_native_fast and _native is not None:
+                    error=_native.corridor_error(p,b)  # inf below 3 points inside
+                    if not math.isfinite(error):continue
+                else:
+                    inside=(p[:,0]>=b[0,0])&(p[:,0]<=b[-1,0])
+                    if np.count_nonzero(inside)<3:continue
+                    error=median(np.abs(p[inside,1]-interp(p[inside,0],b[:,0],b[:,1])))
                 band=corridors.get(lane.side,c.carla_chain_band_m)
                 if error<=band:
                     filtered.append(lane)

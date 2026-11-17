@@ -17,6 +17,8 @@ detector (vision_road) and the HUD (hero_hud) read, in the Town05 recording's na
                                         'road_wheel' = the front road-wheel angle (rad, left +)
   /sensing/camera/dashcam/image_raw     sensor_msgs/Image              bgr8 1920x1080, 30 Hz sim time
   /sensing/camera/dashcam/camera_info   sensor_msgs/CameraInfo         fx = fy = 960 (90 deg HFOV), plumb_bob
+                                       (--ros-crop-rows LO:HI: image_raw holds only rows LO..HI-1, camera_info keeps
+                                       1920x1080 and gives them in roi.y_offset / roi.height)
 
 The dashcam is a second RGB camera rigidly attached where the lane detector expects it: 2.2 m ahead of
 the rear axle (base_link) and 1.4 m above the ground, looking straight ahead (vision_road
@@ -102,15 +104,26 @@ def camera_matrix(width: int = DASHCAM_WIDTH, height: int = DASHCAM_HEIGHT, hfov
     return [f, 0., width*.5, 0., f, height*.5, 0., 0., 1.]
 
 
-def bgra_to_bgr(raw: Any, width: int, height: int) -> bytes:
-    """CARLA's BGRA pixels to packed bgr8 (numpy when available)."""
+def bgra_to_bgr(raw: Any, width: int, height: int, rows: Optional[Tuple[int, int]] = None) -> bytes:
+    """CARLA's BGRA pixels to packed bgr8 (numpy when available); rows (lo, hi): only those rows."""
+    lo, hi = rows if rows is not None else (0, height)
     try:
         import numpy as np
-        return np.frombuffer(raw, dtype=np.uint8).reshape(height, width, 4)[:, :, :3].tobytes()
+        return np.frombuffer(raw, dtype=np.uint8).reshape(height, width, 4)[lo:hi, :, :3].tobytes()
     except ImportError:
-        raw = bytes(raw); bgr = bytearray(width*height*3)
+        raw = bytes(raw)[lo*width*4:hi*width*4]; bgr = bytearray(width*(hi-lo)*3)
         bgr[0::3] = raw[0::4]; bgr[1::3] = raw[1::4]; bgr[2::3] = raw[2::4]
         return bytes(bgr)
+
+
+def crop_rows(text: str, height: int) -> Optional[Tuple[int, int]]:
+    """--ros-crop-rows 'LO:HI' (end exclusive) to (lo, hi); '' -> None (the full image)."""
+    if not text:
+        return None
+    lo, hi = (int(v) for v in text.split(":"))
+    if not 0 <= lo < hi <= height:
+        raise ValueError(f"--ros-crop-rows {text}: need 0 <= LO < HI <= {height}")
+    return lo, hi
 
 
 def stamp_of(seconds: float) -> Tuple[int, int]:
@@ -125,7 +138,7 @@ class RosOutput:
     def __init__(self, world: Any, vehicle: Any, args: Any, carla_module: Any, rclpy_module: Any, msgs: dict,
                  range_deg: float):
         self.world = world; self.vehicle = vehicle; self.carla = carla_module; self.rclpy = rclpy_module
-        self.msgs = msgs; self.range_deg = range_deg
+        self.msgs = msgs; self.range_deg = range_deg; self.args = args
         self.axis: Optional[float] = None; self.reverse = False
         self.lock = threading.Lock(); self.snapshot = None; self.new = threading.Event(); self.stop = threading.Event()
         self.camera = None; self.tick_id = None; self.max_steer_deg = 0.; self.last_wheel = None
@@ -238,11 +251,15 @@ class RosOutput:
         # CARLA's sensor thread: BGRA -> bgr8 and publish, stamped with the frame's simulation time.
         try:
             msgs = self.msgs; t = image.timestamp; w, h = image.width, image.height
-            bgr = bgra_to_bgr(image.raw_data, w, h)
+            rows = crop_rows(getattr(self.args, "ros_crop_rows", "") or "", h)
+            bgr = bgra_to_bgr(image.raw_data, w, h, rows)
             out = msgs["Image"](); self._header(out, t, DASHCAM_FRAME)
-            out.height, out.width, out.encoding, out.is_bigendian, out.step = h, w, "bgr8", 0, w*3; out.data = bgr
+            sent = h if rows is None else rows[1]-rows[0]
+            out.height, out.width, out.encoding, out.is_bigendian, out.step = sent, w, "bgr8", 0, w*3; out.data = bgr
             info = msgs["CameraInfo"](); self._header(info, t, DASHCAM_FRAME)
             info.height, info.width, info.distortion_model = h, w, "plumb_bob"
+            if rows is not None:  # a row crop: the image holds rows [y_offset, y_offset+height) of the full image
+                info.roi.x_offset, info.roi.y_offset, info.roi.height, info.roi.width = 0, rows[0], sent, w
             k = camera_matrix(w, h, float(image.fov)); info.k = k; info.d = [0.]*5
             info.r = [1., 0., 0., 0., 1., 0., 0., 0., 1.]; info.p = [k[0], 0., k[2], 0., 0., k[4], k[5], 0., 0., 0., 1., 0.]
             self.pub_image.publish(out); self.pub_info.publish(info)

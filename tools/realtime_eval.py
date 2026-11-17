@@ -23,7 +23,8 @@ from visualization_msgs.msg import MarkerArray
 ROOT=Path(__file__).resolve().parents[1]
 HUD=ROOT  # the HUD copy in this workspace (src/hero_hud), built into ROOT/install
 HUD_CONFIG=ROOT/'src/hero_hud/config/hud.yaml'
-DISK=Path('/media/jaehun/38F7-677B')
+# The recordings' disk; VISION_ROAD_DISK=<path> on another computer (rosbag/<video>_30hz and vision-road-cache/ under it).
+DISK=Path(os.environ.get('VISION_ROAD_DISK','/media/jaehun/38F7-677B'))
 VIDEOS=dict(maploop=(DISK/'rosbag/maploop_30hz',ROOT/'data/maploop30hz_native.cdrz'),
             town04=(DISK/'rosbag/town04_30hz',DISK/'vision-road-cache/town04_30hz_native.cdrz'),
             town05=(DISK/'rosbag/town05_30hz',DISK/'vision-road-cache/town05_30hz_native.cdrz'))
@@ -65,6 +66,7 @@ def main():
     ap.add_argument('--no-hud',action='store_true');ap.add_argument('--record',action='store_true',help='HUD screen recording (frames to OUTPUT/hud_frames)')
     ap.add_argument('--launch-arg',nargs='*',default=[],help='extra maploop.launch.py arguments, name:=value')
     ap.add_argument('--replay-cpus',default='',help="CPUs for the replay tool, e.g. '0-13' (taskset); default: any")
+    ap.add_argument('--crop-rows',default='',help="replay sends only these image rows (LO:HI, replay_maploop.py --crop-rows); default: full images")
     a=ap.parse_args();a.output.mkdir(parents=True,exist_ok=True);bag,cache=VIDEOS[a.video]
     rclpy.init();node=Node('road_realtime_eval');arrivals={'boundary':{},'display':{},'paint':{}};content={'boundary':{},'display':{}}
     def receiver(name):
@@ -114,6 +116,7 @@ def main():
             if hud.poll() is not None:raise RuntimeError('HUD exited; see hud.log')
         replay_cmd=['bash','-c','source /opt/ros/humble/setup.bash && source "$0/install/setup.bash" && exec /usr/bin/python3 "$0/tools/replay_maploop.py" "$@"',str(ROOT),
                     '--bag',str(bag),'--cache',str(cache),'--start-frame',str(a.start_frame),'--max-frames',str(a.frames),'--rate','1','--timing-report',str(source_timing)]
+        if a.crop_rows:replay_cmd+=['--crop-rows',a.crop_rows]
         if a.replay_cpus:replay_cmd=['taskset','-c',a.replay_cpus]+replay_cmd
         replay=subprocess.Popen(replay_cmd,stdout=logs['replay'],stderr=subprocess.STDOUT,start_new_session=True);procs.append(replay)
         deadline=time.monotonic()+(a.frames or 1810)/30+120

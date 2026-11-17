@@ -109,31 +109,42 @@ class CarlaDetector(Detector):
         self.gray_u8=cv2.cvtColor(bev,cv2.COLOR_BGR2GRAY)  # also the tracker's registration image for this BEV
         gray=self.gray_u8.astype(np.float32)
         gray=cv2.GaussianBlur(gray,(3,3),.55);self.gray=gray
-        h,l,s=cv2.split(cv2.cvtColor(bev,cv2.COLOR_BGR2HLS));self.light=l;self.saturation=s  # reused by road_markings
-        b,g,r=cv2.split(bev.astype(np.float32))
-        white=(s<120)&(l>c.carla_white_light_min)
-        self.yellow=(h>=16)&(h<=42)&(s>20)&((g-b)>18)&((g-b)>.09*np.maximum(g,1))&((g-b)>1.25*(r-g))
+        hls=cv2.cvtColor(bev,cv2.COLOR_BGR2HLS);h,l,s=cv2.split(hls);self.light=l;self.saturation=s  # reused by road_markings
+        native=c.carla_native_fast and _native is not None
+        if native:
+            # One pass in _native: the same float32 arithmetic as the NumPy lines below, the same masks.
+            white,yellow,yellowness,level=_native.color_planes(bev,hls,float(c.carla_white_light_min))
+            white=white.view(bool);self.yellow=yellow.view(bool)
+        else:
+            b,g,r=cv2.split(bev.astype(np.float32))
+            white=(s<120)&(l>c.carla_white_light_min)
+            self.yellow=(h>=16)&(h<=42)&(s>20)&((g-b)>18)&((g-b)>.09*np.maximum(g,1))&((g-b)>1.25*(r-g))
         relative=None
         if c.carla_yellow_relative_min>0:
             # Faint yellow (a pale map, or washed out by light): blue below red and green, measured against
             # the road around it, so a uniformly warm or bluish road is not yellow.
-            yellowness=(r+g)/2-b;size=2*round(c.carla_yellow_relative_window_m/c.mpp/2)+1
-            level=np.clip(yellowness+128,0,255).astype(np.uint8)
+            size=2*round(c.carla_yellow_relative_window_m/c.mpp/2)+1
+            if not native:
+                yellowness=(r+g)/2-b
+                level=np.clip(yellowness+128,0,255).astype(np.uint8)
             # The median filter is the slowest step here; with carla_parallel_ops it runs beside the ridges below.
             relative=self.pool().submit(cv2.medianBlur,level,size) if c.carla_parallel_ops else cv2.medianBlur(level,size)
-        response=np.zeros_like(gray)
         # Average both flanks at multiple paint widths. Preserve weak ridges;
         # subsequent geometry uses this same response rather than a second
         # incompatible absolute-white threshold.
         smooth=cv2.blur(gray,(3,3))
-        # OpenCV element-wise ops on one replicate-padded copy: the same values as shifting per width, 2-3x faster.
-        radii=[max(2,round((width/2+.07)/c.mpp)) for width in (.10,.16,.24,.34)];pad=max(radii);w=gray.shape[1]
-        padded=cv2.copyMakeBorder(smooth,0,0,pad,pad,cv2.BORDER_REPLICATE)
-        for radius in radii:
-            side=cv2.max(padded[:,pad-radius:pad-radius+w],padded[:,pad+radius:pad+radius+w])
-            ridge=cv2.subtract(gray,side)
-            eligible=(ridge>=c.carla_ridge_min)&(ridge>=c.carla_relative_min*cv2.max(side,25.))
-            response=cv2.max(response,np.where(eligible,ridge,np.float32(0)))
+        radii=[max(2,round((width/2+.07)/c.mpp)) for width in (.10,.16,.24,.34)]
+        if native:response=_native.ridges(gray,smooth,radii,float(c.carla_ridge_min),float(c.carla_relative_min))
+        else:
+            response=np.zeros_like(gray)
+            # OpenCV element-wise ops on one replicate-padded copy: the same values as shifting per width, 2-3x faster.
+            pad=max(radii);w=gray.shape[1]
+            padded=cv2.copyMakeBorder(smooth,0,0,pad,pad,cv2.BORDER_REPLICATE)
+            for radius in radii:
+                side=cv2.max(padded[:,pad-radius:pad-radius+w],padded[:,pad+radius:pad+radius+w])
+                ridge=cv2.subtract(gray,side)
+                eligible=(ridge>=c.carla_ridge_min)&(ridge>=c.carla_relative_min*cv2.max(side,25.))
+                response=cv2.max(response,np.where(eligible,ridge,np.float32(0)))
         if relative is not None:
             road=(relative.result() if c.carla_parallel_ops else relative).astype(np.float32)-128
             self.yellow|=(yellowness>=c.carla_yellow_relative_min)&(yellowness-road>=c.carla_yellow_relative_min)
@@ -885,9 +896,15 @@ class CarlaDetector(Detector):
         def far_out(anchor,hi):
             return c.forward_max-hi*c.mpp<=8. and not .65<=abs(anchor)<=4.2
         if c.carla_native_enabled and _native is not None:
-            for points,m,b,lo,hi,width,yellow,y,x in _native.extract_fragments(mask,self.yellow,c.mpp,c.forward_max,c.lateral_min,c.carla_outer_reach_m if outer else 4.2):
+            fragments=_native.extract_fragments(mask,self.yellow,c.mpp,c.forward_max,c.lateral_min,c.carla_outer_reach_m if outer else 4.2)
+            edges=None
+            if c.carla_native_fast:
+                # The curb test for all white fragments in one call (the same sums as edge_like).
+                white=[(f[7],f[8]) for f in fragments if not f[6]];flags=iter(_native.edge_like(self.gray,white,max(2,round(.35/c.mpp))))
+                edges=[False if f[6] else next(flags) for f in fragments]
+            for index,(points,m,b,lo,hi,width,yellow,y,x) in enumerate(fragments):
                 anchor=c.lateral_min+(m*((c.forward_max-3.)/c.mpp)+b)*c.mpp
-                if not yellow and self.edge_like(y,x):continue
+                if not yellow and (edges[index] if edges is not None else self.edge_like(y,x)):continue
                 lane=Lane('left' if anchor<0 else 'right',points,min(.95,max(.55,.9-width*2.)))
                 node=dict(lane=lane,fit=(m,b),lo=lo,hi=hi,yellow=yellow,pixels=(y,x),parent=len(nodes),anchor=anchor)
                 if outer and far_out(anchor,hi):extra.append(node)

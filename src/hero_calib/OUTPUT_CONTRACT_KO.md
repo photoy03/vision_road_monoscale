@@ -16,6 +16,13 @@
 | `/sensing/camera/dashcam/image_raw` | `sensor_msgs/Image` | 30 Hz (시뮬레이터 시각, `sensor_tick` 1/30) | bgr8, 1920×1080, step 5760 | frame `dashcam_optical_link`: 뒤축에서 앞 2.2 m, 땅에서 1.4 m, 정면. **미확정**: 실제 Prius 에서의 자리(뒷바퀴 위치와 경계 상자로 계산), 노출 등 카메라 속성 |
 | `/sensing/camera/dashcam/camera_info` | `sensor_msgs/CameraInfo` | 영상마다 | K = [960, 0, 960; 0, 960, 540; 0, 0, 1] (수평 90°), plumb_bob, 왜곡 0 | frame `dashcam_optical_link` |
 
+대시캠 행 자르기 (`--ros-crop-rows LO:HI`, 기본은 자르지 않음):
+- 차선 인식은 영상의 일부 행만 읽는다. 지금 BEV(앞 3–35 m, 옆 ±6 m, 화면 아래 0.915 까지)는 행 580–981 만 쓴다. 그 행만 보내면 보내고 받는 양이 37% 로 준다.
+- 자르면 `image_raw` 는 행 LO 부터 HI−1 까지만 담는다(`height` = HI−LO, `width` 1920, `step` 5760 그대로).
+- `camera_info` 는 전체 크기(`height` 1080, `width` 1920)와 같은 K 를 그대로 두고, `roi` 에 어느 행인지 적는다: `roi.y_offset` = LO, `roi.height` = HI−LO, `roi.x_offset` = 0, `roi.width` = 1920. 자르지 않으면 `roi` 는 모두 0 이다(ROS 의 뜻: 전체 영상).
+- 받는 쪽(차선 인식 `road_node`, 계산 프로세스)은 `<영상 토픽의 이름공간>/camera_info` 의 `roi` 로 행을 맞춘다. 읽는 행을 모두 담지 않은 영상, 또는 `camera_info` 를 아직 받지 못한 잘린 영상은 버리고 경고를 낸다. 받는 쪽은 시작할 때 읽는 행을 로그에 적는다("the BEV reads image rows 580-981 of 1920x1080").
+- 권장 값: `--ros-crop-rows 578:984` (읽는 행 위아래로 2행 여유). 카메라 자리, 보정, BEV 범위를 바꾸면 행도 바뀌므로 받는 쪽 로그를 보고 다시 정한다.
+
 `/hero/vehicle_state`:
 
 | 필드 | 단위 | 부호 / 값 | 출처 |

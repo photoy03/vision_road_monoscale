@@ -1,0 +1,1398 @@
+diff --git a/run_lane_hud.sh b/run_lane_hud.sh
+index 7f83c6e..c26453c 100755
+--- a/run_lane_hud.sh
++++ b/run_lane_hud.sh
+@@ -13,19 +13,22 @@
+ #   --fake-vehicle-state  made-up /hero/vehicle_state and /hero/steering_wheel from the pose
+ #                   (tools/fake_vehicle_state.py), until the driving node sends them: the HUD then
+ #                   draws the current path and the guidance takes its speed
++#   --crop-rows LO:HI   the replay sends only image rows LO..HI-1 (e.g. 578:984, the rows the lane
++#                   BEV reads; CameraInfo roi says which), a third of the image bytes
+ # The HUD is this workspace's copy (src/hero_hud), built into install/.
+ set -euo pipefail
+ ROAD="$(cd "$(dirname "$0")" && pwd)"
+ HUD_CONFIG=$ROAD/src/hero_hud/config/hud.yaml
+ DISK=/media/jaehun/38F7-677B
+ VIDEO=${1:-}; shift || true
+-HUD=1; LOOP=0; FRAMES=0; LEARNED=""; GUIDANCE=true; FAKE_VS=false
++HUD=1; LOOP=0; FRAMES=0; LEARNED=""; GUIDANCE=true; FAKE_VS=false; CROP=()
+ while [ $# -gt 0 ]; do
+   case "$1" in
+     --no-hud) HUD=0;; --loop) LOOP=1;; --frames) FRAMES=$2; shift;;
+     --learned) LEARNED="learned_weights:=$ROAD/data/models/yolopv2/yolopv2.pt";;
+     --no-guidance) GUIDANCE=false;;
+     --fake-vehicle-state) FAKE_VS=true;;
++    --crop-rows) CROP=(--crop-rows "$2"); shift;;
+     *) echo "unknown option $1"; exit 2;;
+   esac; shift
+ done
+@@ -67,7 +70,7 @@ if [ -z "$BAG" ]; then
+   wait
+ else
+   while true; do
+-    /usr/bin/python3 "$ROAD/tools/replay_maploop.py" --bag "$BAG" --cache "$CACHE" --max-frames "$FRAMES" --rate 1
++    /usr/bin/python3 "$ROAD/tools/replay_maploop.py" --bag "$BAG" --cache "$CACHE" --max-frames "$FRAMES" --rate 1 ${CROP[@]+"${CROP[@]}"}
+     [ "$LOOP" = 1 ] || break
+   done
+ fi
+diff --git a/src/hero_calib/OUTPUT_CONTRACT_KO.md b/src/hero_calib/OUTPUT_CONTRACT_KO.md
+index 6bff49f..c3aa521 100644
+--- a/src/hero_calib/OUTPUT_CONTRACT_KO.md
++++ b/src/hero_calib/OUTPUT_CONTRACT_KO.md
+@@ -16,6 +16,13 @@
+ | `/sensing/camera/dashcam/image_raw` | `sensor_msgs/Image` | 30 Hz (시뮬레이터 시각, `sensor_tick` 1/30) | bgr8, 1920×1080, step 5760 | frame `dashcam_optical_link`: 뒤축에서 앞 2.2 m, 땅에서 1.4 m, 정면. **미확정**: 실제 Prius 에서의 자리(뒷바퀴 위치와 경계 상자로 계산), 노출 등 카메라 속성 |
+ | `/sensing/camera/dashcam/camera_info` | `sensor_msgs/CameraInfo` | 영상마다 | K = [960, 0, 960; 0, 960, 540; 0, 0, 1] (수평 90°), plumb_bob, 왜곡 0 | frame `dashcam_optical_link` |
+ 
++대시캠 행 자르기 (`--ros-crop-rows LO:HI`, 기본은 자르지 않음):
++- 차선 인식은 영상의 일부 행만 읽는다. 지금 BEV(앞 3–35 m, 옆 ±6 m, 화면 아래 0.915 까지)는 행 580–981 만 쓴다. 그 행만 보내면 보내고 받는 양이 37% 로 준다.
++- 자르면 `image_raw` 는 행 LO 부터 HI−1 까지만 담는다(`height` = HI−LO, `width` 1920, `step` 5760 그대로).
++- `camera_info` 는 전체 크기(`height` 1080, `width` 1920)와 같은 K 를 그대로 두고, `roi` 에 어느 행인지 적는다: `roi.y_offset` = LO, `roi.height` = HI−LO, `roi.x_offset` = 0, `roi.width` = 1920. 자르지 않으면 `roi` 는 모두 0 이다(ROS 의 뜻: 전체 영상).
++- 받는 쪽(차선 인식 `road_node`, 계산 프로세스)은 `<영상 토픽의 이름공간>/camera_info` 의 `roi` 로 행을 맞춘다. 읽는 행을 모두 담지 않은 영상, 또는 `camera_info` 를 아직 받지 못한 잘린 영상은 버리고 경고를 낸다. 받는 쪽은 시작할 때 읽는 행을 로그에 적는다("the BEV reads image rows 580-981 of 1920x1080").
++- 권장 값: `--ros-crop-rows 578:984` (읽는 행 위아래로 2행 여유). 카메라 자리, 보정, BEV 범위를 바꾸면 행도 바뀌므로 받는 쪽 로그를 보고 다시 정한다.
++
+ `/hero/vehicle_state`:
+ 
+ | 필드 | 단위 | 부호 / 값 | 출처 |
+diff --git a/src/hero_calib/hero_ros_output.py b/src/hero_calib/hero_ros_output.py
+index f2c92a2..9f39bff 100644
+--- a/src/hero_calib/hero_ros_output.py
++++ b/src/hero_calib/hero_ros_output.py
+@@ -17,6 +17,8 @@ detector (vision_road) and the HUD (hero_hud) read, in the Town05 recording's na
+                                         'road_wheel' = the front road-wheel angle (rad, left +)
+   /sensing/camera/dashcam/image_raw     sensor_msgs/Image              bgr8 1920x1080, 30 Hz sim time
+   /sensing/camera/dashcam/camera_info   sensor_msgs/CameraInfo         fx = fy = 960 (90 deg HFOV), plumb_bob
++                                       (--ros-crop-rows LO:HI: image_raw holds only rows LO..HI-1, camera_info keeps
++                                       1920x1080 and gives them in roi.y_offset / roi.height)
+ 
+ The dashcam is a second RGB camera rigidly attached where the lane detector expects it: 2.2 m ahead of
+ the rear axle (base_link) and 1.4 m above the ground, looking straight ahead (vision_road
+@@ -102,17 +104,28 @@ def camera_matrix(width: int = DASHCAM_WIDTH, height: int = DASHCAM_HEIGHT, hfov
+     return [f, 0., width*.5, 0., f, height*.5, 0., 0., 1.]
+ 
+ 
+-def bgra_to_bgr(raw: Any, width: int, height: int) -> bytes:
+-    """CARLA's BGRA pixels to packed bgr8 (numpy when available)."""
++def bgra_to_bgr(raw: Any, width: int, height: int, rows: Optional[Tuple[int, int]] = None) -> bytes:
++    """CARLA's BGRA pixels to packed bgr8 (numpy when available); rows (lo, hi): only those rows."""
++    lo, hi = rows if rows is not None else (0, height)
+     try:
+         import numpy as np
+-        return np.frombuffer(raw, dtype=np.uint8).reshape(height, width, 4)[:, :, :3].tobytes()
++        return np.frombuffer(raw, dtype=np.uint8).reshape(height, width, 4)[lo:hi, :, :3].tobytes()
+     except ImportError:
+-        raw = bytes(raw); bgr = bytearray(width*height*3)
++        raw = bytes(raw)[lo*width*4:hi*width*4]; bgr = bytearray(width*(hi-lo)*3)
+         bgr[0::3] = raw[0::4]; bgr[1::3] = raw[1::4]; bgr[2::3] = raw[2::4]
+         return bytes(bgr)
+ 
+ 
++def crop_rows(text: str, height: int) -> Optional[Tuple[int, int]]:
++    """--ros-crop-rows 'LO:HI' (end exclusive) to (lo, hi); '' -> None (the full image)."""
++    if not text:
++        return None
++    lo, hi = (int(v) for v in text.split(":"))
++    if not 0 <= lo < hi <= height:
++        raise ValueError(f"--ros-crop-rows {text}: need 0 <= LO < HI <= {height}")
++    return lo, hi
++
++
+ def stamp_of(seconds: float) -> Tuple[int, int]:
+     ns = int(round(float(seconds)*1e9))
+     return ns//1000000000, ns % 1000000000
+@@ -125,7 +138,7 @@ class RosOutput:
+     def __init__(self, world: Any, vehicle: Any, args: Any, carla_module: Any, rclpy_module: Any, msgs: dict,
+                  range_deg: float):
+         self.world = world; self.vehicle = vehicle; self.carla = carla_module; self.rclpy = rclpy_module
+-        self.msgs = msgs; self.range_deg = range_deg
++        self.msgs = msgs; self.range_deg = range_deg; self.args = args
+         self.axis: Optional[float] = None; self.reverse = False
+         self.lock = threading.Lock(); self.snapshot = None; self.new = threading.Event(); self.stop = threading.Event()
+         self.camera = None; self.tick_id = None; self.max_steer_deg = 0.; self.last_wheel = None
+@@ -238,11 +251,15 @@ class RosOutput:
+         # CARLA's sensor thread: BGRA -> bgr8 and publish, stamped with the frame's simulation time.
+         try:
+             msgs = self.msgs; t = image.timestamp; w, h = image.width, image.height
+-            bgr = bgra_to_bgr(image.raw_data, w, h)
++            rows = crop_rows(getattr(self.args, "ros_crop_rows", "") or "", h)
++            bgr = bgra_to_bgr(image.raw_data, w, h, rows)
+             out = msgs["Image"](); self._header(out, t, DASHCAM_FRAME)
+-            out.height, out.width, out.encoding, out.is_bigendian, out.step = h, w, "bgr8", 0, w*3; out.data = bgr
++            sent = h if rows is None else rows[1]-rows[0]
++            out.height, out.width, out.encoding, out.is_bigendian, out.step = sent, w, "bgr8", 0, w*3; out.data = bgr
+             info = msgs["CameraInfo"](); self._header(info, t, DASHCAM_FRAME)
+             info.height, info.width, info.distortion_model = h, w, "plumb_bob"
++            if rows is not None:  # a row crop: the image holds rows [y_offset, y_offset+height) of the full image
++                info.roi.x_offset, info.roi.y_offset, info.roi.height, info.roi.width = 0, rows[0], sent, w
+             k = camera_matrix(w, h, float(image.fov)); info.k = k; info.d = [0.]*5
+             info.r = [1., 0., 0., 0., 1., 0., 0., 0., 1.]; info.p = [k[0], 0., k[2], 0., 0., k[4], k[5], 0., 0., 0., 1., 0.]
+             self.pub_image.publish(out); self.pub_info.publish(info)
+diff --git a/src/hero_calib/prius_wheel_based_driver_eye.py b/src/hero_calib/prius_wheel_based_driver_eye.py
+index eea31a6..5242812 100644
+--- a/src/hero_calib/prius_wheel_based_driver_eye.py
++++ b/src/hero_calib/prius_wheel_based_driver_eye.py
+@@ -1446,6 +1446,12 @@ def build_parser() -> argparse.ArgumentParser:
+         action="store_true",
+         help="With --ros-output: do not add the 1920x1080 dashcam camera.",
+     )
++    parser.add_argument(
++        "--ros-crop-rows",
++        default="",
++        help="With --ros-output: send only dashcam image rows LO:HI (end exclusive), e.g. 578:984, the rows the "
++        "lane detector reads (its log says which); camera_info keeps 1920x1080 and gives the rows in roi.",
++    )
+     return parser
+ 
+ 
+diff --git a/src/hero_calib/tests/test_ros_output.py b/src/hero_calib/tests/test_ros_output.py
+index 2cccbb4..d0d06e2 100644
+--- a/src/hero_calib/tests/test_ros_output.py
++++ b/src/hero_calib/tests/test_ros_output.py
+@@ -41,6 +41,15 @@ def test_rear_axle_dashcam_and_camera_info():
+     assert R.stamp_of(2.5666667) == (2, 566666700)
+ 
+ 
++def test_bgra_to_bgr_row_crop():
++    raw = bytes(range(2*3*4))  # 2 wide, 3 rows
++    assert R.bgra_to_bgr(raw, 2, 3, (1, 3)) == R.bgra_to_bgr(raw, 2, 3)[6:]
++    assert R.crop_rows("", 1080) is None and R.crop_rows("578:984", 1080) == (578, 984)
++    import pytest
++    with pytest.raises(ValueError):
++        R.crop_rows("900:1100", 1080)
++
++
+ def test_bgra_to_bgr():
+     raw = bytes([1, 2, 3, 255, 4, 5, 6, 255])
+     assert R.bgra_to_bgr(raw, 2, 1) == bytes([1, 2, 3, 4, 5, 6])
+@@ -157,6 +166,7 @@ def test_publisher_on_a_fake_world():
+         assert bytes(img.data[:6]) == bytes([10, 20, 30, 10, 20, 30])
+         assert (img.header.stamp.sec, img.header.stamp.nanosec) == (12, 533333300)
+         assert list(info.k) == pytest.approx([960., 0., 960., 0., 960., 540., 0., 0., 1.]) and info.distortion_model == "plumb_bob"
++        assert info.roi.height == 0  # the full image (no --ros-crop-rows)
+         if want_state:
+             st = got["/hero/vehicle_state"]
+             assert st.gear == st.GEAR_DRIVE and st.speed_mps == pytest.approx(5., abs=1e-5)
+diff --git a/src/vision_road/config/carla.yaml b/src/vision_road/config/carla.yaml
+index 4da9b08..0d48d41 100644
+--- a/src/vision_road/config/carla.yaml
++++ b/src/vision_road/config/carla.yaml
+@@ -66,6 +66,8 @@ vision_road:
+     carla_turn_curvature: 0.03
+     # Real time: the median filter and the paint-history warps run on a second thread (same results).
+     carla_parallel_ops: true
++    # Plan 25: per-pixel binary steps, the curb test and per-lane loops in C++ (_native); outputs unchanged.
++    carla_native_fast: true
+     # Neighbouring lanes (Town05): after the two own lines are chosen (unchanged), each side's next line out,
+     # from the paint they left: 2.3-4.7 m (and within 0.9 m of the own lane width) outside the own line along
+     # its normal, parallel to it (distance varies <= 0.3 m).  /road/lane_outer, /road/lane_outer_markers.
+@@ -88,6 +90,9 @@ vision_road:
+     display_publish_in_worker: true
+     # The perception worker subscribes the camera and odometry itself: no image copy or hand-over in road_node.
+     image_in_worker: true
++    # Plan 25: with learned_weights the worker takes the camera too and hands the frames to the model process
++    # (the image no longer goes through road_node).  Without learned weights nothing changes.
++    learned_in_worker: true
+ lane_display_filter:
+   ros__parameters:
+     # HUD line reaches the rear axle (HUD path start, bottom of the screen); paint seen in the last
+diff --git a/src/vision_road/setup.py b/src/vision_road/setup.py
+index 49ed6b4..4e97ca7 100644
+--- a/src/vision_road/setup.py
++++ b/src/vision_road/setup.py
+@@ -1,6 +1,6 @@
+ from setuptools import setup, Extension
+ from glob import glob
+-setup(ext_modules=[Extension('vision_road._native', ['vision_road/native.cpp'], include_dirs=['/usr/include/pybind11','/usr/include/opencv4'], libraries=['opencv_core','opencv_imgproc'], language='c++', extra_compile_args=['-O3','-std=c++17'], optional=True)], name='vision_road', version='0.1.0', packages=['vision_road'],
++setup(ext_modules=[Extension('vision_road._native', ['vision_road/native.cpp'], include_dirs=['/usr/include/pybind11','/usr/include/opencv4'], libraries=['opencv_core','opencv_imgproc'], language='c++', extra_compile_args=['-O3','-std=c++17','-ffp-contract=off'], optional=True)], name='vision_road', version='0.1.0', packages=['vision_road'],
+       data_files=[('share/ament_index/resource_index/packages', ['resource/vision_road']),
+                   ('share/vision_road', ['package.xml']),
+                   ('share/vision_road/launch', glob('launch/*.launch.py')),
+diff --git a/src/vision_road/vision_road/carla.py b/src/vision_road/vision_road/carla.py
+index b5fb87c..a0a7b9e 100644
+--- a/src/vision_road/vision_road/carla.py
++++ b/src/vision_road/vision_road/carla.py
+@@ -109,31 +109,42 @@ class CarlaDetector(Detector):
+         self.gray_u8=cv2.cvtColor(bev,cv2.COLOR_BGR2GRAY)  # also the tracker's registration image for this BEV
+         gray=self.gray_u8.astype(np.float32)
+         gray=cv2.GaussianBlur(gray,(3,3),.55);self.gray=gray
+-        h,l,s=cv2.split(cv2.cvtColor(bev,cv2.COLOR_BGR2HLS));self.light=l;self.saturation=s  # reused by road_markings
+-        b,g,r=cv2.split(bev.astype(np.float32))
+-        white=(s<120)&(l>c.carla_white_light_min)
+-        self.yellow=(h>=16)&(h<=42)&(s>20)&((g-b)>18)&((g-b)>.09*np.maximum(g,1))&((g-b)>1.25*(r-g))
++        hls=cv2.cvtColor(bev,cv2.COLOR_BGR2HLS);h,l,s=cv2.split(hls);self.light=l;self.saturation=s  # reused by road_markings
++        native=c.carla_native_fast and _native is not None
++        if native:
++            # One pass in _native: the same float32 arithmetic as the NumPy lines below, the same masks.
++            white,yellow,yellowness,level=_native.color_planes(bev,hls,float(c.carla_white_light_min))
++            white=white.view(bool);self.yellow=yellow.view(bool)
++        else:
++            b,g,r=cv2.split(bev.astype(np.float32))
++            white=(s<120)&(l>c.carla_white_light_min)
++            self.yellow=(h>=16)&(h<=42)&(s>20)&((g-b)>18)&((g-b)>.09*np.maximum(g,1))&((g-b)>1.25*(r-g))
+         relative=None
+         if c.carla_yellow_relative_min>0:
+             # Faint yellow (a pale map, or washed out by light): blue below red and green, measured against
+             # the road around it, so a uniformly warm or bluish road is not yellow.
+-            yellowness=(r+g)/2-b;size=2*round(c.carla_yellow_relative_window_m/c.mpp/2)+1
+-            level=np.clip(yellowness+128,0,255).astype(np.uint8)
++            size=2*round(c.carla_yellow_relative_window_m/c.mpp/2)+1
++            if not native:
++                yellowness=(r+g)/2-b
++                level=np.clip(yellowness+128,0,255).astype(np.uint8)
+             # The median filter is the slowest step here; with carla_parallel_ops it runs beside the ridges below.
+             relative=self.pool().submit(cv2.medianBlur,level,size) if c.carla_parallel_ops else cv2.medianBlur(level,size)
+-        response=np.zeros_like(gray)
+         # Average both flanks at multiple paint widths. Preserve weak ridges;
+         # subsequent geometry uses this same response rather than a second
+         # incompatible absolute-white threshold.
+         smooth=cv2.blur(gray,(3,3))
+-        # OpenCV element-wise ops on one replicate-padded copy: the same values as shifting per width, 2-3x faster.
+-        radii=[max(2,round((width/2+.07)/c.mpp)) for width in (.10,.16,.24,.34)];pad=max(radii);w=gray.shape[1]
+-        padded=cv2.copyMakeBorder(smooth,0,0,pad,pad,cv2.BORDER_REPLICATE)
+-        for radius in radii:
+-            side=cv2.max(padded[:,pad-radius:pad-radius+w],padded[:,pad+radius:pad+radius+w])
+-            ridge=cv2.subtract(gray,side)
+-            eligible=(ridge>=c.carla_ridge_min)&(ridge>=c.carla_relative_min*cv2.max(side,25.))
+-            response=cv2.max(response,np.where(eligible,ridge,np.float32(0)))
++        radii=[max(2,round((width/2+.07)/c.mpp)) for width in (.10,.16,.24,.34)]
++        if native:response=_native.ridges(gray,smooth,radii,float(c.carla_ridge_min),float(c.carla_relative_min))
++        else:
++            response=np.zeros_like(gray)
++            # OpenCV element-wise ops on one replicate-padded copy: the same values as shifting per width, 2-3x faster.
++            pad=max(radii);w=gray.shape[1]
++            padded=cv2.copyMakeBorder(smooth,0,0,pad,pad,cv2.BORDER_REPLICATE)
++            for radius in radii:
++                side=cv2.max(padded[:,pad-radius:pad-radius+w],padded[:,pad+radius:pad+radius+w])
++                ridge=cv2.subtract(gray,side)
++                eligible=(ridge>=c.carla_ridge_min)&(ridge>=c.carla_relative_min*cv2.max(side,25.))
++                response=cv2.max(response,np.where(eligible,ridge,np.float32(0)))
+         if relative is not None:
+             road=(relative.result() if c.carla_parallel_ops else relative).astype(np.float32)-128
+             self.yellow|=(yellowness>=c.carla_yellow_relative_min)&(yellowness-road>=c.carla_yellow_relative_min)
+@@ -613,7 +624,9 @@ class CarlaDetector(Detector):
+         previous=at8((tracked[0][:,0],tracked[0][:,1])) if tracked is not None else at8(self.last_spines.get(side))
+         jump=0. if previous is None else abs(lateral-previous) if tracked is not None else (lateral-previous if side=='left' else previous-lateral)
+         if previous is not None and jump>.5:penalty+=2.
+-        opposite=at8(self.last_spines.get('right' if side=='left' else 'left'))
++        opposite_side='right' if side=='left' else 'left'
++        opposite_track=self.tracking_priors.get(opposite_side) if self.c.carla_tracking_enabled else None
++        opposite=at8((opposite_track[0][:,0],opposite_track[0][:,1])) if opposite_track is not None else at8(self.last_spines.get(opposite_side))
+         if opposite is not None and abs(abs(lateral-opposite)-self.lane_width)>.6:penalty+=1.5
+         return penalty
+ 
+@@ -885,9 +898,15 @@ class CarlaDetector(Detector):
+         def far_out(anchor,hi):
+             return c.forward_max-hi*c.mpp<=8. and not .65<=abs(anchor)<=4.2
+         if c.carla_native_enabled and _native is not None:
+-            for points,m,b,lo,hi,width,yellow,y,x in _native.extract_fragments(mask,self.yellow,c.mpp,c.forward_max,c.lateral_min,c.carla_outer_reach_m if outer else 4.2):
++            fragments=_native.extract_fragments(mask,self.yellow,c.mpp,c.forward_max,c.lateral_min,c.carla_outer_reach_m if outer else 4.2)
++            edges=None
++            if c.carla_native_fast:
++                # The curb test for all white fragments in one call (the same sums as edge_like).
++                white=[(f[7],f[8]) for f in fragments if not f[6]];flags=iter(_native.edge_like(self.gray,white,max(2,round(.35/c.mpp))))
++                edges=[False if f[6] else next(flags) for f in fragments]
++            for index,(points,m,b,lo,hi,width,yellow,y,x) in enumerate(fragments):
+                 anchor=c.lateral_min+(m*((c.forward_max-3.)/c.mpp)+b)*c.mpp
+-                if not yellow and self.edge_like(y,x):continue
++                if not yellow and (edges[index] if edges is not None else self.edge_like(y,x)):continue
+                 lane=Lane('left' if anchor<0 else 'right',points,min(.95,max(.55,.9-width*2.)))
+                 node=dict(lane=lane,fit=(m,b),lo=lo,hi=hi,yellow=yellow,pixels=(y,x),parent=len(nodes),anchor=anchor)
+                 if outer and far_out(anchor,hi):extra.append(node)
+diff --git a/src/vision_road/vision_road/core.py b/src/vision_road/vision_road/core.py
+index 49b41e0..55162da 100644
+--- a/src/vision_road/vision_road/core.py
++++ b/src/vision_road/vision_road/core.py
+@@ -65,6 +65,7 @@ class Settings:
+     carla_tail_gap_m: float = 0.0  # >0: after a paint gap this long that holds a transverse bar (stop line), a chain is cut where it continues off its own near shape
+     carla_tail_offset_m: float = 0.5  # ... by more than this (a line ending at a junction picks up the crossing road's edge)
+     carla_tail_bar_m: float = 1.0  # transverse paint at least this wide counts as a bar
++    carla_native_fast: bool = False  # plan 25: the per-pixel binary steps, the edge test and the per-lane loops in _native (same results)
+     carla_parallel_ops: bool = False  # True: independent OpenCV steps (median filter, history warps) on two threads; same results
+     carla_turn_curvature: float = 0.0  # >0: while the vehicle turns this sharply (1/m, over its last metre), a candidate starting within 15 m is not taken
+     carla_turn_angle_deg: float = 25.0  # ... when its first 2 m head against the turn and cross the vehicle's own arc at this angle (a crossing road's line)
+@@ -142,13 +143,38 @@ class Projector:
+         self.valid = ((cam[:, :, 2] > 0) & (self.mx >= 0) & (self.mx < width-1) & (self.my >= 0) & (self.my < height-1)).astype('uint8')*255
+         self.source_size = (width, height)
+ 
+-    def warp(self, frame):
++    def warp(self, frame, top=0):
++        """top: the frame holds only rows [top, top+height) of the full image (a row crop, see rows());
++        the BEV is then the same as from the full image wherever rows() covers."""
++        if top or (self.source_size is not None and frame.shape[1] == self.source_size[0] and frame.shape[0] < self.source_size[1]):
++            mx, my = self.crop_maps(top, frame.shape[0])
++            bev = cv2.remap(frame, mx, my, cv2.INTER_LINEAR)
++            return cv2.bitwise_and(bev, bev, mask=self.valid)
+         size = (frame.shape[1], frame.shape[0])
+         if size != self.source_size:
+             self.initialize(*size)
+         bev = cv2.remap(frame, self.mx, self.my, cv2.INTER_LINEAR)
+         return cv2.bitwise_and(bev, bev, mask=self.valid)
+ 
++    def rows(self, roi_bottom=1.0):
++        """Source rows [lo, hi) the BEV reads (bilinear: floor and floor+1) for its valid pixels above
++        roi_bottom * height: a row crop covering these gives the same BEV as the full image."""
++        used = (self.valid > 0) & (self.my < self.source_size[1]*roi_bottom)
++        my = self.my[used]
++        return int(np.floor(my.min())), int(np.floor(my.max()))+2
++
++    def crop_maps(self, top, height):
++        """remap maps for a frame of rows [top, top+height) (shifted by an integer: the same sampling)."""
++        if self.source_size is None:
++            raise ValueError('Row crop before the projector knows the full image size')
++        if top < 0 or top+height > self.source_size[1]:
++            raise ValueError('Row crop outside the full image')
++        key = (top, height)
++        if getattr(self, '_crop_key', None) != key or getattr(self, '_crop_source', None) != self.source_size:
++            self._crop = (self.mx, self.my-np.float32(top))
++            self._crop_key, self._crop_source = key, self.source_size
++        return self._crop
++
+ 
+     def image_points(self, points):
+         base = np.column_stack([points, np.zeros(len(points))])
+diff --git a/src/vision_road/vision_road/display_filter.py b/src/vision_road/vision_road/display_filter.py
+index 4b8d763..7d0e89f 100644
+--- a/src/vision_road/vision_road/display_filter.py
++++ b/src/vision_road/vision_road/display_filter.py
+@@ -15,6 +15,7 @@ from collections import deque
+ from dataclasses import dataclass, fields
+ 
+ import numpy as np
++from numpy.core.multiarray import interp as _interp  # np.interp without its Python wrapper (same values)
+ 
+ # The quadratic y=a+b·x+c·x² is carried as its lateral value at these forward
+ # stations: the same three degrees of freedom, but all in metres, so one set of
+@@ -84,7 +85,7 @@ def fit(points,ridge=1e-3,strength=None,near=0.,cubic=0.,cubic_ridge=1e-3):
+     p=np.asarray(points,float);p=p[np.argsort(p[:,0])]
+     x=np.arange(p[0,0],p[-1,0]+1e-6,.5)
+     if len(x)<2:x=p[[0,-1],0]
+-    y=np.interp(x,p[:,0],p[:,1]);span=float(x[-1]-x[0])
++    y=_interp(x,p[:,0],p[:,1]);span=float(x[-1]-x[0])
+     A=np.column_stack([np.ones_like(x),x,x*x])
+     lam=len(x)*float(np.mean(x*x))**2*(strength if strength is not None else ridge if span>=8 else 10.)
+     w=np.ones_like(x) if near<=0 else np.minimum(1.,(near/np.maximum(x,1.))**2)
+@@ -193,7 +194,9 @@ class SideTrack:
+         if not self.seen:return None
+         near=self.seen[-1][0]
+         if len(self.memory):near=min(near,float(self.memory[:,0].min()))
+-        return near,float(np.median([f for _,f in self.seen]))
++        # np.median of at most seen_frames values, without its per-call cost: the same value.
++        far=sorted(float(f) for _,f in self.seen);k=len(far)//2
++        return near,(far[k] if len(far)%2 else (far[k-1]+far[k])/2)
+ 
+     def span_ok(self,stations,near,far):
+         """The observation (stations over near..far) against the kept line at the near end, middle and
+@@ -457,10 +460,16 @@ class DisplayStage:
+ 
+     def messages(self,stamp,output):
+         """/road/lane_display_markers and /road/lane_display_styles for one frame's filter output."""
+-        from std_msgs.msg import Header
+-        from geometry_msgs.msg import Point
+-        from visualization_msgs.msg import Marker, MarkerArray
+-        from vision_lane_interfaces.msg import LaneStyle, LaneStyleArray
++        if not hasattr(self,'_msgs'):
++            from std_msgs.msg import Header
++            from geometry_msgs.msg import Point
++            from visualization_msgs.msg import Marker, MarkerArray
++            from vision_lane_interfaces.msg import LaneStyle, LaneStyleArray
++            self._msgs=(Header,Point,Marker,MarkerArray,LaneStyle,LaneStyleArray)
++        Header,Point,Marker,MarkerArray,LaneStyle,LaneStyleArray=self._msgs
++        def point(x,y,new=Point.__new__):
++            # Point(x=, y=, z=) without the per-field checks of its constructor: the same message.
++            p=new(Point);p._x=x;p._y=y;p._z=.02;return p
+         out=MarkerArray();head=Header(stamp=stamp,frame_id=self.frame)
+         clear=Marker();clear.header=head;clear.action=Marker.DELETEALL;out.markers.append(clear)
+         styles=LaneStyleArray();styles.header=head;styles.camera_id='front'
+@@ -468,7 +477,7 @@ class DisplayStage:
+             m=Marker();m.header=head;m.ns='display/'+side;m.id=ident;m.type=Marker.LINE_STRIP;m.action=Marker.ADD
+             m.pose.orientation.w=1.;m.scale.x=.05;m.color.a=.9;m.color.g=1.;m.color.b=1.;m.color.r=1. if predicted else 0.
+             m.lifetime.nanosec=300000000
+-            m.points=[Point(x=float(x),y=float(y),z=.02) for x,y in points];out.markers.append(m)
++            m.points=[point(float(x),float(y)) for x,y in points.tolist()];out.markers.append(m)
+             if style is not None:
+                 lane=LaneStyle();lane.side=side;lane.style=self.kinds[style];lane.confidence=1.
+                 lane.reprojected=False;lane.source_stamp=stamp;lane.style_source_stamp=stamp
+diff --git a/src/vision_road/vision_road/learned_mask.py b/src/vision_road/vision_road/learned_mask.py
+index 6318090..afc7647 100644
+--- a/src/vision_road/vision_road/learned_mask.py
++++ b/src/vision_road/vision_road/learned_mask.py
+@@ -84,22 +84,9 @@ def _mask_loop(connection,frame_name,mask_name,weights,projector,device):
+         frames.close();masks.close();connection.close()
+ 
+ 
+-class LaneMaskProcess:
+-    """LaneModel in its own process, so neither the GIL nor CPU work of the model
+-    slows the detector.  One frame is in flight at a time: submit() is skipped while
+-    the model is busy and latest() returns the newest finished (stamp, mask)."""
+-
+-    def __init__(self,weights,projector,device='cuda',startup=60.):
+-        if not Path(weights).is_file():raise RuntimeError(f'learned lane weights not found: {weights}')
+-        self.shape=projector.valid.shape
+-        self.frames=shared_memory.SharedMemory(create=True,size=INPUT[0]*INPUT[1]*3)
+-        self.masks=shared_memory.SharedMemory(create=True,size=int(np.prod(self.shape)))
+-        context=mp.get_context('spawn');self.connection,child=context.Pipe()
+-        self.process=context.Process(target=_mask_loop,args=(child,self.frames.name,self.masks.name,str(weights),projector,device),daemon=True)
+-        self.process.start();child.close();self.busy=False;self.result=None
+-        if not self.connection.poll(startup):self.close();raise RuntimeError('learned lane model startup timeout')
+-        kind,detail=self.connection.recv()
+-        if kind!='ready':self.close();raise RuntimeError(detail)
++class _MaskQueue:
++    """submit / poll / latest / reset on a model process's pipe and shared memory (LaneMaskProcess or, in
++    another process, LaneMaskClient)."""
+ 
+     def poll(self):
+         while self.busy and self.connection.poll():
+@@ -107,9 +94,14 @@ class LaneMaskProcess:
+             self.result=(stamp,np.ndarray(self.shape,np.uint8,buffer=self.masks.buf).copy())
+         return self.result
+ 
+-    def submit(self,stamp,frame):
++    def submit(self,stamp,frame,top=None):
++        """top: frame holds only rows [top, top+height) of a full image of full_shape (a row crop); the
++        model then sees that image black outside the rows (its mask there is not the full image's)."""
+         self.poll()
+         if self.busy:return False
++        if top is not None:
++            if getattr(self,'_full',None) is None or self._full.shape[:2]!=self.full_shape:self._full=np.zeros(self.full_shape+(3,),np.uint8)
++            self._full[top:top+frame.shape[0]]=frame;frame=self._full
+         # The model input size is resized here: 0.7 MB to copy instead of a 6 MB frame.
+         small=np.ndarray((INPUT[1],INPUT[0],3),np.uint8,buffer=self.frames.buf)
+         cv2.resize(frame,INPUT,dst=small,interpolation=cv2.INTER_LINEAR)
+@@ -120,6 +112,41 @@ class LaneMaskProcess:
+ 
+     def reset(self):self.poll();self.result=None
+ 
++
++class LaneMaskClient(_MaskQueue):
++    """The model process of a LaneMaskProcess used from another process (the perception worker with
++    image_in_worker): handle() there, LaneMaskClient(handle) here.  The creating process must not use it too."""
++
++    def __init__(self,handle):
++        self.connection,frames,masks,self.shape,self.full_shape=handle
++        self.frames=shared_memory.SharedMemory(name=frames);self.masks=shared_memory.SharedMemory(name=masks)
++        self.busy=False;self.result=None
++
++    def close(self):
++        for memory in (self.frames,self.masks):memory.close()
++
++
++class LaneMaskProcess(_MaskQueue):
++    """LaneModel in its own process, so neither the GIL nor CPU work of the model
++    slows the detector.  One frame is in flight at a time: submit() is skipped while
++    the model is busy and latest() returns the newest finished (stamp, mask)."""
++
++    def __init__(self,weights,projector,device='cuda',startup=60.):
++        if not Path(weights).is_file():raise RuntimeError(f'learned lane weights not found: {weights}')
++        self.shape=projector.valid.shape;self.full_shape=(int(projector.size[1]),int(projector.size[0]))
++        self.frames=shared_memory.SharedMemory(create=True,size=INPUT[0]*INPUT[1]*3)
++        self.masks=shared_memory.SharedMemory(create=True,size=int(np.prod(self.shape)))
++        context=mp.get_context('spawn');self.connection,child=context.Pipe()
++        self.process=context.Process(target=_mask_loop,args=(child,self.frames.name,self.masks.name,str(weights),projector,device),daemon=True)
++        self.process.start();child.close();self.busy=False;self.result=None
++        if not self.connection.poll(startup):self.close();raise RuntimeError('learned lane model startup timeout')
++        kind,detail=self.connection.recv()
++        if kind!='ready':self.close();raise RuntimeError(detail)
++
++    def handle(self):
++        """For LaneMaskClient in another process (pass it as a Process argument; then only that process uses it)."""
++        return (self.connection,self.frames.name,self.masks.name,self.shape,self.full_shape)
++
+     def close(self):
+         if getattr(self,'process',None) is not None and self.process.is_alive():
+             try:self.connection.send(None)
+diff --git a/src/vision_road/vision_road/native.cpp b/src/vision_road/vision_road/native.cpp
+index f8fc28d..ea21587 100644
+--- a/src/vision_road/vision_road/native.cpp
++++ b/src/vision_road/vision_road/native.cpp
+@@ -1,5 +1,6 @@
+ #include <pybind11/pybind11.h>
+ #include <pybind11/numpy.h>
++#include <pybind11/stl.h>
+ #include <opencv2/imgproc.hpp>
+ #include <algorithm>
+ #include <cmath>
+@@ -67,4 +68,115 @@ py::list match(py::list current,py::list previous,py::list sides,py::list old_si
+  std::sort(pairs.begin(),pairs.end(),[](const Item&a,const Item&b){if(a.error!=b.error)return a.error<b.error;if(a.i!=b.i)return a.i<b.i;return a.j<b.j;});std::vector<bool>useda(a.size()),usedb(b.size());py::list result;
+  for(auto pair:pairs)if(!useda[pair.i]&&!usedb[pair.j]){useda[pair.i]=usedb[pair.j]=true;result.append(py::make_tuple(pair.i,pair.j));}return result;
+ }
+-PYBIND11_MODULE(_native,m){m.def("extract_fragments",&extract,py::arg("mask"),py::arg("yellow"),py::arg("mpp"),py::arg("forward"),py::arg("lateral"),py::arg("reach")=4.2);m.def("visible",&visible);m.def("match_fragments",&match);}
++
++// ---- Plan 25: per-pixel parts of CarlaDetector.binary and the per-fragment edge test, with NumPy's float32
++// arithmetic (a Python float scalar against a float32 array is a float32), so the masks are the same bits.
++using Floats=py::array_t<float,py::array::c_style|py::array::forcecast>;
++py::tuple color_planes(Bytes bev,Bytes hls,double white_min){
++ auto bb=bev.request(),hb=hls.request();
++ if(bb.ndim!=3||bb.shape[2]!=3||hb.shape!=bb.shape)throw std::invalid_argument("color_planes: two HxWx3 images");
++ int h=bb.shape[0],w=bb.shape[1];auto p=static_cast<unsigned char*>(bb.ptr);auto q=static_cast<unsigned char*>(hb.ptr);
++ Bytes white({h,w}),yellow({h,w}),level({h,w});Floats yellowness({h,w});
++ auto W=white.mutable_data(),Y=yellow.mutable_data(),L=level.mutable_data();auto F=yellowness.mutable_data();
++ const float k09=0.09f,k125=1.25f;
++ {py::gil_scoped_release release;
++ for(int i=0;i<h*w;++i){
++  float b=p[3*i],g=p[3*i+1],r=p[3*i+2];int H=q[3*i],Lt=q[3*i+1],S=q[3*i+2];
++  W[i]=(S<120)&&(double(Lt)>white_min);
++  float gb=g-b;Y[i]=(H>=16)&&(H<=42)&&(S>20)&&(gb>18.f)&&(gb>k09*std::max(g,1.f))&&(gb>k125*(r-g));
++  float yl=(r+g)/2.f-b;F[i]=yl;float lv=std::min(std::max(yl+128.f,0.f),255.f);L[i]=(unsigned char)lv;
++ }}
++ return py::make_tuple(white,yellow,yellowness,level);
++}
++Floats ridges(Floats gray,Floats smooth,std::vector<int> radii,double ridge_min,double relative_min){
++ auto gb=gray.request(),sb=smooth.request();
++ if(gb.ndim!=2||sb.shape!=gb.shape)throw std::invalid_argument("ridges: two HxW float32 images");
++ int h=gb.shape[0],w=gb.shape[1];auto G=static_cast<float*>(gb.ptr);auto M=static_cast<float*>(sb.ptr);
++ Floats response({h,w});auto R=response.mutable_data();const float rmin=float(ridge_min),rel=float(relative_min);
++ {py::gil_scoped_release release;
++ std::fill(R,R+h*w,0.f);
++ for(int radius:radii)for(int y=0;y<h;++y){const float*m=M+y*w;const float*g=G+y*w;float*r=R+y*w;
++  for(int x=0;x<w;++x){float side=std::max(m[std::max(0,x-radius)],m[std::min(w-1,x+radius)]);float ridge=g[x]-side;
++   float v=(ridge>=rmin&&ridge>=rel*std::max(side,25.f))?ridge:0.f;r[x]=std::max(r[x],v);}}
++ }
++ return response;
++}
++// NumPy's pairwise float32 sum (numpy/core/src/umath/loops_utils.h.src), so the edge sums are the same.
++static float pairwise(const float*a,int n){
++ if(n<8){float s=0.f;for(int i=0;i<n;++i)s+=a[i];return s;}
++ if(n<=128){float r[8];for(int k=0;k<8;++k)r[k]=a[k];int i;for(i=8;i<n-(n%8);i+=8)for(int k=0;k<8;++k)r[k]+=a[i+k];
++  float res=((r[0]+r[1])+(r[2]+r[3]))+((r[4]+r[5])+(r[6]+r[7]));for(;i<n;++i)res+=a[i];return res;}
++ int n2=n/2;n2-=n2%8;return pairwise(a,n2)+pairwise(a+n2,n-n2);
++}
++std::vector<bool> edge_like(Floats gray,py::list fragments,int offset){
++ auto gb=gray.request();int h=gb.shape[0],w=gb.shape[1];auto G=static_cast<float*>(gb.ptr);std::vector<bool> out;
++ std::vector<float> row[5];
++ for(auto item:fragments){
++  auto t=py::cast<py::tuple>(item);auto ya=py::cast<py::array_t<int,py::array::c_style|py::array::forcecast>>(t[0]),xa=py::cast<py::array_t<int,py::array::c_style|py::array::forcecast>>(t[1]);
++  auto Y=ya.data(),X=xa.data();int n=ya.size();for(auto&r:row)r.clear();
++  for(int i=0;i<n;++i){int x=X[i];if(!(x-offset-1>=0&&x+offset+1<w))continue;const float*g=G+Y[i]*w;
++   row[0].push_back(g[x-offset]);row[1].push_back(g[x-offset-1]);row[2].push_back(g[x+offset]);row[3].push_back(g[x+offset+1]);row[4].push_back(g[x]);}
++  int count=row[0].size();if(count<3){out.push_back(false);continue;}
++  float s[5];for(int k=0;k<5;++k)s[k]=pairwise(row[k].data(),count);
++  double left=double(s[0]+s[1])/(2*count),right=double(s[2]+s[3])/(2*count),center=double(s[4])/count,asym=std::abs(left-right);
++  out.push_back(asym>=20.&&center-std::max(left,right)<asym/1.5);
++ }
++ (void)h;return out;
++}
++
++// ---- Plan 25: per-lane loops of TemporalDetector.process with NumPy's exact arithmetic (np.linspace,
++// np.interp as numpy/core/src/multiarray/compiled_base.c, the median of core.median).
++static double np_interp(const double*xp,const double*fp,int n,double x,int stride){
++ // xp/fp: n values with the given stride (points arrays are N x 2)
++ if(x<xp[0])return fp[0];
++ if(x>xp[(n-1)*stride])return fp[(n-1)*stride];
++ if(x==xp[(n-1)*stride])return fp[(n-1)*stride];
++ int lo=0,hi=n-1;  // largest j with xp[j] <= x (x < xp[n-1] here)
++ while(hi-lo>1){int mid=(lo+hi)/2;if(xp[mid*stride]<=x)lo=mid;else hi=mid;}
++ int j=lo;double xj=xp[j*stride],yj=fp[j*stride];
++ if(xj==x)return yj;
++ double xk=xp[(j+1)*stride],yk=fp[(j+1)*stride],slope=(yk-yj)/(xk-xj),r=slope*(x-xj)+yj;
++ if(std::isnan(r)){r=slope*(x-xk)+yk;if(std::isnan(r)&&yj==yk)r=yj;}
++ return r;
++}
++static double np_median(std::vector<double>v){
++ int n=v.size();if(!n)return NAN;int k=n/2;
++ for(double a:v)if(std::isnan(a))return NAN;
++ if(n%2){std::nth_element(v.begin(),v.begin()+k,v.end());return v[k];}
++ std::nth_element(v.begin(),v.begin()+k,v.end());double hi=v[k];double lo=*std::max_element(v.begin(),v.begin()+k);return (lo+hi)/2;
++}
++// The observed lane against the track it continues: the median distance at 12 stations over the overlap, and
++// (when below limit) the overlap moved toward the track by 1-weight, in place.  Returns the median (inf: no overlap).
++double track_match(py::array_t<double,py::array::c_style> a,Points b,double limit,double weight){
++ auto A=a.mutable_unchecked<2>();auto B=b.unchecked<2>();int na=A.shape(0),nb=B.shape(0);
++ if(na<1||nb<1)return INFINITY;
++ double lo=std::max(A(0,0),B(0,0)),hi=std::min(A(na-1,0),B(nb-1,0));
++ if(!(hi>lo))return INFINITY;
++ const double*ap=a.data();const double*bp=b.data();std::vector<double>e(12);double step=(hi-lo)/11.;
++ for(int i=0;i<12;++i){double x=i==11?hi:(step==0?double(i)/11.*(hi-lo):double(i)*step)+(i==11?0.:lo);
++  if(i==11)x=hi;e[i]=std::abs(np_interp(ap,ap+1,na,x,2)-np_interp(bp,bp+1,nb,x,2));}
++ double error=np_median(e);
++ if(error<limit){double*w=a.mutable_data();
++  for(int i=0;i<na;++i){double x=w[2*i];if(x>=lo&&x<=hi)w[2*i+1]=weight*w[2*i+1]+(1-weight)*np_interp(bp,bp+1,nb,x,2);}}
++ return error;
++}
++// A lane against its side's confirmed boundary: the median distance over the boundary's span (inf: < 3 points).
++double corridor_error(Points p,Points b){
++ auto P=p.unchecked<2>();auto B=b.unchecked<2>();int n=P.shape(0),nb=B.shape(0);if(nb<1)return INFINITY;
++ const double*bp=b.data();std::vector<double>d;
++ for(int i=0;i<n;++i){double x=P(i,0);if(x>=B(0,0)&&x<=B(nb-1,0))d.push_back(std::abs(P(i,1)-np_interp(bp,bp+1,nb,x,2)));}
++ if(d.size()<3)return INFINITY;return np_median(d);
++}
++
++// points (x forward, y left) carried by a BEV pixel affine: TemporalDetector.metric(pixel(points) @ M[:, :2].T + M[:, 2]).
++// The 2-term dot products as OpenBLAS's dgemm computes them on x86-64 with FMA: fma(b, m1, a*m0).
++py::array_t<double> reproject(Points points,Points matrix,double mpp,double forward,double lateral){
++ auto P=points.unchecked<2>();auto M=matrix.unchecked<2>();int n=P.shape(0);
++ if(M.shape(0)!=2||M.shape(1)!=3)throw std::invalid_argument("reproject: a 2x3 matrix");
++ py::array_t<double> out({py::ssize_t(n),py::ssize_t(2)});auto O=out.mutable_unchecked<2>();
++ for(int i=0;i<n;++i){double px=(-P(i,1)-lateral)/mpp,py_=(forward-P(i,0))/mpp;
++  double qx=std::fma(py_,M(0,1),px*M(0,0))+M(0,2),qy=std::fma(py_,M(1,1),px*M(1,0))+M(1,2);
++  O(i,0)=forward-qy*mpp;O(i,1)=-(lateral+qx*mpp);}
++ return out;
++}
++PYBIND11_MODULE(_native,m){m.def("extract_fragments",&extract,py::arg("mask"),py::arg("yellow"),py::arg("mpp"),py::arg("forward"),py::arg("lateral"),py::arg("reach")=4.2);m.def("visible",&visible);m.def("match_fragments",&match);m.def("color_planes",&color_planes);m.def("ridges",&ridges);m.def("edge_like",&edge_like);m.def("track_match",&track_match);m.def("corridor_error",&corridor_error);m.def("reproject",&reproject);}
+diff --git a/src/vision_road/vision_road/node.py b/src/vision_road/vision_road/node.py
+index e9b13fa..c4979d2 100644
+--- a/src/vision_road/vision_road/node.py
++++ b/src/vision_road/vision_road/node.py
+@@ -120,7 +120,10 @@ class RoadNode(Node):
+         publish_in_worker=in_worker and param('display_publish_in_worker',False)
+         # image_in_worker: the perception worker subscribes the camera and odometry itself (see rt_worker.ros_loop).
+         isolated=param('isolated_compute',False)
+-        self.image_in_worker=isolated and param('image_in_worker',False) and not weights
++        # learned_in_worker: with learned weights too, the worker takes the camera itself and hands the frames to
++        # the model process (started here); without it the learned mask keeps the road_node image path.
++        self.learned_in_worker=bool(weights) and self.learned.model is not None and param('learned_in_worker',False)
++        self.image_in_worker=isolated and param('image_in_worker',False) and (not weights or self.learned_in_worker)
+         self.worker_display=(self.display_settings,self.display_error,publish_in_worker,self.base_frame) if in_worker else None
+         if self.image_in_worker:
+             self.compute_worker=None;self.extras=None;self.worker_extras=extras  # started with the subscriptions below
+@@ -170,6 +173,11 @@ class RoadNode(Node):
+         compressed = param('compressed', False)
+         reliability = param('image_reliability', 'best_effort')
+         depth = param('image_queue_depth', 2)
++        # A row-cropped image (only the rows the BEV reads, e.g. tools/replay_maploop.py --crop-rows): the camera's
++        # CameraInfo keeps the full image size and gives the rows in roi (y_offset, height).  Full images need no
++        # CameraInfo.  Default: <image topic's namespace>/camera_info; '' turns row crops off.
++        self.camera_info_topic=param('camera_info_topic',image_topic.rsplit('/',1)[0]+'/camera_info')
++        self.image_roi=None;self.crop_skipped=0
+         if reliability not in ('reliable', 'best_effort') or depth < 1:
+             raise ValueError('Invalid image QoS settings')
+         image_qos = QoSProfile(depth=depth, reliability=ReliabilityPolicy.RELIABLE if reliability=='reliable' else ReliabilityPolicy.BEST_EFFORT)
+@@ -180,12 +188,18 @@ class RoadNode(Node):
+             from .rt_worker import RosWorker
+             self.projector.initialize(*self.projector.size)
+             self.compute_worker=RosWorker(self.projector,self.detector.c,backend,self.image_roi_bottom,threads,self.worker_extras,self.worker_display,
+-                dict(image_topic=image_topic,reliability=reliability,odom_topic=self.odom_topic,
++                dict(image_topic=image_topic,reliability=reliability,odom_topic=self.odom_topic,camera_info_topic=self.camera_info_topic,
+                      world_frame=self.world_frame,base_frame=self.base_frame,odom_max_gap_sec=self.timeline.max_gap,
+-                     debug_hz=self.debug_hz if self.debug else 0.,overlay_max_width=self.overlay_max_width,side=self.side_config))
++                     debug_hz=self.debug_hz if self.debug else 0.,overlay_max_width=self.overlay_max_width,side=self.side_config,
++                     learned=self.learned.model.handle() if self.learned_in_worker else None,learned_every=self.learned.every))
+             self.result_worker=threading.Thread(target=self.take_results,name='road-perception-results',daemon=True);self.result_worker.start()
+         elif self.raw_cdr:self.create_subscription(Image,image_topic,self.on_image_cdr,image_qos,raw=True)
+         else:self.create_subscription(CompressedImage if compressed else Image, image_topic, self.on_compressed if compressed else self.on_image, image_qos)
++        if not self.image_in_worker and self.camera_info_topic:
++            from sensor_msgs.msg import CameraInfo
++            def on_info(msg):
++                r=msg.roi;self.image_roi=(int(r.y_offset),int(r.height),int(r.x_offset),int(r.width)) if r.height else None
++            self.create_subscription(CameraInfo,self.camera_info_topic,on_info,QoSProfile(depth=5,reliability=ReliabilityPolicy.BEST_EFFORT))
+         # Best effort accepts both reliable and best-effort odometry publishers.
+         self.create_subscription(Odometry, self.odom_topic, self.on_odom, QoSProfile(depth=200, reliability=ReliabilityPolicy.BEST_EFFORT))
+         self.create_timer(0.02, self.timer_flush, clock=Clock(clock_type=ClockType.STEADY_TIME))
+@@ -341,14 +355,20 @@ class RoadNode(Node):
+         if self.last_image is not None and t <= self.last_image:
+             self.dropped += 1
+             return
++        top=self.crop_top(frame)
++        if top is None:
++            self.dropped+=1;self.crop_skipped+=1
++            self.get_logger().warning(f'Skipping a {frame.shape[1]}x{frame.shape[0]} image: not the full image and no CameraInfo roi placing '
++                                      f'the rows the BEV reads inside it ({self.crop_skipped} so far)',throttle_duration_sec=5)
++            return
+         self.last_image = t; self.frames += 1
+         pose = self.pose_at(t)
+         if self.compute_worker is not None:
+-            if self.projector.source_size!=(frame.shape[1],frame.shape[0]):self.projector.initialize(frame.shape[1],frame.shape[0])
++            if top is False and self.projector.source_size!=(frame.shape[1],frame.shape[0]):self.projector.initialize(frame.shape[1],frame.shape[0])
+             phase('projection')
+-            learned=self.learned.next(t,frame)
++            learned=self.learned.next(t,frame if top is False else self.full_frame(frame,top))
+             phase('learned_mask')
+-            result=self.compute_worker.compute(frame,t,pose,learned)
++            result=self.compute_worker.compute(frame,t,pose,learned,top=top or 0)
+             lanes=result['lanes'];binary=result['binary'];bev=result['bev'];markings=result.get('markings',[])
+             self.detector.boundary_lanes=result['boundaries'];self.detector.measured_count=result['measured'];self.detector.predicted_count=result['predicted']
+             self.detector.registration=result['registration'];self.detector.detector.diagnostics=result['diagnostics']
+@@ -356,22 +376,39 @@ class RoadNode(Node):
+             phase('detector')
+             if self.performance_path and 'worker_ms' in result:self.last_phases.update({'worker.'+k:v for k,v in result['worker_ms'].items()})
+         else:
+-            bev = self.projector.warp(frame)
++            bev = self.projector.warp(frame,top or 0)
+             valid=self.projector.valid.copy()
+-            valid[self.projector.my>=frame.shape[0]*self.image_roi_bottom]=0
++            valid[self.projector.my>=self.projector.source_size[1]*self.image_roi_bottom]=0
+             bev=cv2.bitwise_and(bev,bev,mask=valid)
+             phase('projection')
+-            if isinstance(self.detector.detector,CarlaDetector):self.detector.detector.learned=self.learned.next(t,frame)
++            if isinstance(self.detector.detector,CarlaDetector):self.detector.detector.learned=self.learned.next(t,frame if top is False else self.full_frame(frame,top))
+             lanes, binary = self.detector.process(bev, valid, t, pose)
+             markings=self.extras.after(self.detector,bev,valid,pose) if self.extras is not None else []
+             precomputed=dict(outer=list(getattr(self.detector,'outer_lanes',[])),centres=list(getattr(self.detector,'centre_lanes',[])))
+             phase('detector')
++        if top is not False and self.debug:frame=self.full_frame(frame,top)  # the overlay draws on the full image
+         job=(frame,header,t,pose,lanes,self.detector.boundary_lanes,binary,bev,markings,precomputed)
+         if self.output_jobs is not None:
+             # The next frame's detection overlaps these outputs; frames stay in order and none is skipped.
+             self.output_jobs.put(job);phase('handoff')
+         else:self.publish_outputs(*job,phase)
+ 
++    def crop_top(self,frame):
++        """False: a full image (or another size, as before); an int: the full-image row of this row-cropped
++        frame's first row (CameraInfo roi); None: a smaller image that cannot be placed."""
++        h,w=frame.shape[:2];size=self.projector.source_size or self.projector.size
++        if (w,h)==tuple(size) or w!=size[0] or h>=size[1]:return False
++        roi=self.image_roi
++        if self.projector.source_size is None:self.projector.initialize(*self.projector.size)
++        if roi is None or roi[1]!=h or roi[2]!=0 or roi[3] not in (0,w):return None
++        lo,hi=self.projector.rows(self.image_roi_bottom)
++        return roi[0] if roi[0]<=lo and roi[0]+h>=hi else None
++
++    def full_frame(self,frame,top):
++        """The full image with only the cropped rows (black elsewhere), for the learned mask model; its mask
++        then differs from one made from the full image above and below the rows (not measured)."""
++        w,h=self.projector.source_size;full=np.zeros((h,w,3),np.uint8);full[top:top+frame.shape[0]]=frame;return full
++
+     def take_results(self):
+         """image_in_worker: each processed frame's result from the perception worker, in order."""
+         connection=self.compute_worker.connection
+diff --git a/src/vision_road/vision_road/rt_worker.py b/src/vision_road/vision_road/rt_worker.py
+index 7b9fe63..8bc45f8 100644
+--- a/src/vision_road/vision_road/rt_worker.py
++++ b/src/vision_road/vision_road/rt_worker.py
+@@ -14,21 +14,25 @@ class LearnedMask:
+ 
+     Without weights, torch or CUDA it stays off and the detector runs unchanged."""
+ 
+-    def __init__(self,projector,weights='',every=1,max_age=.2):
++    def __init__(self,projector,weights='',every=1,max_age=.2,client=None):
+         # every=2 runs the model on every other frame: the mask is then 1-2 frames old,
+         # which gated maploop as well, and the model's CPU share halves.
++        # client: a LaneMaskProcess.handle() from road_node (image_in_worker: the worker submits the frames).
+         self.model=None;self.status='off';self.max_age=max_age;self.every=max(1,int(every));self.count=0
+-        if weights:
++        if client is not None:
++            from .learned_mask import LaneMaskClient
++            self.model=LaneMaskClient(client);self.status='on (in the perception worker)'
++        elif weights:
+             try:
+                 from .learned_mask import LaneMaskProcess
+                 self.model=LaneMaskProcess(weights,projector);self.status='on'
+             except Exception as exc:self.status='unavailable: '+str(exc)
+ 
+-    def next(self,stamp,frame):
+-        """The newest finished mask no older than max_age, then queue this frame."""
++    def next(self,stamp,frame,top=None):
++        """The newest finished mask no older than max_age, then queue this frame (top: a row crop's first row)."""
+         if self.model is None:return None
+         latest=self.model.latest();self.count+=1
+-        if self.count%self.every==0:self.model.submit(stamp,frame)
++        if self.count%self.every==0:self.model.submit(stamp,frame,top)
+         return latest[1] if latest is not None and 0<=stamp-latest[0]<=self.max_age else None
+ 
+     def reset(self):
+@@ -65,6 +69,9 @@ class Perception:
+     def __init__(self,projector,cfg,backend,roi,threads,extras=None,display=None,ros=False):
+         cv2.setNumThreads(threads)
+         projector.initialize(*projector.size);self.projector=projector;self.roi=roi;self.backend=backend
++        # The valid area above roi * full height (the same every frame), and the source rows the BEV reads:
++        # a row-cropped image (image_crop, CameraInfo roi) must hold at least these.
++        self._valid_size=None;self.valid_area()
+         self.detector=TemporalDetector(cfg)
+         if backend=='carla':self.detector.detector=CarlaDetector(cfg)
+         elif backend=='paint_evidence':self.detector.detector=PaintEvidenceDetector(cfg)
+@@ -83,17 +90,30 @@ class Perception:
+                 self.publisher=(self.node.create_publisher(MarkerArray,'/road/lane_display_markers',10),
+                                 self.node.create_publisher(LaneStyleArray,'/road/lane_display_styles',10),DisplayStage(display[0],display[3]),Time)
+ 
++    def valid_area(self):
++        """projector.valid above roi * full height, kept until the projector is set up for another image size."""
++        p=self.projector
++        if self._valid_size!=p.source_size:
++            self.valid_roi=p.valid.copy();self.valid_roi[p.my>=p.source_size[1]*self.roi]=0
++            self.rows=p.rows(self.roi);self._valid_size=p.source_size
++        return self.valid_roi
++
+     def reset(self):
+         self.detector.reset()
+         if self.extra is not None:self.extra.reset()
+ 
+-    def __call__(self,frame,stamp,pose,learned=None,side=True):
+-        """side=False: leave the outer lines and centrelines to side_outputs() (after the result is sent)."""
++    def covers(self,top,height):
++        """Whether rows [top, top+height) of the full image hold every row the BEV reads."""
++        return top<=self.rows[0] and top+height>=self.rows[1]
++
++    def __call__(self,frame,stamp,pose,learned=None,side=True,top=0):
++        """side=False: leave the outer lines and centrelines to side_outputs() (after the result is sent).
++        top: frame is rows [top, top+height) of the full image (a row crop that covers self.rows)."""
+         from .display_filter import simplify,lane_styles
+         detector=self.detector;begin=time.perf_counter()
+         if self.backend=='carla':detector.detector.learned=learned
+-        bev=self.projector.warp(frame)
+-        valid=self.projector.valid.copy();valid[self.projector.my>=frame.shape[0]*self.roi]=0
++        bev=self.projector.warp(frame,top)
++        valid=self.valid_area().copy()
+         bev=cv2.bitwise_and(bev,bev,mask=valid)
+         warped=time.perf_counter()
+         lanes,binary=detector.process(bev,valid,stamp,pose,defer=True)
+@@ -147,10 +167,10 @@ def compute_loop(connection,name,projector,cfg,backend,roi,threads,extras=None,d
+         while True:
+             command=connection.recv()
+             if command is None:break
+-            shape,stamp,pose,reset,learned=command
++            shape,stamp,pose,reset,learned,top=command
+             if reset:perceive.reset()
+             frame=np.ndarray(shape,np.uint8,buffer=memory.buf)
+-            connection.send(perceive(frame,stamp,pose,learned))
++            connection.send(perceive(frame,stamp,pose,learned,top=top))
+     except (EOFError,BrokenPipeError):pass
+     except Exception as exc:
+         try:connection.send(dict(error=str(exc)))
+@@ -166,7 +186,7 @@ def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
+     1/debug_hz, a frame reduced to the overlay width) go back to road_node for its other topics."""
+     import math
+     from rclpy.qos import QoSProfile,ReliabilityPolicy
+-    from sensor_msgs.msg import Image
++    from sensor_msgs.msg import Image,CameraInfo
+     from nav_msgs.msg import Odometry
+     from rclpy.serialization import deserialize_message
+     import struct
+@@ -179,7 +199,19 @@ def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
+             from .side_topics import SideTopics
+             from builtin_interfaces.msg import Time
+             topics=SideTopics(node,ros['base_frame'],ros['debug_hz'],error,outer,centre)
+-        timeline=Timeline(ros['odom_max_gap_sec']);state=dict(shape=None,last=None,reset=False,last_debug=-math.inf)
++        learned=LearnedMask(projector,every=ros.get('learned_every',1),client=ros['learned']) if ros.get('learned') is not None else None
++        timeline=Timeline(ros['odom_max_gap_sec']);state=dict(shape=None,last=None,reset=False,last_debug=-math.inf,roi=None,skipped=0)
++        full_w,full_h=projector.source_size
++        def on_info(msg):
++            # A row-cropped image: CameraInfo keeps the full image size, roi says which rows the image holds.
++            r=msg.roi;state['roi']=(int(r.y_offset),int(r.height),int(r.x_offset),int(r.width)) if r.height else None
++        def crop_top(h,w):
++            """The full-image row of the image's first row, or None when it cannot be placed.  An image of
++            another width is not a crop (another resolution: the projector sets itself up for it, as before)."""
++            if (h,w)==(full_h,full_w) or w!=full_w or h>full_h:return 0
++            roi=state['roi']
++            if roi is None or roi[1]!=h or w!=full_w or roi[2]!=0 or roi[3] not in (0,full_w) or not perceive.covers(roi[0],h):return None
++            return roi[0]
+         def on_odom(msg):
+             if msg.header.frame_id!=ros['world_frame'] or msg.child_frame_id!=ros['base_frame']:return
+             p,q=msg.pose.pose.position,msg.pose.pose.orientation
+@@ -197,15 +229,31 @@ def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
+                     raise ValueError('image_in_worker needs packed bgr8/rgb8 images')
+                 state['shape']=(first.height,first.width,first.encoding,first.header.frame_id)
+             h,w,encoding,frame_id=state['shape'];sec,nanosec=struct.unpack_from('<iI',raw,4);t=sec+nanosec*1e-9
+-            if state['reset']:perceive.reset();state['last']=None;state['reset']=False
++            if state['reset']:
++                perceive.reset();state['last']=None;state['reset']=False
++                if learned is not None:learned.reset()
+             if state['last'] is not None and t<=state['last']:return
+-            state['last']=t;start=time.perf_counter_ns()
++            top=crop_top(h,w)
++            if top is None:
++                state['skipped']+=1
++                node.get_logger().warning(f'Skipping a {w}x{h} image: not the full {full_w}x{full_h} image, and no CameraInfo roi '
++                    f'placing rows {perceive.rows[0]}-{perceive.rows[1]-1} inside it ({state["skipped"]} so far)',throttle_duration_sec=5)
++                return
++            state['last']=t;start=time.perf_counter_ns();cropped=w==full_w and h<full_h
+             frame=np.frombuffer(raw,np.uint8,h*w*3,len(raw)-h*w*3).reshape(h,w,3)
+             if encoding=='rgb8':frame=cv2.cvtColor(frame,cv2.COLOR_RGB2BGR)
+-            pose=timeline.at(t);result=perceive(frame,t,pose,side=topics is None)
++            mask=None
++            if learned is not None:
++                # As road_node does without image_in_worker: the newest finished mask, then this frame to the model.
++                mask=learned.next(t,frame,top if cropped else None);result_learned=time.perf_counter_ns()
++                state['learned_frames']=state.get('learned_frames',0)+1;state['learned_used']=state.get('learned_used',0)+(mask is not None)
++            pose=timeline.at(t);result=perceive(frame,t,pose,learned=mask,side=topics is None,top=top)
++            if learned is not None:result.setdefault('worker_ms',{})['learned']=(result_learned-start)/1e6
+             result.update(stamp=(sec,nanosec),frame_id=frame_id,pose=pose,receive_ns=received,start_ns=start)
+             if ros['debug_hz']>0 and t-state['last_debug']>=1/ros['debug_hz']-1e-8:
+                 state['last_debug']=t;scale=min(1.,ros['overlay_max_width']/w) if ros['overlay_max_width'] else 1.
++                if cropped:  # a row crop: the overlay draws on the full image, black outside the rows
++                    padded=np.zeros((full_h,full_w,3),np.uint8);padded[top:top+h]=frame;frame=padded;h=full_h
+                 result.update(debug_frame=cv2.resize(frame,(round(w*scale),round(h*scale))) if scale<1 else frame.copy(),debug_scale=scale)
+             else:result.update(bev=None,binary=None)  # only the debug images use them
+             result['computed_ns']=time.perf_counter_ns();connection.send(result)
+@@ -214,6 +262,10 @@ def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
+                 begin=time.perf_counter();side=perceive.side_outputs(Time(sec=sec,nanosec=nanosec),t,topics)
+                 connection.send(dict(side=side,extra_ms=(time.perf_counter()-begin)*1e3))
+         node.create_subscription(Odometry,ros['odom_topic'],on_odom,QoSProfile(depth=200,reliability=ReliabilityPolicy.BEST_EFFORT))
++        if ros.get('camera_info_topic'):
++            node.create_subscription(CameraInfo,ros['camera_info_topic'],on_info,QoSProfile(depth=5,reliability=ReliabilityPolicy.BEST_EFFORT))
++        node.get_logger().info(f'Perception worker: the BEV reads image rows {perceive.rows[0]}-{perceive.rows[1]-1} of {full_w}x{full_h}; '
++                               'a row-cropped image (CameraInfo roi) must hold them')
+         node.create_subscription(Image,ros['image_topic'],on_image,QoSProfile(depth=1,reliability=ReliabilityPolicy.RELIABLE
+                                  if ros['reliability']=='reliable' else ReliabilityPolicy.BEST_EFFORT),raw=True)
+         import rclpy
+@@ -226,6 +278,11 @@ def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
+     finally:
+         connection.close()
+         if perceive is not None:perceive.close()
++        try:
++            if learned is not None:
++                print(f"Perception worker: learned mask used in {state.get('learned_used',0)} of {state.get('learned_frames',0)} frames",flush=True)
++                learned.close()
++        except NameError:pass
+ 
+ 
+ class RosWorker:
+@@ -259,10 +316,11 @@ class ComputeWorker:
+         ready=self.connection.recv()
+         if ready!='ready':self.close();raise RuntimeError('Perception worker failed: '+str(ready))
+ 
+-    def compute(self,frame,stamp,pose,learned=None):
++    def compute(self,frame,stamp,pose,learned=None,top=0):
++        """top: frame is rows [top, top+height) of the full image (a row crop)."""
+         if frame.nbytes>self.capacity:raise ValueError('Input exceeds calibrated shared-image capacity')
+         target=np.ndarray(frame.shape,np.uint8,buffer=self.memory.buf);np.copyto(target,frame)
+-        self.connection.send((frame.shape,stamp,pose,self.reset_pending,learned));self.reset_pending=False
++        self.connection.send((frame.shape,stamp,pose,self.reset_pending,learned,top));self.reset_pending=False
+         if not self.connection.poll(5):raise RuntimeError('Perception worker timeout')
+         result=self.connection.recv()
+         if 'error' in result:raise RuntimeError(result['error'])
+diff --git a/src/vision_road/vision_road/temporal.py b/src/vision_road/vision_road/temporal.py
+index f5a9163..3062ff1 100644
+--- a/src/vision_road/vision_road/temporal.py
++++ b/src/vision_road/vision_road/temporal.py
+@@ -94,6 +94,12 @@ class TemporalDetector:
+         c=self.c
+         return np.column_stack([c.forward_max-pixels[:,1]*c.mpp,-(c.lateral_min+pixels[:,0]*c.mpp)])
+ 
++    def moved(self,points,matrix):
++        """points carried by the BEV affine matrix: metric(pixel(points) @ matrix[:,:2].T + matrix[:,2])."""
++        c=self.c
++        if c.carla_native_fast and _native is not None:return _native.reproject(points,matrix,c.mpp,c.forward_max,c.lateral_min)
++        return self.metric(self.pixel(points) @ matrix[:,:2].T+matrix[:,2])
++
+     def _registration(self,bev,valid,pose,t):
+         self.registration='none'; c=self.c
+         if self.last_time is None or not (0<t-self.last_time<=c.temporal_max_age_sec): return None,0.
+@@ -360,8 +366,7 @@ class TemporalDetector:
+         priors={}; records={}
+         if c.temporal_enabled and matrix is not None:
+             for side,track in self.tracks.items():
+-                pixels=self.pixel(track.lane.points) @ matrix[:,:2].T+matrix[:,2]
+-                points=self._visible(self.metric(pixels),valid)
++                points=self._visible(self.moved(track.lane.points,matrix),valid)
+                 if points is None: continue
+                 prior=clone(track.lane,points=points,reprojected=False,source_time=track.last_observed)
+                 priors[side]=prior
+@@ -372,8 +377,7 @@ class TemporalDetector:
+                 for side,(points,observed) in self.confirmed_tracking.items():
+                     age=t-observed
+                     if not 0<=age<=c.carla_tracking_memory_sec:continue
+-                    pixels=self.pixel(points)@matrix[:,:2].T+matrix[:,2]
+-                    visible=self._visible(self.metric(pixels),valid)
++                    visible=self._visible(self.moved(points,matrix),valid)
+                     if visible is None:continue
+                     moved[side]=(visible,observed);context[side]=(visible,max(0.,1.-age/c.carla_tracking_memory_sec))
+             self.confirmed_tracking=moved
+@@ -433,7 +437,13 @@ class TemporalDetector:
+             key=lane.track_key or lane.side
+             old=records.get(key)
+             matched=False
+-            if old is not None:
++            weight=.95 if getattr(self.detector,'fragment_tracks',False) else .75
++            native=c.carla_native_fast and _native is not None and old is not None and lane.points.dtype==np.float64 and lane.points.flags.c_contiguous and lane.points.flags.writeable
++            if native:
++                # The same test and the same moved overlap, in _native (np.linspace / np.interp / median arithmetic).
++                if _native.track_match(lane.points,old.lane.points,c.temporal_match_m,weight)<c.temporal_match_m:
++                    matched=True;lane.hits=min(65535,old.lane.hits+1)
++            elif old is not None:
+                 a=lane.points; b=old.lane.points
+                 lo=max(a[0,0],b[0,0]); hi=min(a[-1,0],b[-1,0])
+                 sample=np.linspace(lo,hi,12) if hi>lo else []
+@@ -445,7 +455,6 @@ class TemporalDetector:
+                     # Sorted points (as observed lanes are): the overlap is one slice, the same elements in order.
+                     if (np.diff(xs)>=0).all():overlap=slice(int(np.searchsorted(xs,lo,'left')),int(np.searchsorted(xs,hi,'right')))
+                     else:overlap=(xs>=lo)&(xs<=hi)
+-                    weight=.95 if getattr(self.detector,'fragment_tracks',False) else .75
+                     lane.points[overlap,1]=weight*a[overlap,1]+(1-weight)*interp(a[overlap,0],b[:,0],b[:,1])
+             lane.source_time=float(t)
+             style_lane=getattr(self.detector,'style_lanes',{}).get(lane.side,lane)
+@@ -506,9 +515,13 @@ class TemporalDetector:
+                 boundary=confirmed.get(lane.side)
+                 if boundary is None:continue
+                 p=lane.points;b=boundary.points
+-                inside=(p[:,0]>=b[0,0])&(p[:,0]<=b[-1,0])
+-                if np.count_nonzero(inside)<3:continue
+-                error=median(np.abs(p[inside,1]-interp(p[inside,0],b[:,0],b[:,1])))
++                if c.carla_native_fast and _native is not None:
++                    error=_native.corridor_error(p,b)  # inf below 3 points inside
++                    if not math.isfinite(error):continue
++                else:
++                    inside=(p[:,0]>=b[0,0])&(p[:,0]<=b[-1,0])
++                    if np.count_nonzero(inside)<3:continue
++                    error=median(np.abs(p[inside,1]-interp(p[inside,0],b[:,0],b[:,1])))
+                 band=corridors.get(lane.side,c.carla_chain_band_m)
+                 if error<=band:
+                     filtered.append(lane)
+diff --git a/tools/realtime_eval.py b/tools/realtime_eval.py
+index 82b6099..766fc97 100644
+--- a/tools/realtime_eval.py
++++ b/tools/realtime_eval.py
+@@ -23,7 +23,8 @@ from visualization_msgs.msg import MarkerArray
+ ROOT=Path(__file__).resolve().parents[1]
+ HUD=ROOT  # the HUD copy in this workspace (src/hero_hud), built into ROOT/install
+ HUD_CONFIG=ROOT/'src/hero_hud/config/hud.yaml'
+-DISK=Path('/media/jaehun/38F7-677B')
++# The recordings' disk; VISION_ROAD_DISK=<path> on another computer (rosbag/<video>_30hz and vision-road-cache/ under it).
++DISK=Path(os.environ.get('VISION_ROAD_DISK','/media/jaehun/38F7-677B'))
+ VIDEOS=dict(maploop=(DISK/'rosbag/maploop_30hz',ROOT/'data/maploop30hz_native.cdrz'),
+             town04=(DISK/'rosbag/town04_30hz',DISK/'vision-road-cache/town04_30hz_native.cdrz'),
+             town05=(DISK/'rosbag/town05_30hz',DISK/'vision-road-cache/town05_30hz_native.cdrz'))
+@@ -65,6 +66,7 @@ def main():
+     ap.add_argument('--no-hud',action='store_true');ap.add_argument('--record',action='store_true',help='HUD screen recording (frames to OUTPUT/hud_frames)')
+     ap.add_argument('--launch-arg',nargs='*',default=[],help='extra maploop.launch.py arguments, name:=value')
+     ap.add_argument('--replay-cpus',default='',help="CPUs for the replay tool, e.g. '0-13' (taskset); default: any")
++    ap.add_argument('--crop-rows',default='',help="replay sends only these image rows (LO:HI, replay_maploop.py --crop-rows); default: full images")
+     a=ap.parse_args();a.output.mkdir(parents=True,exist_ok=True);bag,cache=VIDEOS[a.video]
+     rclpy.init();node=Node('road_realtime_eval');arrivals={'boundary':{},'display':{},'paint':{}};content={'boundary':{},'display':{}}
+     def receiver(name):
+@@ -114,6 +116,7 @@ def main():
+             if hud.poll() is not None:raise RuntimeError('HUD exited; see hud.log')
+         replay_cmd=['bash','-c','source /opt/ros/humble/setup.bash && source "$0/install/setup.bash" && exec /usr/bin/python3 "$0/tools/replay_maploop.py" "$@"',str(ROOT),
+                     '--bag',str(bag),'--cache',str(cache),'--start-frame',str(a.start_frame),'--max-frames',str(a.frames),'--rate','1','--timing-report',str(source_timing)]
++        if a.crop_rows:replay_cmd+=['--crop-rows',a.crop_rows]
+         if a.replay_cpus:replay_cmd=['taskset','-c',a.replay_cpus]+replay_cmd
+         replay=subprocess.Popen(replay_cmd,stdout=logs['replay'],stderr=subprocess.STDOUT,start_new_session=True);procs.append(replay)
+         deadline=time.monotonic()+(a.frames or 1810)/30+120
+diff --git a/tools/replay_maploop.py b/tools/replay_maploop.py
+index ae295a3..fb341e9 100644
+--- a/tools/replay_maploop.py
++++ b/tools/replay_maploop.py
+@@ -23,8 +23,12 @@ def main():
+     ap.add_argument('--max-frames',type=int,default=0)
+     ap.add_argument('--prefetch',type=int,default=24)
+     ap.add_argument('--timing-report',type=Path)
++    ap.add_argument('--crop-rows',default='',help="send only image rows LO:HI (end exclusive), e.g. 578:984; CameraInfo keeps "
++                    "the full size and gives the rows in roi (y_offset, height). Default: the full image")
+     a=ap.parse_args()
+     if not 0<a.rate<=4 or min(a.start_frame,a.max_frames)<0 or not 1<=a.prefetch<=64:raise ValueError('Invalid replay limits')
++    crop=tuple(int(v) for v in a.crop_rows.split(':')) if a.crop_rows else None
++    if crop is not None and (len(crop)!=2 or not 0<=crop[0]<crop[1]):raise ValueError('--crop-rows LO:HI with 0 <= LO < HI')
+     db=a.bag if a.bag.suffix=='.db3' else next(a.bag.glob('*.db3'))
+     uri='file:'+str(db.resolve())+'?mode=ro&immutable=1'
+     con=sqlite3.connect(uri,uri=True)
+@@ -33,6 +37,9 @@ def main():
+     poses=[deserialize_message(data,PoseWithCovarianceStamped) for data, in query('/carla/ground_truth/pose')]
+     pts=[stamp(m) for m in poses]
+     info=deserialize_message(next(query('/sensing/camera/dashcam/camera_info'))[0],CameraInfo)
++    if crop is not None:
++        if crop[1]>info.height:raise ValueError(f'--crop-rows past the image height {info.height}')
++        info.roi.x_offset=0;info.roi.y_offset=crop[0];info.roi.height=crop[1]-crop[0];info.roi.width=info.width;info.roi.do_rectify=False
+     con.close()
+     buffers=queue.Queue(maxsize=a.prefetch);ready=threading.Event();stop=threading.Event();errors=[]
+     def produce():
+@@ -81,6 +88,9 @@ def main():
+             data=buffers.get()
+             if data is None:break
+             image=deserialize_message(data,Image);t=stamp(image)
++            if crop is not None:
++                # Only the rows the detector's BEV reads: a third of the bytes to send and to receive.
++                image.data=image.data[crop[0]*image.step:crop[1]*image.step];image.height=crop[1]-crop[0]
+             if origin is None:
+                 origin=t;pose_index=max(0,bisect.bisect_left(pts,t)-2)
+                 # Seed the evaluation adapter before starting the 30 Hz clock.
+diff --git a/docs/latency_measure_KO.md b/docs/latency_measure_KO.md
+new file mode 100644
+index 0000000..b4d06f2
+--- /dev/null
++++ b/docs/latency_measure_KO.md
+@@ -0,0 +1,69 @@
++# 다른 컴퓨터에서 차선 쪽 지연 재기 (RTX 5070 컴퓨터용)
++
++차선 쪽 실시간 지연(영상이 나온 때부터 표시선이 나갈 때까지)을 그 컴퓨터에서 한 줄로 잰다. 기준은 계획 25 와 같다. Town05 녹화를 30 Hz 로 다시 틀고, 시연 설정(바깥 선, 중앙선, 안내, 가짜 차량 상태, 계산 프로세스 안의 표시 필터, HUD 사본)으로 돌린다.
++
++## 필요한 것
++
++| 무엇 | 어디 | 크기 |
++|---|---|---|
++| 이 작업공간 (빌드된 것) | 아무 곳. `colcon build --symlink-install` (BUILD_AND_TEST.md) | – |
++| ROS 2 Humble | `/opt/ros/humble` | – |
++| Town05 녹화 | `<디스크>/rosbag/town05_30hz/` | 27 GB |
++| Town05 재생 캐시 | `<디스크>/vision-road-cache/town05_30hz_native.cdrz` 와 `.cdrz.json` | 5 GB |
++| AI 필터 가중치 (선택) | `data/models/yolopv2/yolopv2.pt` | 150 MB |
++
++- C++ 부분(`src/vision_road/vision_road/native.cpp`)은 `colcon build` 가 그 컴퓨터에서 새로 만든다(만든 파일 `_native*.so` 는 git 에 없다). 만들지 못하면 조용히 파이썬 코드로 돌아 느려지므로, `system.txt` 의 "native fast path" 줄이 `built` 인지 확인한다.
++- `<디스크>` 는 기본이 `/media/jaehun/38F7-677B` 다. 지금 쓰는 USB 디스크를 그대로 꽂으면 된다. 다른 곳에 두면 `VISION_ROAD_DISK=<경로>` 를 붙인다.
++- 캐시는 녹화 파일의 크기와 수정 시각을 확인한다. 파일을 복사한다면 `rsync -a` 처럼 시각을 지켜 복사한다. 시각이 다르면 재생 도구가 캐시를 쓰지 않고 느린 녹화 파일을 읽는다.
++- 패키지를 새로 설치하거나 시스템 설정을 바꾸지 않는다. 다른 무거운 프로그램(원격 화면, 브라우저 영상 등)은 닫고 잰다. 원격 화면 프로그램 하나가 CPU 43% 를 쓸 때 p95 가 47–60 ms 까지 오른 적이 있다.
++
++## 명령
++
++```bash
++tools/measure_latency.sh
++```
++
++- 기본: 잘라 보내기 3번, 전체 영상 1번, AI 필터 3번(가중치가 있을 때). 한 번에 약 70초, 전체 약 9분이다.
++- 짧게 확인만: `RUNS=1 FRAMES=600 tools/measure_latency.sh` (20초짜리 세 번).
++- 디스크 경로가 다르면: `VISION_ROAD_DISK=/mnt/data tools/measure_latency.sh`
++
++결과는 `results/latency_<컴퓨터 이름>_<날짜시각>/` 에 쌓인다.
++
++| 파일 | 내용 |
++|---|---|
++| `system.txt` | CPU 이름·코어 수·최대 클럭, CPU 주파수 정책(governor, energy_performance_preference), 전원 프로필, 전원 연결 여부, GPU 이름·드라이버·전력 한도, 메모리, 시작 전 부하, python·numpy·OpenCV 판. 읽기만 한다 |
++| `crop1/` … `ai3/` | 실행마다 `summary.json`(지연 통계), `frames.json`(프레임별 시각), 로그 |
++| `SUMMARY.txt` | 아래 표 |
++
++## 결과 읽기 (`SUMMARY.txt`)
++
++```
++run                  processed    p95   mean    max gaps |    delivery      warp      detect   display   learned  pass(p95<=25, 100%, no gaps)
++crop1                  100.00%  23.40  19.29   34.1    0 |  3.8/  4.2  0.7/ 0.9   11.0/14.2  2.6/ 3.5     -      pass
++```
++
++(이 노트북, 계획 25 의 첫 번째 잘라 보내기 실행 값)
++
++- `p95`: 영상 발행 → 표시선 받음의 95 백분위(ms). **기준은 25 ms 이하**다.
++- `processed`: 처리한 프레임 비율. 100% 여야 한다.
++- `gaps`: 표시선이 100 ms 넘게 끊긴 횟수. 0 이어야 한다.
++- 단계(평균/p95, ms):
++  - `delivery`: 영상 전달(재생 도구 발행 → 계산 프로세스가 받음). 잘라 보내면 약 3.5 ms, 전체 영상이면 약 6 ms(이 노트북)
++  - `warp`: BEV 변환
++  - `detect`: 검출
++  - `display`: 표시 필터와 발행
++  - `learned`: AI 필터가 켜졌을 때 모델에 영상을 넘기는 시간
++- 마지막 줄: 종류별로 몇 번 통과했는지(`crop#`: 잘라 보내기, `full#`: 전체 영상, `ai#`: AI 필터).
++
++## 이 노트북의 값과 비교
++
++이 노트북(Ryzen 7 5800H, RTX 3050 Laptop 4 GB, 16 GB)의 값은 `results/classical_five_videos/town05_30hz/latency25_20261118/REPORT_KO.md` 에 있다.
++
++- 차선 검출은 CPU 코어 하나가 시간을 정한다. 다른 컴퓨터의 값은 주로 CPU 의 단일 코어 속도로 바뀐다.
++- GPU 가 좋아지면 AI 필터 모델(이 노트북에서 한 번에 약 21 ms, 두 프레임에 한 번)이 빨라진다. 다만 모델은 따로 돌기 때문에 표시선 지연에는 직접 들어가지 않는다.
++
++## 잘라 보내기 행에 대해
++
++- 측정은 재생 도구가 행 578–983 만 보낸다(`--crop-rows 578:984`). 지금 BEV 가 읽는 행이 580–981 이고, 위아래로 2행씩 여유를 둔 것이다. 받는 쪽은 `CameraInfo.roi` 로 행을 맞춘다(약속: `src/hero_calib/OUTPUT_CONTRACT_KO.md`).
++- 카메라 보정, 자리, BEV 범위를 바꾸면 읽는 행도 바뀐다. 차선 인식 로그에 "the BEV reads image rows A-B" 로 나오니, 그 값으로 다시 정한다.
++- 읽는 행을 다 담지 않은 영상은 버리고 경고를 낸다. 이때 `processed` 가 100% 아래로 떨어진다.
+diff --git a/tests/test_latency25.py b/tests/test_latency25.py
+new file mode 100644
+index 0000000..5dda44f
+--- /dev/null
++++ b/tests/test_latency25.py
+@@ -0,0 +1,154 @@
++"""Plan 25: row-cropped images (CameraInfo roi) and the _native fast paths give the outputs of the full image and
++of the NumPy code."""
++import time
++from pathlib import Path
++
++import cv2
++import numpy as np
++import pytest
++import yaml
++
++from vision_road.core import Projector, Settings
++from vision_road import carla as carla_module
++
++CONFIG = Path(__file__).resolve().parents[1]/'src/vision_road/config'
++native = pytest.importorskip('vision_road._native')
++
++
++def projector():
++    c = Settings(); rig = yaml.safe_load((CONFIG/'rig.yaml').read_text())
++    p = Projector(CONFIG/'calibration/front.npz', rig, c); p.initialize(*p.size)
++    return p
++
++
++def test_row_crop_warp_equals_the_full_image():
++    p = projector(); lo, hi = p.rows(.9); h = p.source_size[1]
++    assert 0 <= lo < hi <= h
++    rng = np.random.default_rng(3); frame = rng.integers(0, 256, (h, p.source_size[0], 3), dtype=np.uint8)
++    valid = p.valid.copy(); valid[p.my >= h*.9] = 0
++    full = cv2.bitwise_and(p.warp(frame), p.warp(frame), mask=valid)
++    for top, bottom in ((lo, hi), (max(0, lo-5), min(h, hi+5))):
++        crop = p.warp(np.ascontiguousarray(frame[top:bottom]), top)
++        assert np.array_equal(cv2.bitwise_and(crop, crop, mask=valid), full)
++    short = p.warp(np.ascontiguousarray(frame[lo+1:hi]), lo+1)  # one needed row missing
++    assert not np.array_equal(cv2.bitwise_and(short, short, mask=valid), full)
++    with pytest.raises(ValueError):
++        p.crop_maps(h-10, 20)
++
++
++def test_native_binary_equals_numpy():
++    rng = np.random.default_rng(5)
++    for trial in range(4):
++        bev = rng.integers(0, 256, (120, 90, 3), dtype=np.uint8)
++        bev[::7] = (40, 200, 230)  # yellow-ish rows
++        valid = np.full(bev.shape[:2], 255, np.uint8)
++        out = []
++        for fast in (False, True):
++            c = Settings(); c.carla_native_fast = fast; c.carla_yellow_relative_min = 6.; c.carla_parallel_ops = trial % 2 == 1
++            d = carla_module.CarlaDetector(c); raw = d.binary(bev, valid)
++            out.append((raw, d.yellow.copy(), d.response, d.yellow_mask))
++        for a, b in zip(*out):
++            assert a.dtype == b.dtype and np.array_equal(a, b)
++
++
++def test_native_edge_like_equals_numpy():
++    rng = np.random.default_rng(7); c = Settings(); c.carla_native_fast = True
++    d = carla_module.CarlaDetector(c); gray = rng.normal(100, 40, (200, 120)).astype(np.float32)
++    gray[:, 40:60] += 60  # a brightness step
++    d.gray = gray; offset = max(2, round(.35/c.mpp)); frags = []
++    for n in (2, 5, 9, 40, 129, 300):
++        y = rng.integers(0, 200, n).astype(np.int32); x = rng.integers(0, 120, n).astype(np.int32); frags.append((y, x))
++    for y0 in range(0, 190, 10):  # fragments along the step, where the test fires
++        y = np.arange(y0, y0+10, dtype=np.int32); frags.append((y, np.full(10, 41+y0 % 17, np.int32)))
++    got = native.edge_like(gray, frags, offset)
++    want = [d.edge_like(y, x) for y, x in frags]
++    assert got == want and any(want)
++
++
++def numpy_match(a, b, limit, weight):
++    from vision_road.core import median
++    from numpy.core.multiarray import interp
++    lo = max(a[0, 0], b[0, 0]); hi = min(a[-1, 0], b[-1, 0])
++    if not hi > lo:
++        return np.inf
++    s = np.linspace(lo, hi, 12)
++    error = median(np.abs(interp(s, a[:, 0], a[:, 1])-interp(s, b[:, 0], b[:, 1])))
++    if error < limit:
++        o = (a[:, 0] >= lo) & (a[:, 0] <= hi)
++        a[o, 1] = weight*a[o, 1]+(1-weight)*interp(a[o, 0], b[:, 0], b[:, 1])
++    return error
++
++
++def test_native_track_match_corridor_and_reproject_equal_numpy():
++    from vision_road.core import median
++    from numpy.core.multiarray import interp
++    from vision_road.temporal import TemporalDetector
++    rng = np.random.default_rng(11)
++    for _ in range(300):
++        n, m = rng.integers(2, 40, 2)
++        a = np.column_stack([np.sort(rng.uniform(3, 30, n)), rng.normal(1.7, .2, n)])
++        b = np.column_stack([np.sort(rng.uniform(3, 30, m)), rng.normal(1.7, .2, m)])
++        if rng.random() < .2:
++            b[:, 0] = np.round(b[:, 0])  # repeated stations
++        a2 = a.copy(); want = numpy_match(a2, b, .35, .95); got = native.track_match(a, b, .35, .95)
++        assert got == want and np.array_equal(a, a2)
++        inside = (a[:, 0] >= b[0, 0]) & (a[:, 0] <= b[-1, 0])
++        want = median(np.abs(a[inside, 1]-interp(a[inside, 0], b[:, 0], b[:, 1]))) if np.count_nonzero(inside) >= 3 else np.inf
++        assert native.corridor_error(a, b) == want
++    t = TemporalDetector(Settings()); c = t.c
++    for _ in range(200):
++        pts = np.column_stack([rng.uniform(3, 30, 25), rng.uniform(-6, 6, 25)])
++        matrix = np.array([[1., rng.normal(0, .02), rng.normal(0, 3)], [rng.normal(0, .02), 1., rng.normal(5, 3)]])
++        want = t.metric(t.pixel(pts) @ matrix[:, :2].T+matrix[:, 2])
++        got = native.reproject(pts, matrix, c.mpp, c.forward_max, c.lateral_min)
++        # OpenBLAS's x86-64 FMA dot product: bit-equal here; a different BLAS kernel may differ in the last bit.
++        assert np.allclose(got, want, rtol=0, atol=1e-12)
++
++
++def test_image_in_worker_takes_row_cropped_images(tmp_path):
++    """The worker places a row-cropped image by the CameraInfo roi and produces lines; without the roi it skips it."""
++    import rclpy
++    from rclpy.executors import SingleThreadedExecutor
++    from rclpy.node import Node
++    from std_msgs.msg import Header
++    from builtin_interfaces.msg import Time
++    from nav_msgs.msg import Odometry
++    from sensor_msgs.msg import Image, CameraInfo
++    from visualization_msgs.msg import MarkerArray
++    from cv_bridge import CvBridge
++    from vision_road.node import RoadNode
++    rclpy.init(args=['--ros-args', '-p', 'detector_backend:=carla', '-p', 'isolated_compute:=true', '-p', 'image_in_worker:=true',
++                     '-p', 'display_filter_inline:=true', '-p', 'display_filter_in_worker:=true', '-p', 'display_publish_in_worker:=true',
++                     '-p', 'output_thread:=true', '-p', 'image_topic:=/crop/cam/image_raw', '-p', 'image_reliability:=reliable',
++                     '-p', 'odom_topic:=/crop/odom', '-p', 'carla_chain_confirm_frames:=1'])
++    road = RoadNode(); reader = Node('crop_reader'); executor = SingleThreadedExecutor()
++    executor.add_node(road); executor.add_node(reader)
++    boundaries = [];reader.create_subscription(MarkerArray, '/road/lane_boundary_markers', boundaries.append, 10)
++    images = reader.create_publisher(Image, '/crop/cam/image_raw', 10); infos = reader.create_publisher(CameraInfo, '/crop/cam/camera_info', 10)
++    odometry = reader.create_publisher(Odometry, '/crop/odom', 10)
++    def pump(duration):
++        until = time.monotonic()+duration
++        while time.monotonic() < until:executor.spin_once(timeout_sec=.01)
++    try:
++        assert road.camera_info_topic == '/crop/cam/camera_info'
++        w, h = road.projector.size; lo, hi = road.projector.rows(road.image_roi_bottom)
++        frame = cv2.resize(cv2.imread(str(Path(__file__).resolve().parents[1]/'artifacts/synthetic_camera.png')), (w, h))
++        crop = np.ascontiguousarray(frame[lo:hi]); pump(1.)
++        def send(k, with_roi):
++            t = 40.+k*.1; stamp = Time(sec=int(t), nanosec=round((t-int(t))*1e9))
++            msg = Odometry(); msg.header = Header(stamp=stamp, frame_id='map'); msg.child_frame_id = 'base_link'
++            msg.pose.pose.orientation.w = 1.; msg.pose.pose.position.x = 2.+k*.5; odometry.publish(msg)
++            info = CameraInfo(); info.header = Header(stamp=stamp, frame_id='camera'); info.width, info.height = w, h
++            if with_roi:info.roi.y_offset, info.roi.height, info.roi.width = lo, hi-lo, w
++            infos.publish(info); pump(.05)
++            image = CvBridge().cv2_to_imgmsg(crop, 'bgr8'); image.header = Header(stamp=stamp, frame_id='camera')
++            images.publish(image); pump(.4)
++        for k in range(3):send(k, False)  # no roi: skipped
++        assert not boundaries
++        for k in range(3, 10):send(k, True)
++        pump(1.)
++        assert len(boundaries) >= 5
++        assert any(len(m.points) >= 2 for msg in boundaries[-3:] for m in msg.markers)
++    finally:
++        road.stop_processing()
++        executor.shutdown(); road.destroy_node(); reader.destroy_node(); rclpy.shutdown()
+diff --git a/tools/latency_summary.py b/tools/latency_summary.py
+new file mode 100755
+index 0000000..cf09604
+--- /dev/null
++++ b/tools/latency_summary.py
+@@ -0,0 +1,20 @@
++#!/usr/bin/env python3
++"""One line per real-time run (tools/realtime_eval.py output folders under DIR) and the pass/fail against a p95
++limit: processed share, publish->display p95/mean/max, display gaps over 100 ms, and the stage means/p95
++(image delivery publish->receive, BEV warp, detection, display filter, learned mask).
++usage: latency_summary.py DIR [--limit MS]"""
++import argparse,json,re
++from pathlib import Path
++ap=argparse.ArgumentParser();ap.add_argument('dir',type=Path);ap.add_argument('--limit',type=float,default=25.);a=ap.parse_args()
++runs=sorted(p.parent for p in a.dir.glob('*/summary.json'))
++if not runs:raise SystemExit(f'no runs (*/summary.json) under {a.dir}')
++print(f"{'run':20s} {'processed':>9s} {'p95':>6s} {'mean':>6s} {'max':>6s} {'gaps':>4s} | {'delivery':>11s} {'warp':>9s} {'detect':>11s} {'display':>9s} {'learned':>9s}  pass(p95<={a.limit:g}, 100%, no gaps)")
++groups={}
++for d in runs:
++    s=json.loads((d/'summary.json').read_text());l=s['latency_ms']['publish_to_display'];r=s['latency_ms']['publish_to_receive'];ph=s['phases_ms']
++    f=lambda k:f"{ph[k]['mean']:4.1f}/{ph[k]['p95']:4.1f}" if k in ph else '    -    '
++    ok=l['p95']<=a.limit and s['processed_ratio']>=1. and s['display_gaps_over_100ms']==0
++    print(f"{d.name:20s} {100*s['processed_ratio']:8.2f}% {l['p95']:6.2f} {l['mean']:6.2f} {l['max']:6.1f} {s['display_gaps_over_100ms']:4d} | {r['mean']:4.1f}/{r['p95']:5.1f} {f('worker.warp')} {f('worker.detect'):>11s} {f('worker.display')} {f('worker.learned')}  {'pass' if ok else 'FAIL'}")
++    groups.setdefault(re.sub(r'\d+','#',d.name),[]).append(ok)
++print('stages: mean/p95 ms; delivery = replay publish -> perception worker receives the image')
++for g,v in groups.items():print(f'{g}: {sum(v)}/{len(v)} runs pass')
+diff --git a/tools/measure_latency.sh b/tools/measure_latency.sh
+new file mode 100755
+index 0000000..add2076
+--- /dev/null
++++ b/tools/measure_latency.sh
+@@ -0,0 +1,47 @@
++#!/bin/bash
++# Lane-side real-time latency on THIS computer (image published -> display line received), Town05, 30 Hz,
++# with the demo setting: outer lines, centrelines, lane guidance, fake vehicle state, display filter in the
++# perception worker, HUD copy.  Writes the computer's description and one folder per run, then SUMMARY.txt.
++#
++#   tools/measure_latency.sh                 3 runs with row-cropped images, 1 with full images, 3 with the AI
++#                                            filter (if data/models/yolopv2/yolopv2.pt is there)
++#   RUNS=1 FRAMES=600 tools/measure_latency.sh   a short check (600 frames = 20 s)
++#
++# Needs: this workspace built (colcon build --symlink-install, see BUILD_AND_TEST.md), ROS 2 Humble, the HUD copy
++# built, and the Town05 recording: VISION_ROAD_DISK/rosbag/town05_30hz/ (27 GB) and
++# VISION_ROAD_DISK/vision-road-cache/town05_30hz_native.cdrz(.json) (5 GB; copy it with the bag keeping file times,
++# e.g. rsync -a, or the replay reads the slower bag).  VISION_ROAD_DISK defaults to /media/jaehun/38F7-677B.
++# Changes nothing on the computer (no power, CPU or priority settings); close other heavy programs first.
++set -euo pipefail
++cd "$(dirname "$(readlink -f "$0")")/.."
++OUT=${1:-results/latency_$(hostname)_$(date +%Y%m%d_%H%M)};RUNS=${RUNS:-3};FRAMES=${FRAMES:-0}
++mkdir -p "$OUT"
++{
++  echo "date: $(date -Is)"; echo "host: $(hostname)"; echo "os: $(uname -srm)"
++  echo "--- CPU"; lscpu | grep -E '^(Model name|CPU\(s\)|Thread|Core|Socket|CPU max MHz|CPU min MHz|L3)' || true
++  echo "--- power and CPU frequency policy (read only)"
++  echo "governor: $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo unknown)"
++  echo "energy_performance_preference: $(cat /sys/devices/system/cpu/cpu0/cpufreq/energy_performance_preference 2>/dev/null || echo unknown)"
++  echo "power profile: $(powerprofilesctl get 2>/dev/null || echo unknown)"
++  for s in /sys/class/power_supply/*/online; do [ -e "$s" ] && echo "AC $(basename "$(dirname "$s")"): $(cat "$s") (1 = plugged in)"; done
++  echo "--- GPU"; nvidia-smi --query-gpu=name,driver_version,memory.total,power.limit,pstate --format=csv 2>/dev/null || echo "no nvidia-smi"
++  echo "--- memory"; free -g | head -2
++  echo "--- load before the runs"; uptime
++  echo "--- software"; python3 -c "import numpy,cv2,sys;print('python',sys.version.split()[0],'numpy',numpy.__version__,'opencv',cv2.__version__)"
++} > "$OUT/system.txt" 2>&1
++set +u;source /opt/ros/humble/setup.bash;source install/setup.bash;set -u
++# The C++ parts (src/vision_road/vision_road/native.cpp) are built by colcon build; without them the Python code runs (slower).
++python3 -c "
++try:
++    import vision_road._native as n;ok=all(hasattr(n,f) for f in ('color_planes','ridges','edge_like','track_match','corridor_error','reproject'))
++except ImportError:ok=False
++print('native fast path (vision_road._native):','built' if ok else 'MISSING - rebuild: colcon build --symlink-install --packages-select vision_road')" >> "$OUT/system.txt" 2>&1
++cat "$OUT/system.txt"
++A="display_filter_inline:=true lane_guidance:=true fake_vehicle_state:=true"
++W=$PWD/data/models/yolopv2/yolopv2.pt
++run(){ local n=$1;shift;echo "run $n ...";python3 tools/realtime_eval.py --video town05 --frames "$FRAMES" --output "$OUT/$n" "$@" > "$OUT/$n.log" 2>&1 && echo "  done" || echo "  FAILED (see $OUT/$n.log)"; }
++for i in $(seq 1 "$RUNS");do run crop$i --crop-rows 578:984 --launch-arg $A;done
++run full1 --launch-arg $A
++if [ -f "$W" ];then for i in $(seq 1 "$RUNS");do run ai$i --launch-arg $A learned_weights:=$W;done;fi
++python3 tools/latency_summary.py "$OUT" | tee "$OUT/SUMMARY.txt"
++echo "results: $OUT (SUMMARY.txt, system.txt)"
