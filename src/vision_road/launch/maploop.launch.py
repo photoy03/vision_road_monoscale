@@ -1,6 +1,7 @@
 """Recorded dashcam profile; optional, explicitly named truth reference adapter."""
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+import os
+from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
@@ -32,6 +33,11 @@ def generate_launch_description():
         # Lane return / lane change guidance for the HUD (hero_coach lane_guidance, its own process):
         # reads /road/lane_centres and /road/reference_odom, sends /hero/scene_overlay and /hero/lane_guidance.
         DeclareLaunchArgument('lane_guidance',default_value='false'),
+        # Until the driving node (src/hero_calib --ros-output) runs: /hero/vehicle_state and /hero/steering_wheel
+        # made up from /road/reference_odom (tools/fake_vehicle_state.py). Off by default.
+        DeclareLaunchArgument('fake_vehicle_state',default_value='false'),
+        ExecuteProcess(cmd=['python3',os.path.join(os.path.dirname(os.path.realpath(__file__)),'..','..','..','tools','fake_vehicle_state.py')],
+                       name='fake_vehicle_state',output='screen',condition=IfCondition(LaunchConfiguration('fake_vehicle_state'))),
         Node(package='vision_road',executable='road_node',name='vision_road',output='screen',parameters=[share+'/config/carla.yaml',{
             'use_sim_time':LaunchConfiguration('use_sim_time'),
             'image_topic':'/sensing/camera/dashcam/image_raw','image_reliability':LaunchConfiguration('image_reliability'),'image_queue_depth':10,

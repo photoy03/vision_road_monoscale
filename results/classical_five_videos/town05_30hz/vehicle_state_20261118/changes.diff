@@ -1,0 +1,368 @@
+diff --git a/run_lane_hud.sh b/run_lane_hud.sh
+index ad07bb6..7f83c6e 100755
+--- a/run_lane_hud.sh
++++ b/run_lane_hud.sh
+@@ -10,18 +10,22 @@
+ #   --frames N      replay only N frames
+ #   --learned       YOLOPv2 lane mask gate (GPU; off by default)
+ #   --no-guidance   no lane return / lane change guidance on the HUD (hero_coach lane_guidance)
++#   --fake-vehicle-state  made-up /hero/vehicle_state and /hero/steering_wheel from the pose
++#                   (tools/fake_vehicle_state.py), until the driving node sends them: the HUD then
++#                   draws the current path and the guidance takes its speed
+ # The HUD is this workspace's copy (src/hero_hud), built into install/.
+ set -euo pipefail
+ ROAD="$(cd "$(dirname "$0")" && pwd)"
+ HUD_CONFIG=$ROAD/src/hero_hud/config/hud.yaml
+ DISK=/media/jaehun/38F7-677B
+ VIDEO=${1:-}; shift || true
+-HUD=1; LOOP=0; FRAMES=0; LEARNED=""; GUIDANCE=true
++HUD=1; LOOP=0; FRAMES=0; LEARNED=""; GUIDANCE=true; FAKE_VS=false
+ while [ $# -gt 0 ]; do
+   case "$1" in
+     --no-hud) HUD=0;; --loop) LOOP=1;; --frames) FRAMES=$2; shift;;
+     --learned) LEARNED="learned_weights:=$ROAD/data/models/yolopv2/yolopv2.pt";;
+     --no-guidance) GUIDANCE=false;;
++    --fake-vehicle-state) FAKE_VS=true;;
+     *) echo "unknown option $1"; exit 2;;
+   esac; shift
+ done
+@@ -30,7 +34,7 @@ case "$VIDEO" in
+   town04)  BAG=$DISK/rosbag/town04_30hz;  CACHE=$DISK/vision-road-cache/town04_30hz_native.cdrz;;
+   town05)  BAG=$DISK/rosbag/town05_30hz;  CACHE=$DISK/vision-road-cache/town05_30hz_native.cdrz;;
+   live)    BAG=;;
+-  *) sed -n '2,15p' "$0"; exit 2;;
++  *) sed -n '2,18p' "$0"; exit 2;;
+ esac
+ set +u; source /opt/ros/humble/setup.bash; source "$ROAD/install/setup.bash"; set -u
+ PIDS=()
+@@ -41,7 +45,7 @@ cleanup() { for p in "${PIDS[@]}"; do kill -INT "$p" 2>/dev/null || true; done;
+ trap cleanup EXIT INT TERM
+ 
+ # Detector with the display filter inside it (carla.yaml settings), reference pose adapter, TF.
+-( exec "${SIGINT_EXEC[@]}" ros2 launch vision_road maploop.launch.py display_filter_inline:=true lane_guidance:=$GUIDANCE $LEARNED ) &
++( exec "${SIGINT_EXEC[@]}" ros2 launch vision_road maploop.launch.py display_filter_inline:=true lane_guidance:=$GUIDANCE fake_vehicle_state:=$FAKE_VS $LEARNED ) &
+ PIDS+=($!)
+ /usr/bin/python3 - <<'PY'
+ import time,rclpy
+diff --git a/src/hero_coach/hero_coach/lane_guidance.py b/src/hero_coach/hero_coach/lane_guidance.py
+index 492deec..84c2cc3 100644
+--- a/src/hero_coach/hero_coach/lane_guidance.py
++++ b/src/hero_coach/hero_coach/lane_guidance.py
+@@ -7,7 +7,9 @@ name: the detector renames lanes (ego / left / right) the moment the car crosses
+ the target centreline of the last frame is carried into the new base_link with the vehicle's motion and
+ the current lane whose centre lies within match_m of it (at ref_m ahead) is the target.  Without a
+ match the carried line stands in for up to carry_sec; after that, or after a sharp turn (a junction:
+-yaw rate above turn_rate) or an implausible offset, the target is taken afresh: the lane the car is in.
++heading changed more than turn_angle within turn_window_sec) or an implausible offset, the target is
++taken afresh: the lane the car is in.  (A swerve over a line turns the car too, but swings back: its heading
++change stays well under a junction's quarter turn.)
+ 
+   - The target moves to a neighbouring lane only when all of these hold: the line between them is
+     white dashed (crossable), the neighbour is lane-like and not oncoming; the car moves towards
+@@ -31,7 +33,7 @@ distance x: from the car (on its position, along its heading, straight) to the c
+ merge_sec, at least merge_per_m per metre of offset, within merge_min_m..merge_max_m.
+ 
+ States: 'none' (no reliable target: no lane, taken afresh within settle_sec, no measured part of the
+-target lane within near_m, turning sharply), 'keep' (near the centre: shown from on_m, hidden again
++target lane within near_m, turning (a junction)), 'keep' (near the centre: shown from on_m, hidden again
+ under off_m), 'return' (back to the home lane's centre), 'change' (onto the new lane, until near its
+ centre), 'forbidden' (the car's side is on or past a line that must not be crossed: back to the home
+ lane)."""
+@@ -54,7 +56,8 @@ class GuidanceSettings:
+     carry_sec: float = 1.5  # without a match the carried target stands in this long
+     settle_sec: float = 0.5  # after taking a lane afresh no guidance for this long
+     near_m: float = 15.0  # no guidance while the target lane has no measured part starting within this
+-    turn_rate: float = 0.30  # rad/s: turning this sharply (a junction) suspends the guidance
++    turn_angle: float = 0.90  # rad (52 deg): a heading change this large within turn_window_sec (a junction
++    turn_window_sec: float = 3.0  # turn, not a swerve) suspends the guidance
+     implausible: float = 1.3  # an offset beyond this many lane widths is a lost lane, not a position
+     memory_sec: float = 1.5  # centreline points kept to find the centre beside the car
+     near_window_m: float = 3.0
+@@ -189,6 +192,7 @@ class LaneGuidance:
+         self.target = None  # (points, ref, width, left, right) of the target, last base_link
+         self.target_time = None; self.pose = None; self.time = None; self.acquired = None
+         self.speed = 0.; self.yaw_rate = 0.; self.lateral_speed = 0.; self.offset = None; self.smooth = None
++        self.headings = []  # (t, unwrapped heading) of the last turn_window_sec
+         self.moving = {'left': 0., 'right': 0.}; self.gap = {'left': 0., 'right': 0.}
+         self.memory = []; self.shown = False; self.changes = 0; self.state = 'none'
+ 
+@@ -207,9 +211,11 @@ class LaneGuidance:
+         h = 1e-3; c0, cp, cm = centre_at(lane.points, [0., h, -h], lane.ref)
+         return float(c0), float((cp-cm)/(2*h)), float((cp-2*c0+cm)/(h*h))
+ 
+-    def update(self, t, pose, lanes, path=True):
++    def update(self, t, pose, lanes, path=True, speed=None):
+         """t (s), pose (x, y, yaw) in a world frame or None, lanes: Lane list of this frame.  Returns Output.
+-        path=False: the path only while the guidance is shown."""
++        path=False: the path only while the guidance is shown.  speed: the car's speed (m/s) from its own
++        state (/hero/vehicle_state) when there is one; else the speed is taken from the pose change.  It sets
++        the merge length only."""
+         s = self.s
+         dt = 0. if self.time is None else t-self.time
+         if self.time is not None and not 0. < dt <= 1.:self.reset();dt = 0.
+@@ -220,7 +226,10 @@ class LaneGuidance:
+             self.yaw_rate += (motion[2]/dt-self.yaw_rate)*a
+         self.pose = pose; self.time = t
+         named = {l.name: l for l in lanes}
+-        turning = abs(self.yaw_rate) > s.turn_rate
++        if pose is not None:
++            h = pose[2] if not self.headings else self.headings[-1][1]+math.atan2(math.sin(pose[2]-self.headings[-1][1]), math.cos(pose[2]-self.headings[-1][1]))
++            self.headings = [(u, v) for u, v in self.headings if t-u <= s.turn_window_sec]+[(t, h)]
++        turning = bool(self.headings) and max(v for _, v in self.headings)-min(v for _, v in self.headings) > s.turn_angle
+         if turning:self._lose()
+         # The target, by position: last frame's carried into this one, matched among the current lanes.
+         target = None
+@@ -298,6 +307,7 @@ class LaneGuidance:
+         elif on_line and self.state == 'forbidden':state = 'forbidden'
+         else:state = 'return' if abs(e) >= (s.off_m if self.shown else s.on_m) else 'keep'
+         self.shown = state not in ('keep', 'none');self.state = state
+-        merge = float(np.clip(max(self.speed*s.merge_sec, s.merge_per_m*abs(offset)), s.merge_min_m, s.merge_max_m))
++        v = self.speed if speed is None else abs(float(speed))
++        merge = float(np.clip(max(v*s.merge_sec, s.merge_per_m*abs(offset)), s.merge_min_m, s.merge_max_m))
+         line = path_onto(lambda x: centre_at(target.points, x, target.ref), near, merge, s) if path or self.shown else None
+-        return Output(state, target.name, offset, self.lateral_speed, self.speed, self.shown, line, merge, self.changes, reason)
++        return Output(state, target.name, offset, self.lateral_speed, v, self.shown, line, merge, self.changes, reason)
+diff --git a/src/hero_coach/hero_coach/lane_guidance_node.py b/src/hero_coach/hero_coach/lane_guidance_node.py
+index 69b3cae..f319ef8 100644
+--- a/src/hero_coach/hero_coach/lane_guidance_node.py
++++ b/src/hero_coach/hero_coach/lane_guidance_node.py
+@@ -1,7 +1,9 @@
+ """ROS wrapper of lane_guidance.py: lane return / lane change guidance for the HUD's lane-only mode.
+ 
+ In:  /road/lane_centres (std_msgs/String JSON, vision_road), /road/reference_odom (nav_msgs/Odometry:
+-     the rear-axle pose; any odometry of the car in a world frame will do).
++     the rear-axle pose; any odometry of the car in a world frame will do), and /hero/vehicle_state
++     (hero_hud/VehicleState) when there is one: its speed, if it came within vehicle_state_timeout_sec,
++     replaces the speed taken from the pose change (merge length only).
+ Out: /hero/scene_overlay (hero_hud/SceneOverlay): has_ideal + ideal = the path (base_link, from the car,
+      car width) while guidance is shown; has_coach with a short text and severity
+      (return: INFO, change: CAUTION, forbidden: WARN) so the HUD can tell them apart.
+@@ -45,8 +47,14 @@ class LaneGuidanceNode(Node):
+         self.create_subscription(Odometry, p('odom_topic', '/road/reference_odom'), self.on_odom,
+                                  QoSProfile(depth=200, reliability=ReliabilityPolicy.BEST_EFFORT))
+         self.create_subscription(String, p('centres_topic', '/road/lane_centres'), self.on_centres, 10)
++        from hero_hud.msg import VehicleState
++        self.vehicle = None;self.vehicle_timeout = float(p('vehicle_state_timeout_sec', .3))  # (speed, receipt time)
++        self.create_subscription(VehicleState, p('vehicle_state_topic', '/hero/vehicle_state'), self.on_vehicle, 10)
+         self.get_logger().info('Lane guidance: '+str(settings))
+ 
++    def on_vehicle(self, msg):
++        self.vehicle = (float(msg.speed_mps), time.monotonic())
++
+     def on_odom(self, msg):
+         q = msg.pose.pose.orientation
+         yaw = math.atan2(2*(q.w*q.z+q.x*q.y), 1-2*(q.y*q.y+q.z*q.z))
+@@ -72,7 +80,8 @@ class LaneGuidanceNode(Node):
+         data = json.loads(msg.data); t = float(data['stamp'])
+         if self.core.time is not None and t < self.core.time:self.core.reset()
+         lanes = [Lane.from_message(item) for item in data['lanes']]
+-        out = self.core.update(t, self.pose_at(t), lanes, path=False)  # the path only while shown
++        speed = self.vehicle[0] if self.vehicle is not None and time.monotonic()-self.vehicle[1] <= self.vehicle_timeout else None
++        out = self.core.update(t, self.pose_at(t), lanes, path=False, speed=speed)  # the path only while shown
+         sec = int(t); nanosec = int(round((t-sec)*1e9))
+         if nanosec >= 1000000000:sec += 1;nanosec -= 1000000000
+         scene = self.SceneOverlay();scene.header.stamp.sec = sec;scene.header.stamp.nanosec = nanosec
+@@ -86,7 +95,7 @@ class LaneGuidanceNode(Node):
+         compute = (time.perf_counter()-begin)*1e3
+         self.info_pub.publish(String(data=json.dumps(dict(
+             stamp=t, state=out.state, target=out.target, offset_m=round(out.offset_m, 3), lateral_speed_mps=round(out.lateral_speed_mps, 3),
+-            speed_mps=round(out.speed_mps, 2), shown=out.shown, merge_m=round(out.merge_m, 1), changes=out.changes, reason=out.reason,
++            speed_mps=round(out.speed_mps, 2), speed_source='vehicle_state' if speed is not None else 'pose', shown=out.shown, merge_m=round(out.merge_m, 1), changes=out.changes, reason=out.reason,
+             compute_ms=round(compute, 3), path=[] if out.path is None else [[round(float(x), 2), round(float(y), 3)] for x, y in out.path]),
+             separators=(',', ':'))))
+ 
+diff --git a/src/hero_hud/src/world_item.cpp b/src/hero_hud/src/world_item.cpp
+index 3375c89..84bc1a9 100644
+--- a/src/hero_hud/src/world_item.cpp
++++ b/src/hero_hud/src/world_item.cpp
+@@ -1041,6 +1041,14 @@ void WorldItem::buildFrame(VertexBuffer& out, double now) {
+     projector_->setLateralHalf(4.5f);
+     if (road_fresh || boundary_fresh) drawRoadPaint(world, *road, now);
+     if (road) drawRoadMarkings(world, *road, now);
++    // The current path (where the present steering takes the car), as in the normal mode's corridor,
++    // only while a vehicle state is fresh; without one the lane-only view is as before.  Under the guidance
++    // path: grey "where it goes" against amber/red "where to go".
++    {
++      const VehicleState vs = state_->vehicle();
++      if (vs.stamp > 0.0 && now - vs.stamp >= 0.0 && now - vs.stamp < config_.vehicle_timeout_sec)
++        drawCorridor(world, vs, nullptr, HudMode::Normal, now, false);  // Normal: the plain corridor (Basic would stripe it as degraded); no scene, so no blockage
++    }
+     // The lane guidance, over the lanes; only while it is fresh (the node sends it every frame).
+     if (scene && now - scene->stamp >= 0.0 && now - scene->stamp < 0.35) drawLaneGuidance(world, *scene, now);
+     out.insert(out.end(), world.begin(), world.end());
+diff --git a/src/vision_road/launch/maploop.launch.py b/src/vision_road/launch/maploop.launch.py
+index c5ba964..e21cec8 100644
+--- a/src/vision_road/launch/maploop.launch.py
++++ b/src/vision_road/launch/maploop.launch.py
+@@ -1,6 +1,7 @@
+ """Recorded dashcam profile; optional, explicitly named truth reference adapter."""
+ from launch import LaunchDescription
+-from launch.actions import DeclareLaunchArgument
++import os
++from launch.actions import DeclareLaunchArgument, ExecuteProcess
+ from launch.conditions import IfCondition
+ from launch.substitutions import LaunchConfiguration, PythonExpression
+ from launch_ros.actions import Node
+@@ -32,6 +33,11 @@ def generate_launch_description():
+         # Lane return / lane change guidance for the HUD (hero_coach lane_guidance, its own process):
+         # reads /road/lane_centres and /road/reference_odom, sends /hero/scene_overlay and /hero/lane_guidance.
+         DeclareLaunchArgument('lane_guidance',default_value='false'),
++        # Until the driving node (src/hero_calib --ros-output) runs: /hero/vehicle_state and /hero/steering_wheel
++        # made up from /road/reference_odom (tools/fake_vehicle_state.py). Off by default.
++        DeclareLaunchArgument('fake_vehicle_state',default_value='false'),
++        ExecuteProcess(cmd=['python3',os.path.join(os.path.dirname(os.path.realpath(__file__)),'..','..','..','tools','fake_vehicle_state.py')],
++                       name='fake_vehicle_state',output='screen',condition=IfCondition(LaunchConfiguration('fake_vehicle_state'))),
+         Node(package='vision_road',executable='road_node',name='vision_road',output='screen',parameters=[share+'/config/carla.yaml',{
+             'use_sim_time':LaunchConfiguration('use_sim_time'),
+             'image_topic':'/sensing/camera/dashcam/image_raw','image_reliability':LaunchConfiguration('image_reliability'),'image_queue_depth':10,
+--- /dev/null
++++ b/tools/fake_vehicle_state.py
+@@ -0,0 +1,104 @@
++#!/usr/bin/env python3
++"""Fake vehicle state from the car's pose: what the driving node (src/hero_calib, --ros-output) will send.
++
++Until that node runs on the CARLA computer, this stands in for its /hero/vehicle_state and
++/hero/steering_wheel (src/hero_calib/OUTPUT_CONTRACT_KO.md), computed from the rear-axle pose the lane
++detector already gets (/road/reference_odom: the recording's /carla/ground_truth/pose moved to the rear
++axle, or a script's shifted pose):
++
++  speed_mps            the displacement along the heading per second (reverse: negative), low-passed
++  yaw_rate_rps         the heading change per second (left +), low-passed
++  steering_angle_rad   the front road-wheel angle of a kinematic bicycle on that path:
++                       atan(wheelbase * yaw_rate / speed), wheelbase 2.70 m (Prius gen 3, as the HUD's
++                       vehicle.wheelbase_m); 0 below 0.5 m/s
++  steering_wheel       road-wheel angle times 14.27 (the driving tool's WHEEL_STEERING_RATIO), clipped to
++                       +-540 deg (the T300RS stop)
++  gear                 D (the recordings drive forward)
++
++Only past poses are used (a live stand-in): the values lag the motion by about the low-pass time.
++usage: ros2 run ... / python3 tools/fake_vehicle_state.py [--odom-topic T] [--tau S]"""
++import argparse
++import math
++from dataclasses import dataclass
++
++WHEELBASE_M = 2.70          # Toyota Prius gen 3 (ZVW30); the HUD's vehicle.wheelbase_m
++STEERING_RATIO = 14.27      # src/hero_calib WHEEL_STEERING_RATIO (540 deg handwheel = 37.8 deg road wheel)
++HANDWHEEL_LIMIT_RAD = math.radians(540.)
++
++
++@dataclass
++class Estimate:
++    speed_mps: float
++    yaw_rate_rps: float
++    curvature: float
++    steering_rad: float
++    handwheel_rad: float
++
++
++class VehicleStateEstimator:
++    """Pose samples (t, x, y, yaw) in, Estimate out."""
++
++    def __init__(self, tau=.1, wheelbase=WHEELBASE_M, ratio=STEERING_RATIO, min_speed=.5):
++        self.tau, self.wheelbase, self.ratio, self.min_speed = tau, wheelbase, ratio, min_speed
++        self.reset()
++
++    def reset(self):
++        self.last = None; self.speed = 0.; self.yaw_rate = 0.
++
++    def update(self, t, x, y, yaw):
++        if self.last is not None:
++            t0, x0, y0, yaw0 = self.last; dt = t-t0
++            if not 0. < dt <= .5:self.reset()
++            else:
++                dx, dy = x-x0, y-y0; along = dx*math.cos(yaw0)+dy*math.sin(yaw0)
++                dyaw = math.atan2(math.sin(yaw-yaw0), math.cos(yaw-yaw0))
++                a = 1.-math.exp(-dt/self.tau)
++                self.speed += (along/dt-self.speed)*a; self.yaw_rate += (dyaw/dt-self.yaw_rate)*a
++        self.last = (t, x, y, yaw)
++        k = self.yaw_rate/self.speed if abs(self.speed) >= self.min_speed else 0.
++        steer = math.atan(self.wheelbase*k)
++        hand = max(-HANDWHEEL_LIMIT_RAD, min(HANDWHEEL_LIMIT_RAD, steer*self.ratio))
++        return Estimate(self.speed, self.yaw_rate, k, steer, hand)
++
++
++def main():
++    ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
++    ap.add_argument('--odom-topic', default='/road/reference_odom')
++    ap.add_argument('--tau', type=float, default=.1)
++    ap.add_argument('--rate', type=float, default=30., help='publish at most this often (Hz, simulation time); every pose still updates the estimate')
++    a, ros_args = ap.parse_known_args()
++    import rclpy
++    from rclpy.qos import QoSProfile, ReliabilityPolicy
++    from nav_msgs.msg import Odometry
++    from sensor_msgs.msg import JointState
++    from hero_hud.msg import VehicleState
++    rclpy.init(args=ros_args); node = rclpy.create_node('fake_vehicle_state'); est = VehicleStateEstimator(a.tau)
++    reliable = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE)
++    pub_state = node.create_publisher(VehicleState, '/hero/vehicle_state', reliable)
++    pub_wheel = node.create_publisher(JointState, '/hero/steering_wheel', reliable)
++    last = {}
++
++    def on_odom(msg):
++        q = msg.pose.pose.orientation; yaw = math.atan2(2*(q.w*q.z+q.x*q.y), 1-2*(q.y*q.y+q.z*q.z))
++        t = msg.header.stamp.sec+msg.header.stamp.nanosec*1e-9
++        if est.last is not None and t < est.last[0]:est.reset()  # replay restarted
++        e = est.update(t, msg.pose.pose.position.x, msg.pose.pose.position.y, yaw)
++        if 'sent' in last and 0. <= t-last['sent'] < 1./a.rate-1e-6:return  # the poses come at 60 Hz; 30 Hz is enough
++        last['sent'] = t
++        state = VehicleState(); state.header.stamp = msg.header.stamp; state.header.frame_id = 'base_link'
++        state.gear = state.GEAR_DRIVE; state.speed_mps = e.speed_mps; state.steering_angle_rad = e.steering_rad; state.yaw_rate_rps = e.yaw_rate_rps
++        pub_state.publish(state)
++        joint = JointState(); joint.header = state.header; joint.name = ['steering_wheel', 'road_wheel']
++        joint.position = [e.handwheel_rad, e.steering_rad]
++        if 't' in last and t > last['t']:
++            joint.velocity = [(e.handwheel_rad-last['h'])/(t-last['t']), (e.steering_rad-last['s'])/(t-last['t'])]
++        last.update(t=t, h=e.handwheel_rad, s=e.steering_rad); pub_wheel.publish(joint)
++    node.create_subscription(Odometry, a.odom_topic, on_odom, QoSProfile(depth=200, reliability=ReliabilityPolicy.BEST_EFFORT))
++    node.get_logger().info(f'Fake vehicle state from {a.odom_topic} (wheelbase {WHEELBASE_M} m, ratio {STEERING_RATIO})')
++    try:rclpy.spin(node)
++    except KeyboardInterrupt:pass
++    finally:node.destroy_node();rclpy.try_shutdown()
++
++
++if __name__ == '__main__':
++    main()
+--- /dev/null
++++ b/tests/test_fake_vehicle_state.py
+@@ -0,0 +1,41 @@
++"""tools/fake_vehicle_state.py: speed, yaw rate and steering of a kinematic bicycle from poses."""
++import math
++import sys
++from pathlib import Path
++
++import pytest
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'tools'))
++from fake_vehicle_state import VehicleStateEstimator, WHEELBASE_M, STEERING_RATIO  # noqa: E402
++
++
++def drive(radius, speed, seconds=3., rate=60., reverse=False):
++    """Rear axle on a circle (radius > 0: turning left; None: straight) at speed; returns the last estimate."""
++    est = VehicleStateEstimator(); e = None
++    for i in range(int(seconds*rate)):
++        t = i/rate; s = speed*t
++        if radius is None:x, y, yaw = s, 0., 0.
++        else:
++            a = s/radius;x, y, yaw = radius*math.sin(a), radius*(1-math.cos(a)), a
++        if reverse:x, y = -x, -y  # backing along the same heading
++        e = est.update(t, x, y, yaw)
++    return e
++
++
++def test_straight():
++    e = drive(None, 10.)
++    assert e.speed_mps == pytest.approx(10., rel=1e-3) and abs(e.steering_rad) < 1e-6
++
++
++def test_left_and_right_circles_give_the_bicycle_angle():
++    e = drive(40., 8.)
++    assert e.yaw_rate_rps == pytest.approx(8./40., rel=1e-2)
++    assert e.steering_rad == pytest.approx(math.atan(WHEELBASE_M/40.), rel=1e-2)
++    assert e.handwheel_rad == pytest.approx(e.steering_rad*STEERING_RATIO)
++    r = drive(-40., 8.)
++    assert r.steering_rad == pytest.approx(-e.steering_rad, rel=1e-6)
++
++
++def test_reverse_speed_is_negative_and_stopped_is_straight():
++    assert drive(None, 3., reverse=True).speed_mps == pytest.approx(-3., rel=1e-3)
++    assert drive(10., .1).steering_rad == 0.  # below 0.5 m/s no curvature is claimed

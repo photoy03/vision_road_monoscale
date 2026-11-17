@@ -1,0 +1,484 @@
+{
+ "wobble": {
+  "frames": 360,
+  "arc_miss_5m": {
+   "n": 323,
+   "rms_cm": 38.4,
+   "p95_cm": 60.5,
+   "max_cm": 296.5
+  },
+  "arc_miss_10m": {
+   "n": 296,
+   "rms_cm": 151.6,
+   "p95_cm": 178.8,
+   "max_cm": 958.6
+  },
+  "ideal_arc_miss_5m": {
+   "n": 323,
+   "rms_cm": 31.3,
+   "p95_cm": 53.2,
+   "max_cm": 171.9
+  },
+  "ideal_arc_miss_10m": {
+   "n": 296,
+   "rms_cm": 161.9,
+   "p95_cm": 157.5,
+   "max_cm": 1026.3
+  },
+  "arc_miss_10m_road": {
+   "n": 296,
+   "rms_cm": 151.6,
+   "p95_cm": 178.8,
+   "max_cm": 958.6
+  },
+  "arc_miss_10m_turn": null,
+  "worst_10m": [
+   [
+    958.6,
+    1.07
+   ],
+   [
+    816.8,
+    1.0
+   ],
+   [
+    707.1,
+    1.03
+   ]
+  ],
+  "steering_deg": {
+   "max": 25.89
+  },
+  "speed_mps": {
+   "mean": 5.57
+  },
+  "guidance_pose_speed": {
+   "changes": 0,
+   "switch_t": [],
+   "oncoming": 0,
+   "states": {
+    "none": 15,
+    "keep": 135,
+    "return": 210,
+    "change": 0,
+    "forbidden": 0
+   },
+   "shown": 0.5833,
+   "merge_mean": 16.7
+  },
+  "guidance_vehicle_speed": {
+   "changes": 0,
+   "switch_t": [],
+   "oncoming": 0,
+   "states": {
+    "none": 15,
+    "keep": 135,
+    "return": 210,
+    "change": 0,
+    "forbidden": 0
+   },
+   "shown": 0.5833,
+   "merge_mean": 16.8
+  },
+  "guidance_plan21_frames": {
+   "changes": 0,
+   "switch_t": [],
+   "oncoming": 0,
+   "states": {
+    "none": 15,
+    "keep": 134,
+    "return": 211,
+    "change": 0,
+    "forbidden": 0
+   },
+   "shown": 0.5861,
+   "merge_mean": 16.7
+  }
+ },
+ "yellow": {
+  "frames": 255,
+  "arc_miss_5m": {
+   "n": 218,
+   "rms_cm": 45.7,
+   "p95_cm": 83.7,
+   "max_cm": 106.4
+  },
+  "arc_miss_10m": {
+   "n": 191,
+   "rms_cm": 252.0,
+   "p95_cm": 419.9,
+   "max_cm": 537.0
+  },
+  "ideal_arc_miss_5m": {
+   "n": 218,
+   "rms_cm": 37.1,
+   "p95_cm": 70.6,
+   "max_cm": 87.2
+  },
+  "ideal_arc_miss_10m": {
+   "n": 191,
+   "rms_cm": 237.3,
+   "p95_cm": 397.0,
+   "max_cm": 494.4
+  },
+  "arc_miss_10m_road": {
+   "n": 191,
+   "rms_cm": 252.0,
+   "p95_cm": 419.9,
+   "max_cm": 537.0
+  },
+  "arc_miss_10m_turn": null,
+  "worst_10m": [
+   [
+    537.0,
+    5.13
+   ],
+   [
+    526.9,
+    6.47
+   ],
+   [
+    517.6,
+    6.5
+   ]
+  ],
+  "steering_deg": {
+   "max": 12.58
+  },
+  "speed_mps": {
+   "mean": 5.59
+  },
+  "guidance_pose_speed": {
+   "changes": 0,
+   "switch_t": [],
+   "oncoming": 0,
+   "states": {
+    "none": 15,
+    "keep": 104,
+    "return": 32,
+    "change": 0,
+    "forbidden": 104
+   },
+   "shown": 0.5333,
+   "merge_mean": 17.7
+  },
+  "guidance_vehicle_speed": {
+   "changes": 0,
+   "switch_t": [],
+   "oncoming": 0,
+   "states": {
+    "none": 15,
+    "keep": 104,
+    "return": 32,
+    "change": 0,
+    "forbidden": 104
+   },
+   "shown": 0.5333,
+   "merge_mean": 17.7
+  },
+  "guidance_plan21_frames": {
+   "changes": 0,
+   "switch_t": [],
+   "oncoming": 0,
+   "states": {
+    "none": 15,
+    "keep": 104,
+    "return": 32,
+    "change": 0,
+    "forbidden": 104
+   },
+   "shown": 0.5333,
+   "merge_mean": 17.7
+  }
+ },
+ "dashed": {
+  "frames": 270,
+  "arc_miss_5m": {
+   "n": 233,
+   "rms_cm": 41.1,
+   "p95_cm": 78.3,
+   "max_cm": 104.1
+  },
+  "arc_miss_10m": {
+   "n": 206,
+   "rms_cm": 206.4,
+   "p95_cm": 431.7,
+   "max_cm": 496.2
+  },
+  "ideal_arc_miss_5m": {
+   "n": 233,
+   "rms_cm": 33.9,
+   "p95_cm": 63.2,
+   "max_cm": 86.3
+  },
+  "ideal_arc_miss_10m": {
+   "n": 206,
+   "rms_cm": 200.3,
+   "p95_cm": 418.5,
+   "max_cm": 557.9
+  },
+  "arc_miss_10m_road": {
+   "n": 185,
+   "rms_cm": 209.4,
+   "p95_cm": 443.7,
+   "max_cm": 496.2
+  },
+  "arc_miss_10m_turn": {
+   "n": 21,
+   "rms_cm": 177.9,
+   "p95_cm": 280.5,
+   "max_cm": 304.5
+  },
+  "worst_10m": [
+   [
+    496.2,
+    4.8
+   ],
+   [
+    492.9,
+    3.47
+   ],
+   [
+    492.3,
+    4.83
+   ]
+  ],
+  "steering_deg": {
+   "max": 14.07
+  },
+  "speed_mps": {
+   "mean": 5.59
+  },
+  "guidance_pose_speed": {
+   "changes": 0,
+   "switch_t": [],
+   "oncoming": 0,
+   "states": {
+    "none": 15,
+    "keep": 144,
+    "return": 111,
+    "change": 0,
+    "forbidden": 0
+   },
+   "shown": 0.4111,
+   "merge_mean": 16.9
+  },
+  "guidance_vehicle_speed": {
+   "changes": 0,
+   "switch_t": [],
+   "oncoming": 0,
+   "states": {
+    "none": 15,
+    "keep": 144,
+    "return": 111,
+    "change": 0,
+    "forbidden": 0
+   },
+   "shown": 0.4111,
+   "merge_mean": 17.2
+  },
+  "guidance_plan21_frames": {
+   "changes": 0,
+   "switch_t": [],
+   "oncoming": 0,
+   "states": {
+    "none": 15,
+    "keep": 144,
+    "return": 111,
+    "change": 0,
+    "forbidden": 0
+   },
+   "shown": 0.4111,
+   "merge_mean": 16.9
+  }
+ },
+ "change": {
+  "frames": 420,
+  "arc_miss_5m": {
+   "n": 385,
+   "rms_cm": 9.6,
+   "p95_cm": 17.7,
+   "max_cm": 41.4
+  },
+  "arc_miss_10m": {
+   "n": 360,
+   "rms_cm": 50.8,
+   "p95_cm": 92.7,
+   "max_cm": 174.2
+  },
+  "ideal_arc_miss_5m": {
+   "n": 385,
+   "rms_cm": 7.8,
+   "p95_cm": 15.9,
+   "max_cm": 33.3
+  },
+  "ideal_arc_miss_10m": {
+   "n": 360,
+   "rms_cm": 45.2,
+   "p95_cm": 86.3,
+   "max_cm": 158.0
+  },
+  "arc_miss_10m_road": {
+   "n": 360,
+   "rms_cm": 50.8,
+   "p95_cm": 92.7,
+   "max_cm": 174.2
+  },
+  "arc_miss_10m_turn": null,
+  "worst_10m": [
+   [
+    174.2,
+    5.97
+   ],
+   [
+    173.6,
+    6.0
+   ],
+   [
+    166.9,
+    5.93
+   ]
+  ],
+  "steering_deg": {
+   "max": 7.9
+  },
+  "speed_mps": {
+   "mean": 5.88
+  },
+  "guidance_pose_speed": {
+   "changes": 1,
+   "switch_t": [
+    3.7
+   ],
+   "oncoming": 0,
+   "states": {
+    "none": 15,
+    "keep": 294,
+    "return": 44,
+    "change": 67,
+    "forbidden": 0
+   },
+   "shown": 0.2643,
+   "merge_mean": 17.4
+  },
+  "guidance_vehicle_speed": {
+   "changes": 1,
+   "switch_t": [
+    3.7
+   ],
+   "oncoming": 0,
+   "states": {
+    "none": 15,
+    "keep": 294,
+    "return": 44,
+    "change": 67,
+    "forbidden": 0
+   },
+   "shown": 0.2643,
+   "merge_mean": 17.7
+  },
+  "guidance_plan21_frames": {
+   "changes": 1,
+   "switch_t": [
+    3.867
+   ],
+   "oncoming": 0,
+   "states": {
+    "none": 15,
+    "keep": 294,
+    "return": 49,
+    "change": 62,
+    "forbidden": 0
+   },
+   "shown": 0.2643,
+   "merge_mean": 17.4
+  }
+ },
+ "none": {
+  "frames": 1808,
+  "arc_miss_5m": {
+   "n": 1771,
+   "rms_cm": 8.9,
+   "p95_cm": 23.9,
+   "max_cm": 29.4
+  },
+  "arc_miss_10m": {
+   "n": 1744,
+   "rms_cm": 61.9,
+   "p95_cm": 155.8,
+   "max_cm": 205.0
+  },
+  "ideal_arc_miss_5m": {
+   "n": 1771,
+   "rms_cm": 7.2,
+   "p95_cm": 19.5,
+   "max_cm": 24.4
+  },
+  "ideal_arc_miss_10m": {
+   "n": 1744,
+   "rms_cm": 53.8,
+   "p95_cm": 137.2,
+   "max_cm": 180.0
+  },
+  "arc_miss_10m_road": {
+   "n": 1438,
+   "rms_cm": 38.1,
+   "p95_cm": 102.6,
+   "max_cm": 150.0
+  },
+  "arc_miss_10m_turn": {
+   "n": 306,
+   "rms_cm": 122.4,
+   "p95_cm": 195.2,
+   "max_cm": 205.0
+  },
+  "worst_10m": [
+   [
+    205.0,
+    13.97
+   ],
+   [
+    204.8,
+    14.0
+   ],
+   [
+    203.6,
+    13.93
+   ]
+  ],
+  "steering_deg": {
+   "max": 12.32
+  },
+  "speed_mps": {
+   "mean": 5.6
+  },
+  "guidance_pose_speed": {
+   "changes": 0,
+   "switch_t": [],
+   "oncoming": 0,
+   "states": {
+    "none": 599,
+    "keep": 1193,
+    "return": 16,
+    "change": 0,
+    "forbidden": 0
+   },
+   "shown": 0.0088,
+   "merge_mean": 16.8
+  },
+  "guidance_vehicle_speed": {
+   "changes": 0,
+   "switch_t": [],
+   "oncoming": 0,
+   "states": {
+    "none": 599,
+    "keep": 1193,
+    "return": 16,
+    "change": 0,
+    "forbidden": 0
+   },
+   "shown": 0.0088,
+   "merge_mean": 16.8
+  }
+ }
+}

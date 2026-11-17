@@ -1,7 +1,9 @@
 """ROS wrapper of lane_guidance.py: lane return / lane change guidance for the HUD's lane-only mode.
 
 In:  /road/lane_centres (std_msgs/String JSON, vision_road), /road/reference_odom (nav_msgs/Odometry:
-     the rear-axle pose; any odometry of the car in a world frame will do).
+     the rear-axle pose; any odometry of the car in a world frame will do), and /hero/vehicle_state
+     (hero_hud/VehicleState) when there is one: its speed, if it came within vehicle_state_timeout_sec,
+     replaces the speed taken from the pose change (merge length only).
 Out: /hero/scene_overlay (hero_hud/SceneOverlay): has_ideal + ideal = the path (base_link, from the car,
      car width) while guidance is shown; has_coach with a short text and severity
      (return: INFO, change: CAUTION, forbidden: WARN) so the HUD can tell them apart.
@@ -45,7 +47,13 @@ class LaneGuidanceNode(Node):
         self.create_subscription(Odometry, p('odom_topic', '/road/reference_odom'), self.on_odom,
                                  QoSProfile(depth=200, reliability=ReliabilityPolicy.BEST_EFFORT))
         self.create_subscription(String, p('centres_topic', '/road/lane_centres'), self.on_centres, 10)
+        from hero_hud.msg import VehicleState
+        self.vehicle = None;self.vehicle_timeout = float(p('vehicle_state_timeout_sec', .3))  # (speed, receipt time)
+        self.create_subscription(VehicleState, p('vehicle_state_topic', '/hero/vehicle_state'), self.on_vehicle, 10)
         self.get_logger().info('Lane guidance: '+str(settings))
+
+    def on_vehicle(self, msg):
+        self.vehicle = (float(msg.speed_mps), time.monotonic())
 
     def on_odom(self, msg):
         q = msg.pose.pose.orientation
@@ -72,7 +80,8 @@ class LaneGuidanceNode(Node):
         data = json.loads(msg.data); t = float(data['stamp'])
         if self.core.time is not None and t < self.core.time:self.core.reset()
         lanes = [Lane.from_message(item) for item in data['lanes']]
-        out = self.core.update(t, self.pose_at(t), lanes, path=False)  # the path only while shown
+        speed = self.vehicle[0] if self.vehicle is not None and time.monotonic()-self.vehicle[1] <= self.vehicle_timeout else None
+        out = self.core.update(t, self.pose_at(t), lanes, path=False, speed=speed)  # the path only while shown
         sec = int(t); nanosec = int(round((t-sec)*1e9))
         if nanosec >= 1000000000:sec += 1;nanosec -= 1000000000
         scene = self.SceneOverlay();scene.header.stamp.sec = sec;scene.header.stamp.nanosec = nanosec
@@ -86,7 +95,7 @@ class LaneGuidanceNode(Node):
         compute = (time.perf_counter()-begin)*1e3
         self.info_pub.publish(String(data=json.dumps(dict(
             stamp=t, state=out.state, target=out.target, offset_m=round(out.offset_m, 3), lateral_speed_mps=round(out.lateral_speed_mps, 3),
-            speed_mps=round(out.speed_mps, 2), shown=out.shown, merge_m=round(out.merge_m, 1), changes=out.changes, reason=out.reason,
+            speed_mps=round(out.speed_mps, 2), speed_source='vehicle_state' if speed is not None else 'pose', shown=out.shown, merge_m=round(out.merge_m, 1), changes=out.changes, reason=out.reason,
             compute_ms=round(compute, 3), path=[] if out.path is None else [[round(float(x), 2), round(float(y), 3)] for x, y in out.path]),
             separators=(',', ':'))))
 

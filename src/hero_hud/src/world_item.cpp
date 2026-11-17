@@ -1041,6 +1041,14 @@ void WorldItem::buildFrame(VertexBuffer& out, double now) {
     projector_->setLateralHalf(4.5f);
     if (road_fresh || boundary_fresh) drawRoadPaint(world, *road, now);
     if (road) drawRoadMarkings(world, *road, now);
+    // The current path (where the present steering takes the car), as in the normal mode's corridor,
+    // only while a vehicle state is fresh; without one the lane-only view is as before.  Under the guidance
+    // path: grey "where it goes" against amber/red "where to go".
+    {
+      const VehicleState vs = state_->vehicle();
+      if (vs.stamp > 0.0 && now - vs.stamp >= 0.0 && now - vs.stamp < config_.vehicle_timeout_sec)
+        drawCorridor(world, vs, nullptr, HudMode::Normal, now, false);  // Normal: the plain corridor (Basic would stripe it as degraded); no scene, so no blockage
+    }
     // The lane guidance, over the lanes; only while it is fresh (the node sends it every frame).
     if (scene && now - scene->stamp >= 0.0 && now - scene->stamp < 0.35) drawLaneGuidance(world, *scene, now);
     out.insert(out.end(), world.begin(), world.end());

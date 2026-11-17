@@ -7,7 +7,9 @@ name: the detector renames lanes (ego / left / right) the moment the car crosses
 the target centreline of the last frame is carried into the new base_link with the vehicle's motion and
 the current lane whose centre lies within match_m of it (at ref_m ahead) is the target.  Without a
 match the carried line stands in for up to carry_sec; after that, or after a sharp turn (a junction:
-yaw rate above turn_rate) or an implausible offset, the target is taken afresh: the lane the car is in.
+heading changed more than turn_angle within turn_window_sec) or an implausible offset, the target is
+taken afresh: the lane the car is in.  (A swerve over a line turns the car too, but swings back: its heading
+change stays well under a junction's quarter turn.)
 
   - The target moves to a neighbouring lane only when all of these hold: the line between them is
     white dashed (crossable), the neighbour is lane-like and not oncoming; the car moves towards
@@ -31,7 +33,7 @@ distance x: from the car (on its position, along its heading, straight) to the c
 merge_sec, at least merge_per_m per metre of offset, within merge_min_m..merge_max_m.
 
 States: 'none' (no reliable target: no lane, taken afresh within settle_sec, no measured part of the
-target lane within near_m, turning sharply), 'keep' (near the centre: shown from on_m, hidden again
+target lane within near_m, turning (a junction)), 'keep' (near the centre: shown from on_m, hidden again
 under off_m), 'return' (back to the home lane's centre), 'change' (onto the new lane, until near its
 centre), 'forbidden' (the car's side is on or past a line that must not be crossed: back to the home
 lane)."""
@@ -54,7 +56,8 @@ class GuidanceSettings:
     carry_sec: float = 1.5  # without a match the carried target stands in this long
     settle_sec: float = 0.5  # after taking a lane afresh no guidance for this long
     near_m: float = 15.0  # no guidance while the target lane has no measured part starting within this
-    turn_rate: float = 0.30  # rad/s: turning this sharply (a junction) suspends the guidance
+    turn_angle: float = 0.90  # rad (52 deg): a heading change this large within turn_window_sec (a junction
+    turn_window_sec: float = 3.0  # turn, not a swerve) suspends the guidance
     implausible: float = 1.3  # an offset beyond this many lane widths is a lost lane, not a position
     memory_sec: float = 1.5  # centreline points kept to find the centre beside the car
     near_window_m: float = 3.0
@@ -189,6 +192,7 @@ class LaneGuidance:
         self.target = None  # (points, ref, width, left, right) of the target, last base_link
         self.target_time = None; self.pose = None; self.time = None; self.acquired = None
         self.speed = 0.; self.yaw_rate = 0.; self.lateral_speed = 0.; self.offset = None; self.smooth = None
+        self.headings = []  # (t, unwrapped heading) of the last turn_window_sec
         self.moving = {'left': 0., 'right': 0.}; self.gap = {'left': 0., 'right': 0.}
         self.memory = []; self.shown = False; self.changes = 0; self.state = 'none'
 
@@ -207,9 +211,11 @@ class LaneGuidance:
         h = 1e-3; c0, cp, cm = centre_at(lane.points, [0., h, -h], lane.ref)
         return float(c0), float((cp-cm)/(2*h)), float((cp-2*c0+cm)/(h*h))
 
-    def update(self, t, pose, lanes, path=True):
+    def update(self, t, pose, lanes, path=True, speed=None):
         """t (s), pose (x, y, yaw) in a world frame or None, lanes: Lane list of this frame.  Returns Output.
-        path=False: the path only while the guidance is shown."""
+        path=False: the path only while the guidance is shown.  speed: the car's speed (m/s) from its own
+        state (/hero/vehicle_state) when there is one; else the speed is taken from the pose change.  It sets
+        the merge length only."""
         s = self.s
         dt = 0. if self.time is None else t-self.time
         if self.time is not None and not 0. < dt <= 1.:self.reset();dt = 0.
@@ -220,7 +226,10 @@ class LaneGuidance:
             self.yaw_rate += (motion[2]/dt-self.yaw_rate)*a
         self.pose = pose; self.time = t
         named = {l.name: l for l in lanes}
-        turning = abs(self.yaw_rate) > s.turn_rate
+        if pose is not None:
+            h = pose[2] if not self.headings else self.headings[-1][1]+math.atan2(math.sin(pose[2]-self.headings[-1][1]), math.cos(pose[2]-self.headings[-1][1]))
+            self.headings = [(u, v) for u, v in self.headings if t-u <= s.turn_window_sec]+[(t, h)]
+        turning = bool(self.headings) and max(v for _, v in self.headings)-min(v for _, v in self.headings) > s.turn_angle
         if turning:self._lose()
         # The target, by position: last frame's carried into this one, matched among the current lanes.
         target = None
@@ -298,6 +307,7 @@ class LaneGuidance:
         elif on_line and self.state == 'forbidden':state = 'forbidden'
         else:state = 'return' if abs(e) >= (s.off_m if self.shown else s.on_m) else 'keep'
         self.shown = state not in ('keep', 'none');self.state = state
-        merge = float(np.clip(max(self.speed*s.merge_sec, s.merge_per_m*abs(offset)), s.merge_min_m, s.merge_max_m))
+        v = self.speed if speed is None else abs(float(speed))
+        merge = float(np.clip(max(v*s.merge_sec, s.merge_per_m*abs(offset)), s.merge_min_m, s.merge_max_m))
         line = path_onto(lambda x: centre_at(target.points, x, target.ref), near, merge, s) if path or self.shown else None
-        return Output(state, target.name, offset, self.lateral_speed, self.speed, self.shown, line, merge, self.changes, reason)
+        return Output(state, target.name, offset, self.lateral_speed, v, self.shown, line, merge, self.changes, reason)
