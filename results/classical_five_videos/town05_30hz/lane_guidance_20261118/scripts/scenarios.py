@@ -21,7 +21,7 @@ from pathlib import Path
 import numpy as np
 RUN=Path('/home/jaehun/Desktop/vision-road/results/classical_five_videos/town05_30hz/centrelines_20261118/runs/final_town05.jsonl.gz')
 # Stretches without junctions (s from the recording start): 0-9 s straight with the oncoming lane on the left,
-# 15-30 s a long right-hand curve with a lane on the right (no left lane in view there).
+# 15-30 s a long left-hand curve with a lane on the right (no left lane in view there).
 
 
 def ramp(t,points):
