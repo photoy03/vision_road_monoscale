@@ -210,6 +210,6 @@
 | `scripts/scenario_publisher.py`, `scripts/hud_scenarios.py` | 대본을 ROS 로 흘려 HUD 녹화·캡처 (`hud/`) |
 | `scripts/guidance_listener.py`, `scripts/realtime_runs*.sh`, `scripts/latency.py` | 실시간 실행과 지연 표 |
 | `offline/identical.txt` | 검출 결과가 계획 20 과 같은지 |
-| `hud/` | 대본별 mp4, 캡처, 실행 기록 |
+| `hud/` | 대본별 mp4(이 컴퓨터에만 있고 커밋하지 않음, 사용자 결정), 캡처, 실행 기록 |
 
 백업: `backups/before-lane-guidance-20261118/` (run_lane_hud.sh, realtime_eval.py, maploop.launch.py). 복사본의 원래 상태는 커밋 `3c948f2` 에 있다.
