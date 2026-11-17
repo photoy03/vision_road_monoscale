@@ -1,0 +1,543 @@
+{
+  "walker": "walker.pedestrian.0022",
+  "carla_version": "0.9.16",
+  "test_step_deg": 10.0,
+  "posture_measurement_definition_version": 3,
+  "trunk_measurement_definition": "signed inclination of bilateral-upper-leg-root midpoint to bilateral-shoulder-midpoint vector in Prius XZ sagittal plane from Prius +Z; positive is rearward",
+  "neck_measurement_definition": "signed inclination of neck-to-head vector in Prius XZ sagittal plane from Prius +Z; negative is forward",
+  "literature_pose_axis_map_validated": true,
+  "validation_meaning": "CARLA local Euler axis/sign visually checked against measured sagittal landmark-angle response; not Korean anthropometric validation",
+  "bones": {
+    "lower_spine": {
+      "bone": "crl_spine__C",
+      "child_bone": "crl_spine01__C",
+      "anatomical_angle": "trunk_angle_deg",
+      "baseline_angle_deg": -2.0858749732797066,
+      "tests": {
+        "pitch": {
+          "plus_angle_deg": -1.854999063540065,
+          "minus_angle_deg": -2.2854127360249072,
+          "anatomical_deg_per_carla_deg": 0.021520683624242108,
+          "plus_child_vehicle_local": {
+            "x": 0.13967923820018768,
+            "y": -0.359793096780777,
+            "z": 1.022702693939209
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.1400124728679657,
+            "y": -0.35244306921958923,
+            "z": 1.0228006839752197
+          }
+        },
+        "yaw": {
+          "plus_angle_deg": -1.4398872402402756,
+          "minus_angle_deg": -2.754087016268442,
+          "anatomical_deg_per_carla_deg": 0.06570998880140831,
+          "plus_child_vehicle_local": {
+            "x": 0.13645227253437042,
+            "y": -0.3844080865383148,
+            "z": 1.0196847915649414
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.14251504838466644,
+            "y": -0.3276868164539337,
+            "z": 1.020838975906372
+          }
+        },
+        "roll": {
+          "plus_angle_deg": -8.23111326299737,
+          "minus_angle_deg": 4.056034897273266,
+          "anatomical_deg_per_carla_deg": -0.6143574080135318,
+          "plus_child_vehicle_local": {
+            "x": 0.1683572381734848,
+            "y": -0.35741421580314636,
+            "z": 1.0234737396240234
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.11125076562166214,
+            "y": -0.3547511696815491,
+            "z": 1.0170390605926514
+          }
+        }
+      },
+      "selected_axis": "roll",
+      "anatomical_deg_per_carla_deg": -0.6143574080135318,
+      "human_visual_confirmation": true,
+      "gain_validation_threshold": 0.15,
+      "axis_dominance_ratio": 9.349528423604978,
+      "verified": true
+    },
+    "upper_spine": {
+      "bone": "crl_spine01__C",
+      "child_bone": "crl_neck__C",
+      "anatomical_angle": "trunk_angle_deg",
+      "baseline_angle_deg": -2.0858749732797066,
+      "tests": {
+        "pitch": {
+          "plus_angle_deg": -1.9841620700772142,
+          "minus_angle_deg": -2.122687217524136,
+          "anatomical_deg_per_carla_deg": 0.00692625737234609,
+          "plus_child_vehicle_local": {
+            "x": 0.16415151953697205,
+            "y": -0.3471123278141022,
+            "z": 1.216568946838379
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.1648625284433365,
+            "y": -0.3493306636810303,
+            "z": 1.2165672779083252
+          }
+        },
+        "yaw": {
+          "plus_angle_deg": -1.9535081584949683,
+          "minus_angle_deg": -2.1882027910890653,
+          "anatomical_deg_per_carla_deg": 0.011734731629704852,
+          "plus_child_vehicle_local": {
+            "x": 0.16297829151153564,
+            "y": -0.3821967840194702,
+            "z": 1.2151613235473633
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.1656537801027298,
+            "y": -0.3144339621067047,
+            "z": 1.212047815322876
+          }
+        },
+        "roll": {
+          "plus_angle_deg": -4.9587403809232224,
+          "minus_angle_deg": 0.8271372006553014,
+          "anatomical_deg_per_carla_deg": -0.28929387907892623,
+          "plus_child_vehicle_local": {
+            "x": 0.19785915315151215,
+            "y": -0.3468130826950073,
+            "z": 1.2091987133026123
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.13057471811771393,
+            "y": -0.3497560918331146,
+            "z": 1.218027114868164
+          }
+        }
+      },
+      "selected_axis": "roll",
+      "anatomical_deg_per_carla_deg": -0.28929387907892623,
+      "human_visual_confirmation": true,
+      "gain_validation_threshold": 0.15,
+      "axis_dominance_ratio": 24.652790383941863,
+      "verified": true
+    },
+    "neck": {
+      "bone": "crl_neck__C",
+      "child_bone": "crl_Head__C",
+      "anatomical_angle": "neck_segment_angle_deg",
+      "baseline_angle_deg": -22.731277188510276,
+      "tests": {
+        "pitch": {
+          "plus_angle_deg": -22.60480716920968,
+          "minus_angle_deg": -22.504197403966387,
+          "anatomical_deg_per_carla_deg": -0.0050304882621645675,
+          "plus_child_vehicle_local": {
+            "x": 0.2006826251745224,
+            "y": -0.34660348296165466,
+            "z": 1.3032236099243164
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.20039603114128113,
+            "y": -0.3399154841899872,
+            "z": 1.3029625415802002
+          }
+        },
+        "yaw": {
+          "plus_angle_deg": -23.213235069381117,
+          "minus_angle_deg": -22.598770581526214,
+          "anatomical_deg_per_carla_deg": -0.030723224392745153,
+          "plus_child_vehicle_local": {
+            "x": 0.2013494074344635,
+            "y": -0.3592396378517151,
+            "z": 1.3022491931915283
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.1997823417186737,
+            "y": -0.327388197183609,
+            "z": 1.30108642578125
+          }
+        },
+        "roll": {
+          "plus_angle_deg": -12.724606041869166,
+          "minus_angle_deg": -32.74336548687992,
+          "anatomical_deg_per_carla_deg": 1.0009379722505376,
+          "plus_child_vehicle_local": {
+            "x": 0.18525630235671997,
+            "y": -0.3437262773513794,
+            "z": 1.308039903640747
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.2153031975030899,
+            "y": -0.3429228365421295,
+            "z": 1.2954070568084717
+          }
+        }
+      },
+      "selected_axis": "roll",
+      "anatomical_deg_per_carla_deg": 1.0009379722505376,
+      "human_visual_confirmation": true,
+      "gain_validation_threshold": 0.5,
+      "axis_dominance_ratio": 32.57919674885735,
+      "verified": true
+    },
+    "left_upper_leg": {
+      "bone": "crl_thigh__L",
+      "child_bone": "crl_leg__L",
+      "anatomical_angle": "left_hip_angle_deg",
+      "baseline_angle_deg": 164.48223829058205,
+      "tests": {
+        "pitch": {
+          "plus_angle_deg": 163.48731029595177,
+          "minus_angle_deg": 165.84338691513258,
+          "anatomical_deg_per_carla_deg": -0.11780383095904057,
+          "plus_child_vehicle_local": {
+            "x": 0.2523237466812134,
+            "y": -0.40789106488227844,
+            "z": 0.21061694622039795
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.23374095559120178,
+            "y": -0.4426944851875305,
+            "z": 0.20658886432647705
+          }
+        },
+        "yaw": {
+          "plus_angle_deg": 163.2194495401345,
+          "minus_angle_deg": 165.35398081444714,
+          "anatomical_deg_per_carla_deg": -0.1067265637156325,
+          "plus_child_vehicle_local": {
+            "x": 0.2529846727848053,
+            "y": -0.3485054671764374,
+            "z": 0.21707683801651
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.23634767532348633,
+            "y": -0.5040174722671509,
+            "z": 0.213606059551239
+          }
+        },
+        "roll": {
+          "plus_angle_deg": 173.9160657088109,
+          "minus_angle_deg": 155.07103026480482,
+          "anatomical_deg_per_carla_deg": 0.9422517722003036,
+          "plus_child_vehicle_local": {
+            "x": 0.16909509897232056,
+            "y": -0.39939141273498535,
+            "z": 0.19914567470550537
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.3168492913246155,
+            "y": -0.4533185660839081,
+            "z": 0.23153001070022583
+          }
+        }
+      },
+      "selected_axis": "roll",
+      "anatomical_deg_per_carla_deg": 0.9422517722003036,
+      "human_visual_confirmation": true,
+      "gain_validation_threshold": 0.5,
+      "axis_dominance_ratio": 7.998481581875864,
+      "verified": true
+    },
+    "right_upper_leg": {
+      "bone": "crl_thigh__R",
+      "child_bone": "crl_leg__R",
+      "anatomical_angle": "right_hip_angle_deg",
+      "baseline_angle_deg": 160.7902342554109,
+      "tests": {
+        "pitch": {
+          "plus_angle_deg": 162.63525847199932,
+          "minus_angle_deg": 159.49137820520968,
+          "anatomical_deg_per_carla_deg": 0.15719401333948185,
+          "plus_child_vehicle_local": {
+            "x": 0.29312556982040405,
+            "y": -0.2569895386695862,
+            "z": 0.2239549160003662
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.31663936376571655,
+            "y": -0.31194859743118286,
+            "z": 0.2335774302482605
+          }
+        },
+        "yaw": {
+          "plus_angle_deg": 159.56026299308468,
+          "minus_angle_deg": 161.48192392076461,
+          "anatomical_deg_per_carla_deg": -0.09608304638399687,
+          "plus_child_vehicle_local": {
+            "x": 0.3154784142971039,
+            "y": -0.20805929601192474,
+            "z": 0.23519939184188843
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.2993883788585663,
+            "y": -0.3589264750480652,
+            "z": 0.23504257202148438
+          }
+        },
+        "roll": {
+          "plus_angle_deg": 170.32928571253186,
+          "minus_angle_deg": 151.30893000974476,
+          "anatomical_deg_per_carla_deg": 0.951017785139355,
+          "plus_child_vehicle_local": {
+            "x": 0.23228465020656586,
+            "y": -0.3078174591064453,
+            "z": 0.21198081970214844
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.3777787387371063,
+            "y": -0.25804683566093445,
+            "z": 0.2582261562347412
+          }
+        }
+      },
+      "selected_axis": "roll",
+      "anatomical_deg_per_carla_deg": 0.951017785139355,
+      "human_visual_confirmation": true,
+      "gain_validation_threshold": 0.5,
+      "axis_dominance_ratio": 6.049961858824119,
+      "verified": true
+    },
+    "left_lower_leg": {
+      "bone": "crl_leg__L",
+      "child_bone": "crl_foot__L",
+      "anatomical_angle": "left_knee_angle_deg",
+      "baseline_angle_deg": 134.72850551166346,
+      "tests": {
+        "pitch": {
+          "plus_angle_deg": 133.62217743351337,
+          "minus_angle_deg": 136.70555809077499,
+          "anatomical_deg_per_carla_deg": -0.1541690328630807,
+          "plus_child_vehicle_local": {
+            "x": 0.0018588199745863676,
+            "y": -0.4622948467731476,
+            "z": -0.1508340835571289
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.02359747141599655,
+            "y": -0.3570806682109833,
+            "z": -0.15993595123291016
+          }
+        },
+        "yaw": {
+          "plus_angle_deg": 137.44527705198658,
+          "minus_angle_deg": 131.25063288006646,
+          "anatomical_deg_per_carla_deg": 0.30973220859600586,
+          "plus_child_vehicle_local": {
+            "x": 0.02819962427020073,
+            "y": -0.3592468202114105,
+            "z": -0.16305482387542725
+          },
+          "minus_child_vehicle_local": {
+            "x": -0.013092150911688805,
+            "y": -0.45583122968673706,
+            "z": -0.14087608456611633
+          }
+        },
+        "roll": {
+          "plus_angle_deg": 125.08480928298079,
+          "minus_angle_deg": 144.305818476004,
+          "anatomical_deg_per_carla_deg": -0.9610504596511603,
+          "plus_child_vehicle_local": {
+            "x": -0.04873364418745041,
+            "y": -0.38878971338272095,
+            "z": -0.1107526421546936
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.07209286838769913,
+            "y": -0.43021753430366516,
+            "z": -0.19096380472183228
+          }
+        }
+      },
+      "selected_axis": "roll",
+      "anatomical_deg_per_carla_deg": -0.9610504596511603,
+      "human_visual_confirmation": true,
+      "gain_validation_threshold": 0.5,
+      "axis_dominance_ratio": 3.102843143138177,
+      "verified": true
+    },
+    "right_lower_leg": {
+      "bone": "crl_leg__R",
+      "child_bone": "crl_foot__R",
+      "anatomical_angle": "right_knee_angle_deg",
+      "baseline_angle_deg": 153.98494212438106,
+      "tests": {
+        "pitch": {
+          "plus_angle_deg": 153.69673765261544,
+          "minus_angle_deg": 154.9894592680014,
+          "anatomical_deg_per_carla_deg": -0.06463608076929858,
+          "plus_child_vehicle_local": {
+            "x": 0.24626603722572327,
+            "y": -0.27882254123687744,
+            "z": -0.20231491327285767
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.25655779242515564,
+            "y": -0.3475865125656128,
+            "z": -0.19889116287231445
+          }
+        },
+        "yaw": {
+          "plus_angle_deg": 156.50986809246297,
+          "minus_angle_deg": 150.84307692673508,
+          "anatomical_deg_per_carla_deg": 0.28333955828639434,
+          "plus_child_vehicle_local": {
+            "x": 0.2684289813041687,
+            "y": -0.3778587281703949,
+            "z": -0.1944999396800995
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.22512739896774292,
+            "y": -0.25045862793922424,
+            "z": -0.19753292202949524
+          }
+        },
+        "roll": {
+          "plus_angle_deg": 144.27262412995358,
+          "minus_angle_deg": 163.61164840913614,
+          "anatomical_deg_per_carla_deg": -0.9669512139591276,
+          "plus_child_vehicle_local": {
+            "x": 0.17736876010894775,
+            "y": -0.3322792947292328,
+            "z": -0.18390655517578125
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.3213525414466858,
+            "y": -0.29336875677108765,
+            "z": -0.20630550384521484
+          }
+        }
+      },
+      "selected_axis": "roll",
+      "anatomical_deg_per_carla_deg": -0.9669512139591276,
+      "human_visual_confirmation": true,
+      "gain_validation_threshold": 0.5,
+      "axis_dominance_ratio": 3.4126940121144376,
+      "verified": true
+    },
+    "left_foot": {
+      "bone": "crl_foot__L",
+      "child_bone": "crl_toe__L",
+      "anatomical_angle": "left_ankle_angle_deg",
+      "baseline_angle_deg": 112.25065445876639,
+      "tests": {
+        "pitch": {
+          "plus_angle_deg": 113.63857494730252,
+          "minus_angle_deg": 111.51203785004908,
+          "anatomical_deg_per_carla_deg": 0.10632685486267164,
+          "plus_child_vehicle_local": {
+            "x": 0.06793724745512009,
+            "y": -0.4458253085613251,
+            "z": -0.24690309166908264
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.0748210996389389,
+            "y": -0.409370094537735,
+            "z": -0.24961575865745544
+          }
+        },
+        "yaw": {
+          "plus_angle_deg": 113.19187134746801,
+          "minus_angle_deg": 110.77258960963547,
+          "anatomical_deg_per_carla_deg": 0.12096408689162672,
+          "plus_child_vehicle_local": {
+            "x": 0.07040172815322876,
+            "y": -0.4347790479660034,
+            "z": -0.24905741214752197
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.07561177015304565,
+            "y": -0.4213542938232422,
+            "z": -0.24819505214691162
+          }
+        },
+        "roll": {
+          "plus_angle_deg": 122.29530171158201,
+          "minus_angle_deg": 102.14084513433754,
+          "anatomical_deg_per_carla_deg": 1.0077228288622238,
+          "plus_child_vehicle_local": {
+            "x": 0.05570279434323311,
+            "y": -0.4254722595214844,
+            "z": -0.25933343172073364
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.08774203062057495,
+            "y": -0.42978227138519287,
+            "z": -0.23615878820419312
+          }
+        }
+      },
+      "selected_axis": "roll",
+      "anatomical_deg_per_carla_deg": 1.0077228288622238,
+      "human_visual_confirmation": true,
+      "gain_validation_threshold": 0.5,
+      "axis_dominance_ratio": 8.330760432764277,
+      "verified": true
+    },
+    "right_foot": {
+      "bone": "crl_foot__R",
+      "child_bone": "crl_toe__R",
+      "anatomical_angle": "right_ankle_angle_deg",
+      "baseline_angle_deg": 100.5585941425825,
+      "tests": {
+        "pitch": {
+          "plus_angle_deg": 101.29111759620959,
+          "minus_angle_deg": 100.13184557339208,
+          "anatomical_deg_per_carla_deg": 0.0579636011408752,
+          "plus_child_vehicle_local": {
+            "x": 0.3497980535030365,
+            "y": -0.2730581760406494,
+            "z": -0.23659276962280273
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.35755687952041626,
+            "y": -0.31161022186279297,
+            "z": -0.23682305216789246
+          }
+        },
+        "yaw": {
+          "plus_angle_deg": 101.1507753650064,
+          "minus_angle_deg": 99.71599213843076,
+          "anatomical_deg_per_carla_deg": 0.07173916132878162,
+          "plus_child_vehicle_local": {
+            "x": 0.35438477993011475,
+            "y": -0.28901833295822144,
+            "z": -0.2378883957862854
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.3563219904899597,
+            "y": -0.29475530982017517,
+            "z": -0.23556223511695862
+          }
+        },
+        "roll": {
+          "plus_angle_deg": 110.7028810999036,
+          "minus_angle_deg": 90.37485078685019,
+          "anatomical_deg_per_carla_deg": 1.016401515652671,
+          "plus_child_vehicle_local": {
+            "x": 0.3476739227771759,
+            "y": -0.29342472553253174,
+            "z": -0.2553662657737732
+          },
+          "minus_child_vehicle_local": {
+            "x": 0.35976502299308777,
+            "y": -0.29122480750083923,
+            "z": -0.21753105521202087
+          }
+        }
+      },
+      "selected_axis": "roll",
+      "anatomical_deg_per_carla_deg": 1.016401515652671,
+      "human_visual_confirmation": true,
+      "gain_validation_threshold": 0.5,
+      "axis_dominance_ratio": 14.16801502591434,
+      "verified": true
+    }
+  }
+}

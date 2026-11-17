@@ -1,0 +1,43 @@
+{
+  "vehicle": "Toyota Prius",
+  "vehicle_blueprint": "vehicle.toyota.prius",
+  "carla_version": "0.9.16",
+  "carla_client_version": "0.9.16",
+  "coordinate_frame": "vehicle_local",
+  "axis_convention": "+X forward, +Y right, +Z up",
+  "confirmed": true,
+  "source": "manual_interactive",
+  "saved_at_utc": "2026-09-01T08:26:33.250103+00:00",
+  "steering_wheel_center_definition": "geometric centre of steering-wheel rotation axis; not a rim edge",
+  "steering_wheel_center": {
+    "x": 0.8150000000000006,
+    "y": -0.41500000000000026,
+    "z": 0.9200000000000007
+  },
+  "physical_rig_eye_offset": {
+    "dx_m": -0.375,
+    "dy_m": 0.0,
+    "dz_m": 0.21000000000000008,
+    "distance_m": 0.42979646345683215,
+    "rearward_m": 0.375,
+    "lateral_m": 0.0,
+    "upward_m": 0.21
+  },
+  "calculated_driver_eye": {
+    "x": 0.4400000000000006,
+    "y": -0.41500000000000026,
+    "z": 1.1300000000000008
+  },
+  "camera": {
+    "pitch_deg": 0.0,
+    "yaw_deg": 0.0,
+    "roll_deg": 0.0,
+    "horizontal_fov_deg": 42.05473317729039
+  },
+  "flat_screen_fov_baseline": {
+    "monitor_width_m": 0.6984,
+    "eye_to_monitor_m": 0.9084,
+    "horizontal_fov_deg": 42.05473317729039,
+    "curved_display_note": "1500R curvature is not included"
+  }
+}

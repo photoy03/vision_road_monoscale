@@ -1,0 +1,52 @@
+{
+  "vehicle": "vehicle.toyota.prius",
+  "walker": "walker.pedestrian.0022",
+  "pose_validated": false,
+  "pose_status": "frozen neutral-standing CARLA animation snapshot",
+  "saved_at_utc": "2026-08-27T04:23:07.039389+00:00",
+  "walker_root_vehicle_local": {
+    "x": 0.13999999999999957,
+    "y": -0.35,
+    "z": 0.6400000000000007,
+    "pitch": 0.0,
+    "yaw": 0.0,
+    "roll": 0.0
+  },
+  "pelvis_vehicle_local": {
+    "x": 0.1647394746541977,
+    "y": -0.3551763594150543,
+    "z": 0.753613293170929
+  },
+  "head_vehicle_local": {
+    "x": 0.19092032313346863,
+    "y": -0.3453899621963501,
+    "z": 1.3058059215545654
+  },
+  "left_eye_vehicle_local": {
+    "x": 0.2749637961387634,
+    "y": -0.368168443441391,
+    "z": 1.3897769451141357
+  },
+  "right_eye_vehicle_local": {
+    "x": 0.27288195490837097,
+    "y": -0.3074019253253937,
+    "z": 1.3872933387756348
+  },
+  "eye_mid_vehicle_local": {
+    "x": 0.273926705121994,
+    "y": -0.33778518438339233,
+    "z": 1.3885350227355957
+  },
+  "demonstration_camera_vehicle_local": {
+    "x": 0.69,
+    "y": -0.36,
+    "z": 1.2
+  },
+  "camera_minus_eye": {
+    "x": 0.41607329487800593,
+    "y": -0.022214815616607653,
+    "z": -0.18853502273559575
+  },
+  "camera_eye_distance_m": 0.45733569677145425,
+  "research_warning": "Geometry calibration only. A validated seated posture and anthropometric reference are required before claiming a Korean female representative eye point."
+}

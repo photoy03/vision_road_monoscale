@@ -1,0 +1,396 @@
+{
+  "vehicle_blueprint": "vehicle.toyota.prius",
+  "client_version": "0.9.16",
+  "server_version": "0.9.16",
+  "coordinate_frame": "vehicle_local: +X forward, +Y right, +Z up",
+  "method_note": "Only names containing both 'steer' and 'wheel' are candidates. Road-wheel metadata, vehicle bounds, seats, and walker points are excluded.",
+  "api_availability": {
+    "get_component_names": true,
+    "get_component_world_transform": true,
+    "get_bone_names": true,
+    "get_bone_world_transforms": true,
+    "get_socket_names": true,
+    "get_socket_world_transforms": true
+  },
+  "components": [
+    {
+      "name": "VehicleMesh",
+      "semantic_steering_wheel_match": false,
+      "world_transform": {
+        "location": {
+          "x": -64.64484405517578,
+          "y": 24.471010208129883,
+          "z": 0.5999999642372131
+        },
+        "rotation": {
+          "pitch": 0.0,
+          "yaw": 0.15919795632362366,
+          "roll": 0.0
+        }
+      },
+      "vehicle_local_location": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      }
+    },
+    {
+      "name": "MovementComp",
+      "semantic_steering_wheel_match": false,
+      "transform_error": "RuntimeError: Responding error from function get_actor_component_world_transform: Component could not be found in this actor.  Component Name: MovementComp"
+    },
+    {
+      "name": "VehicleBounds",
+      "semantic_steering_wheel_match": false,
+      "world_transform": {
+        "location": {
+          "x": -64.64285278320312,
+          "y": 24.470632553100586,
+          "z": 1.3241691589355469
+        },
+        "rotation": {
+          "pitch": 0.0,
+          "yaw": 0.15919795632362366,
+          "roll": 0.0
+        }
+      },
+      "vehicle_local_location": {
+        "x": 0.0019902149215340614,
+        "y": -0.00038318638689816,
+        "z": 0.7241691946983337
+      }
+    },
+    {
+      "name": "VelocityControl",
+      "semantic_steering_wheel_match": false,
+      "transform_error": "RuntimeError: Responding error from function get_actor_component_world_transform: Component could not be found in this actor.  Component Name: VelocityControl"
+    },
+    {
+      "name": "TaggedComponent_2147474459",
+      "semantic_steering_wheel_match": false,
+      "world_transform": {
+        "location": {
+          "x": -64.64484405517578,
+          "y": 24.471010208129883,
+          "z": 0.5999999642372131
+        },
+        "rotation": {
+          "pitch": 0.0,
+          "yaw": 0.15919795632362366,
+          "roll": 0.0
+        }
+      },
+      "vehicle_local_location": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      }
+    },
+    {
+      "name": "ArrowHolder",
+      "semantic_steering_wheel_match": false,
+      "world_transform": {
+        "location": {
+          "x": -64.64484405517578,
+          "y": 24.471010208129883,
+          "z": 0.5999999642372131
+        },
+        "rotation": {
+          "pitch": 0.0,
+          "yaw": 0.15919795632362366,
+          "roll": 0.0
+        }
+      },
+      "vehicle_local_location": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      }
+    },
+    {
+      "name": "ArrowOffset",
+      "semantic_steering_wheel_match": false,
+      "world_transform": {
+        "location": {
+          "x": -64.64484405517578,
+          "y": 24.471010208129883,
+          "z": 3.0999999046325684
+        },
+        "rotation": {
+          "pitch": -90.0,
+          "yaw": -90.0,
+          "roll": 90.15919494628906
+        }
+      },
+      "vehicle_local_location": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 2.5
+      }
+    },
+    {
+      "name": "Arrow",
+      "semantic_steering_wheel_match": false,
+      "world_transform": {
+        "location": {
+          "x": -64.64484405517578,
+          "y": 24.471010208129883,
+          "z": 11.770002365112305
+        },
+        "rotation": {
+          "pitch": -90.0,
+          "yaw": -90.0,
+          "roll": 90.15919494628906
+        }
+      },
+      "vehicle_local_location": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 11.170001983642578
+      }
+    },
+    {
+      "name": "CustomCollision",
+      "semantic_steering_wheel_match": false,
+      "world_transform": {
+        "location": {
+          "x": -64.64484405517578,
+          "y": 24.471010208129883,
+          "z": 0.5999999642372131
+        },
+        "rotation": {
+          "pitch": 0.0,
+          "yaw": 0.15919795632362366,
+          "roll": 0.0
+        }
+      },
+      "vehicle_local_location": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      }
+    },
+    {
+      "name": "DefaultMovementComponent_2147474454",
+      "semantic_steering_wheel_match": false,
+      "transform_error": "RuntimeError: Responding error from function get_actor_component_world_transform: Component could not be found in this actor.  Component Name: DefaultMovementComponent_2147474454"
+    }
+  ],
+  "bones": [
+    {
+      "name": "Vehicle_Base",
+      "semantic_steering_wheel_match": false,
+      "world_transform": {
+        "location": {
+          "x": -64.64484405517578,
+          "y": 24.471010208129883,
+          "z": 0.5999999642372131
+        },
+        "rotation": {
+          "pitch": 0.0,
+          "yaw": 0.15919795632362366,
+          "roll": 0.0
+        }
+      },
+      "vehicle_local_location": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      }
+    },
+    {
+      "name": "Wheel_Front_Left",
+      "semantic_steering_wheel_match": false,
+      "world_transform": {
+        "location": {
+          "x": -63.22264099121094,
+          "y": 23.660306930541992,
+          "z": 0.8537268042564392
+        },
+        "rotation": {
+          "pitch": 0.0,
+          "yaw": 0.15919795632362366,
+          "roll": 0.0
+        }
+      },
+      "vehicle_local_location": {
+        "x": 1.4199450016021729,
+        "y": -0.8146517276763916,
+        "z": 0.2537268400192261
+      }
+    },
+    {
+      "name": "Wheel_Front_Right",
+      "semantic_steering_wheel_match": false,
+      "world_transform": {
+        "location": {
+          "x": -63.22716522216797,
+          "y": 25.2888126373291,
+          "z": 0.8537268042564392
+        },
+        "rotation": {
+          "pitch": 0.0,
+          "yaw": 0.15919795632362366,
+          "roll": 0.0
+        }
+      },
+      "vehicle_local_location": {
+        "x": 1.4199455976486206,
+        "y": 0.8138602375984192,
+        "z": 0.2537268400192261
+      }
+    },
+    {
+      "name": "Wheel_Rear_Right",
+      "semantic_steering_wheel_match": false,
+      "world_transform": {
+        "location": {
+          "x": -66.04620361328125,
+          "y": 25.231510162353516,
+          "z": 0.8537312746047974
+        },
+        "rotation": {
+          "pitch": 0.0,
+          "yaw": 0.15919795632362366,
+          "roll": 0.0
+        }
+      },
+      "vehicle_local_location": {
+        "x": -1.3992409706115723,
+        "y": 0.764390766620636,
+        "z": 0.25373131036758423
+      }
+    },
+    {
+      "name": "Wheel_Rear_Left",
+      "semantic_steering_wheel_match": false,
+      "world_transform": {
+        "location": {
+          "x": -66.04195404052734,
+          "y": 23.701940536499023,
+          "z": 0.8537312746047974
+        },
+        "rotation": {
+          "pitch": 0.0,
+          "yaw": 0.15919795632362366,
+          "roll": 0.0
+        }
+      },
+      "vehicle_local_location": {
+        "x": -1.3992414474487305,
+        "y": -0.765184760093689,
+        "z": 0.25373131036758423
+      }
+    }
+  ],
+  "sockets": [
+    {
+      "name": "Vehicle_Base",
+      "semantic_steering_wheel_match": false,
+      "world_transform": {
+        "location": {
+          "x": -64.64484405517578,
+          "y": 24.471010208129883,
+          "z": 0.5999999642372131
+        },
+        "rotation": {
+          "pitch": 0.0,
+          "yaw": 0.15919795632362366,
+          "roll": 0.0
+        }
+      },
+      "vehicle_local_location": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      }
+    },
+    {
+      "name": "Wheel_Front_Left",
+      "semantic_steering_wheel_match": false,
+      "world_transform": {
+        "location": {
+          "x": -63.22264099121094,
+          "y": 23.660306930541992,
+          "z": 0.8537268042564392
+        },
+        "rotation": {
+          "pitch": 0.0,
+          "yaw": 0.15919795632362366,
+          "roll": 0.0
+        }
+      },
+      "vehicle_local_location": {
+        "x": 1.4199450016021729,
+        "y": -0.8146517276763916,
+        "z": 0.2537268400192261
+      }
+    },
+    {
+      "name": "Wheel_Front_Right",
+      "semantic_steering_wheel_match": false,
+      "world_transform": {
+        "location": {
+          "x": -63.22716522216797,
+          "y": 25.2888126373291,
+          "z": 0.8537268042564392
+        },
+        "rotation": {
+          "pitch": 0.0,
+          "yaw": 0.15919795632362366,
+          "roll": 0.0
+        }
+      },
+      "vehicle_local_location": {
+        "x": 1.4199455976486206,
+        "y": 0.8138602375984192,
+        "z": 0.2537268400192261
+      }
+    },
+    {
+      "name": "Wheel_Rear_Right",
+      "semantic_steering_wheel_match": false,
+      "world_transform": {
+        "location": {
+          "x": -66.04620361328125,
+          "y": 25.231510162353516,
+          "z": 0.8537312746047974
+        },
+        "rotation": {
+          "pitch": 0.0,
+          "yaw": 0.15919795632362366,
+          "roll": 0.0
+        }
+      },
+      "vehicle_local_location": {
+        "x": -1.3992409706115723,
+        "y": 0.764390766620636,
+        "z": 0.25373131036758423
+      }
+    },
+    {
+      "name": "Wheel_Rear_Left",
+      "semantic_steering_wheel_match": false,
+      "world_transform": {
+        "location": {
+          "x": -66.04195404052734,
+          "y": 23.701940536499023,
+          "z": 0.8537312746047974
+        },
+        "rotation": {
+          "pitch": 0.0,
+          "yaw": 0.15919795632362366,
+          "roll": 0.0
+        }
+      },
+      "vehicle_local_location": {
+        "x": -1.3992414474487305,
+        "y": -0.765184760093689,
+        "z": 0.25373131036758423
+      }
+    }
+  ],
+  "errors": [],
+  "steering_wheel_candidates": [],
+  "automatic_result": "not uniquely extractable"
+}
