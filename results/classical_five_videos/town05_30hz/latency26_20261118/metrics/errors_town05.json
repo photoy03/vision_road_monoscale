@@ -1,0 +1,155 @@
+{
+ "results": {
+  "own (boundaries)": {
+   "frames": 1808,
+   "compared": 1808,
+   "median_m": 2.6645352591003757e-15,
+   "p95_m": 7.993605777301127e-15,
+   "max_m": 5.5067062021407764e-14,
+   "over_5cm_share": 0.0,
+   "no_overlap_frames": 0,
+   "side_or_presence_change_frames": 0,
+   "style_change_frames": 0,
+   "identical_frames": 169
+  },
+  "own (paint lanes)": {
+   "frames": 1808,
+   "compared": 1808,
+   "median_m": 2.220446049250313e-15,
+   "p95_m": 5.329070518200751e-15,
+   "max_m": 3.197442310920451e-14,
+   "over_5cm_share": 0.0,
+   "no_overlap_frames": 0,
+   "side_or_presence_change_frames": 0,
+   "style_change_frames": 0,
+   "identical_frames": 190
+  },
+  "outer": {
+   "frames": 1808,
+   "compared": 1808,
+   "median_m": 1.7763568394002505e-15,
+   "p95_m": 6.361577931102117e-15,
+   "max_m": 1.3777970226946934e-05,
+   "over_5cm_share": 0.0,
+   "no_overlap_frames": 0,
+   "side_or_presence_change_frames": 0,
+   "style_change_frames": 0,
+   "identical_frames": 238
+  },
+  "centre": {
+   "frames": 1808,
+   "compared": 1808,
+   "median_m": 2.6645352591003757e-15,
+   "p95_m": 1.0658141036401503e-14,
+   "max_m": 0.00018876526169631092,
+   "over_5cm_share": 0.0,
+   "no_overlap_frames": 0,
+   "side_or_presence_change_frames": 0,
+   "style_change_frames": 0,
+   "identical_frames": 169
+  }
+ },
+ "examples": {
+  "own (boundaries)": {
+   "largest": [
+    [
+     1519,
+     5.5067062021407764e-14
+    ],
+    [
+     1520,
+     2.886579864025407e-14
+    ],
+    [
+     813,
+     2.3092638912203256e-14
+    ],
+    [
+     514,
+     2.042810365310288e-14
+    ],
+    [
+     824,
+     2.042810365310288e-14
+    ]
+   ],
+   "changed": []
+  },
+  "own (paint lanes)": {
+   "largest": [
+    [
+     514,
+     3.197442310920451e-14
+    ],
+    [
+     1691,
+     2.4868995751603507e-14
+    ],
+    [
+     395,
+     2.3092638912203256e-14
+    ],
+    [
+     1151,
+     1.9539925233402755e-14
+    ],
+    [
+     1519,
+     1.9539925233402755e-14
+    ]
+   ],
+   "changed": []
+  },
+  "outer": {
+   "largest": [
+    [
+     145,
+     1.3777970226946934e-05
+    ],
+    [
+     146,
+     6.801911355935886e-06
+    ],
+    [
+     147,
+     3.357449807062096e-06
+    ],
+    [
+     148,
+     1.6545395569167454e-06
+    ],
+    [
+     149,
+     8.184172157754688e-07
+    ]
+   ],
+   "changed": []
+  },
+  "centre": {
+   "largest": [
+    [
+     250,
+     0.00018876526169631092
+    ],
+    [
+     145,
+     6.842411040874907e-06
+    ],
+    [
+     146,
+     3.3777446595273375e-06
+    ],
+    [
+     147,
+     1.6670837887922119e-06
+    ],
+    [
+     148,
+     8.214272324558181e-07
+    ]
+   ],
+   "changed": []
+  }
+ },
+ "identical_whole_frames": 169
+}

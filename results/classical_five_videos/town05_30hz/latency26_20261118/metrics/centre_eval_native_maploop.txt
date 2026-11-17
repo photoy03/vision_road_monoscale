@@ -1,0 +1,8 @@
+maploop native: ego in both-boundary frames 0.9903 (1345), estimated in one-boundary frames 0.9941 (170)
+  ego width 3.2-3.8 m: 0.9955 median 3.516 p1/p99 3.397/3.573, out 6
+  ego   y5 {'n': 1310, 'rms': 2.893, 'p95': 5.041, 'max': 33.92} | y0 {'n': 1310, 'rms': 21.824, 'p95': 39.474, 'max': 294.82} | head {'n': 959, 'rms': 8.48, 'p95': 15.42, 'max': 97.8} | curv {'n': 959, 'rms': 1.623, 'p95': 2.21, 'max': 27.0} | est y5 {'n': 175, 'rms': 4.573, 'p95': 9.307, 'max': 29.37}
+  right y5 {'n': 850, 'rms': 5.155, 'p95': 9.681, 'max': 49.44} | y0 {'n': 850, 'rms': 40.464, 'p95': 74.681, 'max': 367.95} | head {'n': 544, 'rms': 11.399, 'p95': 25.897, 'max': 82.03} | curv {'n': 544, 'rms': 2.464, 'p95': 4.8, 'max': 22.6} | est y5 {'n': 1, 'rms': 10.652, 'p95': 10.652, 'max': 10.65}
+  left  y5 {'n': 1144, 'rms': 1.789, 'p95': 3.612, 'max': 15.57} | y0 {'n': 1144, 'rms': 11.444, 'p95': 23.55, 'max': 109.19} | head {'n': 842, 'rms': 4.68, 'p95': 9.347, 'max': 47.71} | curv {'n': 842, 'rms': 0.955, 'p95': 1.1, 'max': 16.6} | est y5 {'n': 7, 'rms': 0.698, 'p95': 1.33, 'max': 1.37}
+  boundaries y5 {'left': {'n': 1459, 'rms': 1.47, 'p95': 2.56, 'max': 15.28}, 'right': {'n': 1294, 'rms': 3.763, 'p95': 5.969, 'max': 45.84}}
+  neighbours {'left': {'frames': 1171, 'width_median': 3.528, 'opposite_direction': 1.0, 'crossable': 0.0, 'edge_unknown': 0.229, 'lane_like': 0.975, 'estimated': 0.005}, 'right': {'frames': 867, 'width_median': 3.526, 'opposite_direction': 0.0, 'crossable': 0.919, 'edge_unknown': 0.928, 'lane_like': 0.994, 'estimated': 0.001}}
+  neighbour without ego []

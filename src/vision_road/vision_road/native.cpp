@@ -179,4 +179,153 @@ py::array_t<double> reproject(Points points,Points matrix,double mpp,double forw
   O(i,0)=forward-qy*mpp;O(i,1)=-(lateral+qx*mpp);}
  return out;
 }
-PYBIND11_MODULE(_native,m){m.def("extract_fragments",&extract,py::arg("mask"),py::arg("yellow"),py::arg("mpp"),py::arg("forward"),py::arg("lateral"),py::arg("reach")=4.2);m.def("visible",&visible);m.def("match_fragments",&match);m.def("color_planes",&color_planes);m.def("ridges",&ridges);m.def("edge_like",&edge_like);m.def("track_match",&track_match);m.def("corridor_error",&corridor_error);m.def("reproject",&reproject);}
+
+// ---- Plan 26: CarlaDetector.coherent_paths' best_path DP (same order of additions and comparisons).
+// ok, weight: n x n links k -> j (k < j); root: j may start a chain for this side; excluded: j is left out.
+py::tuple chain_dp(py::array_t<bool,py::array::c_style|py::array::forcecast> ok,Points weight,Points base,
+                   py::array_t<bool,py::array::c_style|py::array::forcecast> root,py::array_t<bool,py::array::c_style|py::array::forcecast> excluded,Points length){
+ int n=base.shape(0);auto O=ok.data();auto W=weight.data();auto B=base.data();auto R=root.data();auto X=excluded.data();auto L=length.data();
+ py::array_t<double> scores(n),paint(n);py::array_t<long> parent(n),origin(n);
+ auto S=scores.mutable_data();auto P=paint.mutable_data();auto Pa=parent.mutable_data();auto Or=origin.mutable_data();
+ const double NEG=-INFINITY;
+ for(int j=0;j<n;++j){S[j]=NEG;Pa[j]=-1;Or[j]=j;P[j]=L[j];}
+ for(int j=0;j<n;++j){
+  if(X[j])continue;
+  double best=R[j]?B[j]:NEG;int choice=-1;
+  for(int k=0;k<j;++k){if(!O[k*n+j])continue;if(S[k]==NEG)continue;double value=S[k]+W[k*n+j];if(value>best){best=value;choice=k;}}
+  S[j]=best;
+  if(choice>=0){Pa[j]=choice;Or[j]=Or[choice];P[j]=P[choice]+L[j];}
+ }
+ return py::make_tuple(scores,parent,origin,paint);
+}
+
+// ---- Plan 26: CarlaDetector.pair_vote's pair test (same order; median and np.interp as above).
+// Returns (i, j, d, hi-lo) for every accepted pair, in the Python loop's order.
+py::list pair_tests(py::list points,std::vector<double> first,std::vector<double> last,std::vector<double> slope,std::vector<double> intercept,
+                    std::vector<bool> wide,double gap){
+ int n=points.size();std::vector<Points> P;for(auto p:points)P.push_back(py::cast<Points>(p));py::list out;
+ for(int i=0;i<n;++i){if(wide[i])continue;const double*a=P[i].data();int na=P[i].shape(0);
+  for(int j=i+1;j<n;++j){if(wide[j])continue;
+   double lo=std::max(first[i],first[j]),hi=std::min(last[i],last[j]);if(hi-lo<1.)continue;
+   double middle=(lo+hi)/2;if(std::abs(std::abs((slope[i]-slope[j])*middle+intercept[i]-intercept[j])-gap)>.15)continue;
+   const double*b=P[j].data();int nb=P[j].shape(0);std::vector<double> v;
+   for(int k=0;k<na;++k){double x=a[2*k];if(x>=lo&&x<=hi)v.push_back(a[2*k+1]-np_interp(b,b+1,nb,x,2));}
+   double d=np_median(v);
+   if(std::abs(std::abs(d)-gap)>.08)continue;  // NaN passes, as in Python
+   out.append(py::make_tuple(i,j,d,hi-lo));
+  }}
+ return out;
+}
+
+// ---- Plan 26: the paint / visible profile sampled along a line on the BEV (marking_style.classify_lane and
+// TemporalDetector._accumulate_style), with np.arange's values (start + i*((start+step)-start), length
+// ceil((stop-start)/step)), np.interp and np.rint (nearbyint, ties to even).
+static std::vector<double> np_arange(double start,double stop,double step){
+ // numpy PyArray_Arange: element 1 is start+step, the rest start+i*delta with delta=(start+step)-start
+ std::vector<double> v;double span=stop-start,t=span/step;long n;
+ if(t==0.&&span!=0.)n=std::signbit(t)?0:1;else{double len=std::ceil(t);if(!(len>0))return v;n=long(len);}
+ if(n<=0)return v;v.resize(n);v[0]=start;if(n==1)return v;v[1]=start+step;double delta=v[1]-start;for(long i=2;i<n;++i)v[i]=start+double(i)*delta;return v;
+}
+static void sample_masks(const std::vector<double>&fx,const std::vector<double>&fy,Bytes binary,Bytes valid,double mpp,double forward,double lateral,
+                         py::array_t<bool>&paint,py::array_t<bool>&seen){
+ auto bb=binary.request();int h=bb.shape[0],w=bb.shape[1];auto Bp=static_cast<unsigned char*>(bb.ptr);auto Vp=valid.data();
+ int n=fx.size(),width=std::max(1,int(std::nearbyint(.12/mpp)));paint=py::array_t<bool>(n);seen=py::array_t<bool>(n);auto P=paint.mutable_data();auto S=seen.mutable_data();
+ for(int i=0;i<n;++i){long col=long(std::nearbyint((-fy[i]-lateral)/mpp)),row=long(std::nearbyint((forward-fx[i])/mpp));
+  bool inside=row>=0&&row<h&&col>=width&&col<w-width;long rr=std::min(std::max(row,0L),long(h-1));bool all=true,any=false;
+  for(int d=-width;d<=width;++d){long cc=std::min(std::max(col+d,0L),long(w-1));all=all&&Vp[rr*w+cc]>0;any=any||Bp[rr*w+cc]>0;}
+  S[i]=inside&&all;P[i]=inside&&any;}
+}
+// classify_lane: (paint, visible) along the lane's arc every 0.1 m, or None when the arc is shorter than one step.
+py::object lane_profile(Points points,Bytes binary,Bytes valid,double mpp,double forward,double lateral){
+ auto p=points.unchecked<2>();int n=p.shape(0);std::vector<double> arc(n,0.);
+ for(int i=1;i<n;++i){double dx=p(i,0)-p(i-1,0),dy=p(i,1)-p(i-1,1);arc[i]=arc[i-1]+std::sqrt(dx*dx+dy*dy);}
+ auto sample=np_arange(0.,arc[n-1],.10);if(sample.empty())return py::none();
+ std::vector<double> xs(n),ys(n);for(int i=0;i<n;++i){xs[i]=p(i,0);ys[i]=p(i,1);}
+ std::vector<double> fx(sample.size()),fy(sample.size());
+ for(size_t i=0;i<sample.size();++i){fx[i]=np_interp(arc.data(),xs.data(),n,sample[i],1);fy[i]=np_interp(arc.data(),ys.data(),n,sample[i],1);}
+ py::array_t<bool> paint,seen;sample_masks(fx,fy,binary,valid,mpp,forward,lateral,paint,seen);return py::make_tuple(paint,seen);
+}
+// _accumulate_style: x = arange(start, stop, 0.1) along forward, y = interp on the sorted line; (x, seen, paint).
+py::tuple forward_profile(Points sorted,double start,double stop,Bytes binary,Bytes valid,double mpp,double forward,double lateral){
+ auto x=np_arange(start,stop,.1);const double*q=sorted.data();int n=sorted.shape(0);std::vector<double> y(x.size());
+ for(size_t i=0;i<x.size();++i)y[i]=np_interp(q,q+1,n,x[i],2);
+ py::array_t<bool> paint,seen;sample_masks(x,y,binary,valid,mpp,forward,lateral,paint,seen);
+ py::array_t<double> xa(x.size());std::copy(x.begin(),x.end(),xa.mutable_data());return py::make_tuple(xa,seen,paint);
+}
+
+// ---- Plan 26: the iteratively reweighted least squares of CarlaDetector.spine and pair_vote.  Householder QR
+// instead of LAPACK's SVD (np.linalg.lstsq): the same solution up to rounding (not bit for bit).  Returns false
+// when the system is (nearly) rank deficient, where lstsq's minimum-norm answer differs: Python then does it.
+static bool least_squares(std::vector<double> A,std::vector<double> b,int m,int n,std::vector<double>&x){
+ // A: m x n row-major
+ std::vector<double> diag(n);double amax=0;for(double v:A)amax=std::max(amax,std::abs(v));
+ for(int k=0;k<n;++k){
+  double norm=0;for(int i=k;i<m;++i)norm+=A[i*n+k]*A[i*n+k];norm=std::sqrt(norm);
+  if(norm<=1e-13*std::max(amax,1e-300)*std::max(m,n))return false;
+  double alpha=A[k*n+k]>0?-norm:norm;double v0=A[k*n+k]-alpha;A[k*n+k]=v0;
+  double vnorm2=v0*v0;for(int i=k+1;i<m;++i)vnorm2+=A[i*n+k]*A[i*n+k];
+  if(vnorm2>0){
+   for(int j=k+1;j<n;++j){double dot=0;for(int i=k;i<m;++i)dot+=A[i*n+k]*A[i*n+j];double f=2*dot/vnorm2;for(int i=k;i<m;++i)A[i*n+j]-=f*A[i*n+k];}
+   double dot=0;for(int i=k;i<m;++i)dot+=A[i*n+k]*b[i];double f=2*dot/vnorm2;for(int i=k;i<m;++i)b[i]-=f*A[i*n+k];
+  }
+  diag[k]=alpha;
+ }
+ x.assign(n,0.);for(int k=n-1;k>=0;--k){double sum=b[k];for(int j=k+1;j<n;++j)sum-=A[k*n+j]*x[j];x[k]=sum/diag[k];}
+ return true;
+}
+// spine's robust(): t = x/10, A = vander(t, degree+1); 5 reweightings.  (coef, residual, weights) or None.
+py::object spine_fit(Points t,Points center,Points weights0,Points near,int degree,double ridge){
+ int m=t.shape(0),n=degree+1;const double*T=t.data();const double*C=center.data();const double*N=near.data();
+ std::vector<double> w(weights0.data(),weights0.data()+m),coef,res(m);std::vector<double> V(m*n);
+ for(int i=0;i<m;++i){double p=1;for(int k=n-1;k>=0;--k){V[i*n+k]=p;p*=T[i];}}
+ int rows=m+(ridge>0);
+ for(int it=0;it<5;++it){
+  std::vector<double> A(rows*n,0.),b(rows,0.);
+  for(int i=0;i<m;++i){double wi=w[i]*N[i];for(int k=0;k<n;++k)A[i*n+k]=V[i*n+k]*wi;b[i]=C[i]*wi;}
+  if(ridge>0)A[m*n]=std::sqrt(ridge);
+  if(!least_squares(A,b,rows,n,coef))return py::none();
+  for(int i=0;i<m;++i){double f=0;for(int k=0;k<n;++k)f+=V[i*n+k]*coef[k];res[i]=std::abs(C[i]-f);w[i]=std::min(1.,.20/std::max(res[i],.001));}
+ }
+ py::array_t<double> c(n),r(m),ww(m);std::copy(coef.begin(),coef.end(),c.mutable_data());std::copy(res.begin(),res.end(),r.mutable_data());std::copy(w.begin(),w.end(),ww.mutable_data());
+ return py::make_tuple(c,r,ww);
+}
+// pair_vote's line through the labelled centres: 3 reweighted polyfits of degree 0 or 1 (np.polyfit's column scaling).
+py::object pair_fit(Points xs,Points cs,int degree){
+ int m=xs.shape(0),n=degree+1;const double*X=xs.data();const double*C=cs.data();std::vector<double> w(m,1.),fit(n);
+ for(int it=0;it<3;++it){
+  std::vector<double> A(m*n),b(m),scale(n,0.);
+  for(int i=0;i<m;++i){double p=1;for(int k=n-1;k>=0;--k){A[i*n+k]=p*w[i];p*=X[i];}b[i]=C[i]*w[i];}
+  for(int k=0;k<n;++k){for(int i=0;i<m;++i)scale[k]+=A[i*n+k]*A[i*n+k];scale[k]=std::sqrt(scale[k]);if(scale[k]==0)return py::none();for(int i=0;i<m;++i)A[i*n+k]/=scale[k];}
+  std::vector<double> c;if(!least_squares(A,b,m,n,c))return py::none();
+  for(int k=0;k<n;++k)fit[k]=c[k]/scale[k];
+  for(int i=0;i<m;++i){double f=0;for(int k=0;k<n;++k)f=f*X[i]+fit[k];w[i]=std::min(1.,.05/std::max(std::abs(C[i]-f),.001));}
+ }
+ py::array_t<double> out(n);std::copy(fit.begin(),fit.end(),out.mutable_data());return out;
+}
+
+// ---- Plan 26 (bit for bit): CarlaDetector.width_error and recall_pairs.
+static std::vector<double> np_linspace(double lo,double hi,int num){
+ std::vector<double> v(num);int div=num-1;double delta=hi-lo,step=delta/div;
+ for(int i=0;i<num;++i)v[i]=(step==0?(double(i)/div)*delta:double(i)*step)+lo;v[num-1]=hi;return v;
+}
+py::object width_gap(Points points,Points ref,bool right,double lane_width){
+ int n=points.shape(0),m=ref.shape(0);const double*p=points.data();const double*r=ref.data();
+ double lo=std::max(p[0],r[0]),hi=std::min(std::min(p[2*(n-1)],r[2*(m-1)]),lo+4.);
+ if(hi<lo)return py::none();
+ auto x=np_linspace(lo,hi,5);std::vector<double> d(5);
+ for(int i=0;i<5;++i){double own=np_interp(p,p+1,n,x[i],2),them=np_interp(r,r+1,m,x[i],2);d[i]=right?them-own:own-them;}
+ return py::float_(std::abs(np_median(d)-lane_width));
+}
+// recall_pairs' remembered centres per 0.2 m cell and the labels they give: [(i, label)] in node order.
+py::list recall_labels(Points world,double px,double py_,double co,double si,int cells_n,py::list points,std::vector<bool> skip,double half){
+ int m=world.shape(0);const double*W=world.data();std::vector<long> count(cells_n,0);std::vector<double> total(cells_n,0.);
+ for(int i=0;i<m;++i){double dx=W[2*i]-px,dy=W[2*i+1]-py_,ahead=dx*co+dy*si,lat=(-dx)*si+dy*co;double f=std::floor(ahead/.2);
+  if(!(f>=0&&f<cells_n))continue;long c=long(f);count[c]++;total[c]+=lat;}
+ py::list out;int k=0;
+ for(auto item:points){int i=k++;if(skip[i])continue;auto P=py::cast<Points>(item);const double*q=P.data();int n=P.shape(0);std::vector<double> d;
+  for(int j=0;j<n;++j){double f=std::floor(q[2*j]/.2);long c=f<0?0:(f>cells_n-1?cells_n-1:long(f));if(count[c]>0)d.push_back(total[c]/double(count[c])-q[2*j+1]);}
+  if(d.size()<3)continue;double v=np_median(d);
+  if(std::abs(std::abs(v)-half)<=half*.6)out.append(py::make_tuple(i,v>0?-1.:1.));}
+ return out;
+}
+PYBIND11_MODULE(_native,m){m.def("extract_fragments",&extract,py::arg("mask"),py::arg("yellow"),py::arg("mpp"),py::arg("forward"),py::arg("lateral"),py::arg("reach")=4.2);m.def("visible",&visible);m.def("match_fragments",&match);m.def("color_planes",&color_planes);m.def("ridges",&ridges);m.def("edge_like",&edge_like);m.def("track_match",&track_match);m.def("corridor_error",&corridor_error);m.def("reproject",&reproject);m.def("chain_dp",&chain_dp);m.def("pair_tests",&pair_tests);m.def("lane_profile",&lane_profile);m.def("forward_profile",&forward_profile);m.def("spine_fit",&spine_fit);m.def("pair_fit",&pair_fit);m.def("width_gap",&width_gap);m.def("recall_labels",&recall_labels);}

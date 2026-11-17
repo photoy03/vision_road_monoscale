@@ -68,6 +68,12 @@ vision_road:
     carla_parallel_ops: true
     # Plan 25: per-pixel binary steps, the curb test and per-lane loops in C++ (_native); outputs unchanged.
     carla_native_fast: true
+    # Plan 26: chain DP, pair vote pair test, solid/dashed sampling in C++ (_native).
+    carla_native_chain: true
+    # Plan 26: the paint mask on its own thread while the tracks are moved (same results).
+    carla_parallel_binary: true
+    # Plan 26: spine and pair-vote least squares by QR in C++ (equal to LAPACK up to rounding, not bit for bit).
+    carla_native_fit: true
     # Neighbouring lanes (Town05): after the two own lines are chosen (unchanged), each side's next line out,
     # from the paint they left: 2.3-4.7 m (and within 0.9 m of the own lane width) outside the own line along
     # its normal, parallel to it (distance varies <= 0.3 m).  /road/lane_outer, /road/lane_outer_markers.

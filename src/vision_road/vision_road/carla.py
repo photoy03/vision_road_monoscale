@@ -405,18 +405,23 @@ class CarlaDetector(Detector):
             if len(y) and len(y)/len(forward[i])*mpp/math.sqrt(1+slope*slope)>=half+.13:label[i]=0.
         # Plain floats: the pair test below runs for every pair of fragments.
         first=[float(f[0]) for f in forward];last=[float(f[-1]) for f in forward];wide=[l==0. for l in label]
-        for i in range(len(nodes)):
-            if wide[i]:continue
-            for j in range(i+1,len(nodes)):
-                if wide[j]:continue
-                lo=max(first[i],first[j]);hi=min(last[i],last[j])
-                if hi-lo<1.:continue
-                middle=(lo+hi)/2
-                if abs(abs((lines[i][0]-lines[j][0])*middle+lines[i][1]-lines[j][1])-gap)>.15:continue
-                common=(forward[i]>=lo)&(forward[i]<=hi)
-                d=float(median(nodes[i]['lane'].points[common,1]-interp(forward[i][common],forward[j],nodes[j]['lane'].points[:,1])))
-                if abs(abs(d)-gap)>.08:continue
-                votes[i].append(1. if d>0 else -1.);votes[j].append(-1. if d>0 else 1.);gaps.append(abs(d));overlap+=hi-lo
+        if c.carla_native_chain and _native is not None:
+            # The same pair test in _native, accepted pairs in the same order (carla_native_chain).
+            for i,j,d,span in _native.pair_tests([a['lane'].points for a in nodes],first,last,[l[0] for l in lines],[l[1] for l in lines],wide,gap):
+                votes[i].append(1. if d>0 else -1.);votes[j].append(-1. if d>0 else 1.);gaps.append(abs(d));overlap+=span
+        else:
+          for i in range(len(nodes)):
+              if wide[i]:continue
+              for j in range(i+1,len(nodes)):
+                  if wide[j]:continue
+                  lo=max(first[i],first[j]);hi=min(last[i],last[j])
+                  if hi-lo<1.:continue
+                  middle=(lo+hi)/2
+                  if abs(abs((lines[i][0]-lines[j][0])*middle+lines[i][1]-lines[j][1])-gap)>.15:continue
+                  common=(forward[i]>=lo)&(forward[i]<=hi)
+                  d=float(median(nodes[i]['lane'].points[common,1]-interp(forward[i][common],forward[j],nodes[j]['lane'].points[:,1])))
+                  if abs(abs(d)-gap)>.08:continue
+                  votes[i].append(1. if d>0 else -1.);votes[j].append(-1. if d>0 else 1.);gaps.append(abs(d));overlap+=hi-lo
         # One short side by side pair or one wide blob is no double line (a curb, a chevron
         # edge): 2 m of pairs and two-strand-wide paint at least.
         if overlap+sum(float(forward[i][-1]-forward[i][0]) for i,l in enumerate(label) if l==0.)<2.:
@@ -434,10 +439,12 @@ class CarlaDetector(Detector):
             known=[i for i,l in enumerate(label) if l is not None]
             xs=np.concatenate([forward[i] for i in known]);cs=np.concatenate([residual[i]-label[i]*half for i in known])
             degree=1 if np.ptp(xs)>=4. else 0
-            weights=np.ones(len(xs))
-            for _ in range(3):
-                fit=polyfit(xs,cs,degree,w=weights)
-                weights=np.minimum(1.,.05/np.maximum(np.abs(cs-np.polyval(fit,xs)),.001))
+            fit=_native.pair_fit(xs,cs,degree) if c.carla_native_fit and _native is not None else None
+            if fit is None:
+                weights=np.ones(len(xs))
+                for _ in range(3):
+                    fit=polyfit(xs,cs,degree,w=weights)
+                    weights=np.minimum(1.,.05/np.maximum(np.abs(cs-np.polyval(fit,xs)),.001))
             changed=False
             for i in range(len(nodes)):
                 if label[i] is not None and (votes[i] or label[i]==0. or i in fixed):continue
@@ -463,7 +470,14 @@ class CarlaDetector(Detector):
         odometer,px,py,yaw=pose;co,si=math.cos(yaw),math.sin(yaw)
         memory=[m for m in self.strand_memory.get(side,[]) if odometer-m[0]<=self.c.carla_strand_memory_m]
         if memory:
-            world=np.vstack([m[1] for m in memory]);dx=world[:,0]-px;dy=world[:,1]-py
+            world=np.vstack([m[1] for m in memory])
+            if self.c.carla_native_chain and _native is not None:
+                # The same cells and labels in _native (bit for bit).
+                for i,value in _native.recall_labels(world,px,py,co,si,round(self.c.forward_max/.2)+1,[a['lane'].points for a in nodes],
+                                                     [bool(votes[i]) or label[i]==0. for i in range(len(nodes))],half):
+                    label[i]=value;fixed.add(i)
+                return fixed
+            dx=world[:,0]-px;dy=world[:,1]-py
             ahead=dx*co+dy*si;lateral=-dx*si+dy*co
             # Mean remembered centre per 0.2 m of distance ahead.
             cell=np.floor(ahead/.2).astype(int);keep=(cell>=0)&(cell<round(self.c.forward_max/.2)+1)
@@ -502,7 +516,12 @@ class CarlaDetector(Detector):
         near=np.ones(len(x)) if c.carla_spine_near_m<=0 else np.minimum(1.,(c.carla_spine_near_m/np.maximum(forward,1.))**2)
         def robust(degree,weights,ridge=0.):
             # Least squares in x/10 m (rows scaled by the weight, as np.polyfit's w); ridge pulls the cubic term only.
-            t=x/10.;A=np.vander(t,degree+1)
+            t=x/10.
+            if c.carla_native_fit and _native is not None:
+                # QR in _native instead of LAPACK's SVD: the same fit up to rounding (carla_native_fit).
+                done=_native.spine_fit(t,np.asarray(center,float),np.asarray(weights,float),np.asarray(near,float),degree,float(ridge))
+                if done is not None:return done
+            A=np.vander(t,degree+1)
             for _ in range(5):
                 w=weights*near
                 lhs=A*w[:,None];rhs=center*w
@@ -633,6 +652,7 @@ class CarlaDetector(Detector):
         over its first 4 m that both cover (signed: a candidate across the other side is far off)."""
         other=self.tracking_priors.get('right' if side=='left' else 'left') if self.c.carla_tracking_enabled else None
         if other is None:return None
+        if self.c.carla_native_chain and _native is not None:return _native.width_gap(points,other[0],side=='right',float(self.lane_width))
         ref=other[0];lo=max(points[0,0],ref[0,0]);hi=min(points[-1,0],ref[-1,0],lo+4.)
         if hi<lo:return None
         x=np.linspace(lo,hi,5);own=interp(x,points[:,0],points[:,1]);them=interp(x,ref[:,0],ref[:,1])
@@ -726,8 +746,11 @@ class CarlaDetector(Detector):
         bend=c.carla_link_curvature_max
         ok=np.triu(np.ones((n,n),bool),1)&(gap>=-.15)&(gap<=8.)&(yellow[:,None]==yellow[None,:])&(angle<=math.radians(22)+bend*positive)&(error<=.20+.025*positive+.5*bend*positive**2)
         weight=length[None,:]+.4-3.*error-1.5*angle-.06*positive
-        links=[[] for _ in range(n)]
-        for k,j in zip(*np.nonzero(ok)):links[j].append((int(k),float(weight[k,j])))
+        native=c.carla_native_chain and _native is not None
+        if not native:
+            links=[[] for _ in range(n)]
+            for k,j in zip(*np.nonzero(ok)):links[j].append((int(k),float(weight[k,j])))
+        else:sides=np.array([a['lane'].side for a in candidates])
         base=length+.4+3.*np.maximum(0.,15.-first)
         # The root fixes the side. A far fragment of a curved line may
         # extrapolate to the other side, so off-corridor ones join by chain
@@ -735,16 +758,22 @@ class CarlaDetector(Detector):
         # root nearly parallel to the heading.
         rootable=(anchor>=.65)&(anchor<=4.2)&((first<=15.)|(np.abs(slope)<=.08))
         def best_path(side,excluded):
-            scores=[-math.inf]*n;parent=[-1]*n;origin=list(range(n));paint=list(length)
-            for j in range(n):
-                if j in excluded:continue
-                best=float(base[j]) if rootable[j] and candidates[j]['lane'].side==side else -math.inf;choice=-1
-                for k,w in links[j]:
-                    if scores[k]==-math.inf:continue
-                    value=scores[k]+w
-                    if value>best:best=value;choice=k
-                scores[j]=best
-                if choice>=0:parent[j]=choice;origin[j]=origin[choice];paint[j]=paint[choice]+length[j]
+            if native:
+                # The same DP in _native: the same additions in the same order (carla_native_chain).
+                skip=np.zeros(n,bool);skip[list(excluded)]=True
+                scores,parent,origin,paint=_native.chain_dp(ok,weight,base,rootable&(sides==side),skip,length)
+                parent=parent.tolist()
+            else:
+                scores=[-math.inf]*n;parent=[-1]*n;origin=list(range(n));paint=list(length)
+                for j in range(n):
+                    if j in excluded:continue
+                    best=float(base[j]) if rootable[j] and candidates[j]['lane'].side==side else -math.inf;choice=-1
+                    for k,w in links[j]:
+                        if scores[k]==-math.inf:continue
+                        value=scores[k]+w
+                        if value>best:best=value;choice=k
+                    scores[j]=best
+                    if choice>=0:parent[j]=choice;origin[j]=origin[choice];paint[j]=paint[choice]+length[j]
             # A lone short fragment keeps only part of its near-start bonus,
             # so it cannot outrank a long supported chain just behind it.
             adjusted=np.array(scores)-3.*np.maximum(0.,15.-first[origin])*(1-np.minimum(1.,np.array(paint)/3.))

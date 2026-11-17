@@ -65,6 +65,9 @@ class Settings:
     carla_tail_gap_m: float = 0.0  # >0: after a paint gap this long that holds a transverse bar (stop line), a chain is cut where it continues off its own near shape
     carla_tail_offset_m: float = 0.5  # ... by more than this (a line ending at a junction picks up the crossing road's edge)
     carla_tail_bar_m: float = 1.0  # transverse paint at least this wide counts as a bar
+    carla_native_fit: bool = False  # plan 26: spine and pair-vote least squares in _native (QR; equal up to rounding, not bit for bit)
+    carla_parallel_binary: bool = False  # plan 26: the paint mask on its own thread beside the track moves (same results)
+    carla_native_chain: bool = False  # plan 26: chain DP, pair vote, style sampling in _native (see REPORT of latency26)
     carla_native_fast: bool = False  # plan 25: the per-pixel binary steps, the edge test and the per-lane loops in _native (same results)
     carla_parallel_ops: bool = False  # True: independent OpenCV steps (median filter, history warps) on two threads; same results
     carla_turn_curvature: float = 0.0  # >0: while the vehicle turns this sharply (1/m, over its last metre), a candidate starting within 15 m is not taken

@@ -50,12 +50,18 @@ class TemporalDetector:
             cells=self.style_cells.setdefault(side,{})
             bound=next((b for b in self.boundary_lanes if b.side==side and not b.reprojected),None)
             if bound is None:continue
-            p=bound.points[np.argsort(bound.points[:,0])];x=np.arange(max(c.forward_min,p[0,0]),min(20.,p[-1,0]),cell)
-            if len(x)<2:continue
-            y=interp(x,p[:,0],p[:,1]);cols=np.rint((-y-c.lateral_min)/c.mpp).astype(int);rows=np.rint((c.forward_max-x)/c.mpp).astype(int)
-            inside=(rows>=0)&(rows<height)&(cols>=w)&(cols<width-w)
-            rr=np.clip(rows,0,height-1);cc=np.clip(cols[:,None]+np.arange(-w,w+1),0,width-1)
-            seen=inside&np.all(valid[rr[:,None],cc]>0,axis=1);paint=inside&np.any(binary[rr[:,None],cc]>0,axis=1)
+            p=bound.points[np.argsort(bound.points[:,0])]
+            if c.carla_native_chain and _native is not None:
+                # The same samples in _native (np.arange / np.interp / np.rint arithmetic).
+                x,seen,paint=_native.forward_profile(np.ascontiguousarray(p),max(c.forward_min,float(p[0,0])),min(20.,float(p[-1,0])),binary,valid,c.mpp,c.forward_max,c.lateral_min)
+                if len(x)<2:continue
+            else:
+                x=np.arange(max(c.forward_min,p[0,0]),min(20.,p[-1,0]),cell)
+                if len(x)<2:continue
+                y=interp(x,p[:,0],p[:,1]);cols=np.rint((-y-c.lateral_min)/c.mpp).astype(int);rows=np.rint((c.forward_max-x)/c.mpp).astype(int)
+                inside=(rows>=0)&(rows<height)&(cols>=w)&(cols<width-w)
+                rr=np.clip(rows,0,height-1);cc=np.clip(cols[:,None]+np.arange(-w,w+1),0,width-1)
+                seen=inside&np.all(valid[rr[:,None],cc]>0,axis=1);paint=inside&np.any(binary[rr[:,None],cc]>0,axis=1)
             if not paint.any():continue
             for k,pnt in zip(np.rint((s0+x[seen])/cell).astype(int).tolist(),paint[seen].tolist()):cells[k]=cells.get(k,False) or pnt
             first=int((s0-20.)/cell)
@@ -359,6 +365,14 @@ class TemporalDetector:
         if self.pending is not None:self.finish()
         if self.last_time is not None and t<=self.last_time: self.reset()
         c=self.c
+        # carla_parallel_binary: the paint mask (OpenCV and NumPy steps that release the interpreter lock) is made on
+        # its own thread while this thread moves the tracks; it reads only bev and valid, so nothing else changes.
+        binary_job=None
+        if c.carla_parallel_binary and paint_mask is None and hasattr(self.detector,'binary'):
+            if getattr(self,'_binary_pool',None) is None:
+                from concurrent.futures import ThreadPoolExecutor
+                self._binary_pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='lane-binary')
+            binary_job=self._binary_pool.submit(self.detector.binary,bev,valid)
         if c.temporal_enabled:
             matrix,travel=self._registration(bev,valid,pose,t)
         else:
@@ -389,7 +403,7 @@ class TemporalDetector:
             self.odometer+=math.hypot(pose[0]-self.odom_pose[1],pose[1]-self.odom_pose[2])
         self.odom_pose=(t,)+tuple(pose) if pose is not None else None
         self.detector.pose=(self.odometer,)+tuple(pose) if pose is not None else None  # odometer, x, y, yaw
-        binary=self.detector.binary(bev,valid) if paint_mask is None else paint_mask
+        binary=binary_job.result() if binary_job is not None else self.detector.binary(bev,valid) if paint_mask is None else paint_mask
         observed=self.detector.detect(binary if observation_mask is None else observation_mask,priors=priors)
         # Leave a full BEV pixel margin for subpixel projected endpoints.
         final_valid=cv2.erode(valid,np.ones((3,3),np.uint8))

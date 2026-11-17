@@ -64,6 +64,16 @@ def classify_profile(paint, visible, spacing=.10, min_span=8., min_dash=.60, min
 
 
 def classify_lane(lane,binary,valid,cfg):
+    if getattr(cfg,'carla_native_chain',False):
+        try:
+            from . import _native
+        except ImportError:
+            _native=None
+        if _native is not None:
+            # The same samples in _native (np.arange / np.interp / np.rint arithmetic): the same profile.
+            profile=_native.lane_profile(lane.points,binary,valid,cfg.mpp,cfg.forward_max,cfg.lateral_min)
+            if profile is None:return StyleEvidence()
+            return classify_profile(profile[0],profile[1],.10,cfg.style_min_span_m,cfg.style_min_dash_m,cfg.style_min_gap_m)
     arc=np.r_[0.,np.cumsum(np.linalg.norm(np.diff(lane.points,axis=0),axis=1))]
     spacing=.10; sample=np.arange(0.,arc[-1],spacing)
     if not len(sample): return StyleEvidence()
