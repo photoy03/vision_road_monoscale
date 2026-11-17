@@ -1,0 +1,16 @@
+{
+ "bounds": {
+  "frames": 1808,
+  "identical": 0.2887,
+  "side_set_differs": 0.0077,
+  "moved_over_5cm": 0.0006,
+  "moved_over_20cm": 0.0
+ },
+ "outer": {
+  "frames": 1808,
+  "identical": 0.3645,
+  "side_set_differs": 0.0011,
+  "moved_over_5cm": 0.0011,
+  "moved_over_20cm": 0.0
+ }
+}

@@ -1,0 +1,192 @@
+{
+ "window_s": 50.1,
+ "hardware_threads": 16,
+ "groups": {
+  "other": 18.6,
+  "eval": 16.98,
+  "road_node": 23.45,
+  "road_node.compute": 77.04,
+  "hud": 4.61,
+  "replay": 54.05
+ },
+ "pipeline_threads": 1.59,
+ "system_busy_pct": 194.5,
+ "system_threads_used": 1.95,
+ "processes": [
+  {
+   "pid": 74903,
+   "ppid": 74836,
+   "cpu": 77.04,
+   "cmd": "/usr/bin/python3 -B -c from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=26, pipe_handle=28) --multiprocessing-fork",
+   "role": "road_node.compute"
+  },
+  {
+   "pid": 74978,
+   "ppid": 74794,
+   "cpu": 54.05,
+   "cmd": "/usr/bin/python3 /home/jaehun/Desktop/vision-road/tools/replay_maploop.py --bag /media/jaehun/38F7-677B/rosbag/town05_30hz --cache /media/jaehun/38F7-677B/visio",
+   "role": "replay"
+  },
+  {
+   "pid": 74836,
+   "ppid": 74820,
+   "cpu": 23.45,
+   "cmd": "/usr/bin/python3 /home/jaehun/Desktop/vision-road/install/vision_road/lib/vision_road/road_node --ros-args -r __node:=vision_road --params-file /home/jaehun/Des",
+   "role": "road_node"
+  },
+  {
+   "pid": 74794,
+   "ppid": 74406,
+   "cpu": 16.98,
+   "cmd": "python3 tools/realtime_eval.py --video town05 --output results/classical_five_videos/town05_30hz/learned_speed_20261118/runs/off2 --launch-arg display_filter_in",
+   "role": "eval"
+  },
+  {
+   "pid": 1760,
+   "ppid": 1185,
+   "cpu": 5.59,
+   "cmd": "/usr/bin/gnome-shell",
+   "role": "other"
+  },
+  {
+   "pid": 74838,
+   "ppid": 74820,
+   "cpu": 5.07,
+   "cmd": "/usr/bin/python3 /home/jaehun/Desktop/vision-road/install/vision_road/lib/vision_road/reference_pose --ros-args --params-file /tmp/launch_params_nficcknj",
+   "role": "other"
+  },
+  {
+   "pid": 74934,
+   "ppid": 74794,
+   "cpu": 4.61,
+   "cmd": "/home/jaehun/Desktop/hero-hud-main/install/hero_hud/lib/hero_hud/hud_node --ros-args --params-file /home/jaehun/Desktop/hero-hud-main/config/hud.yaml -p display",
+   "role": "hud"
+  },
+  {
+   "pid": 1324,
+   "ppid": 1322,
+   "cpu": 3.02,
+   "cmd": "/usr/lib/xorg/Xorg vt2 -displayfd 3 -auth /run/user/1000/gdm/Xauthority -nolisten tcp -background none -noreset -keeptty -novtswitch -verbose 3",
+   "role": "other"
+  },
+  {
+   "pid": 4764,
+   "ppid": 4763,
+   "cpu": 0.58,
+   "cmd": "/home/jaehun/.config/Claude/claude-code/2.1.325/00b1b977bcc3/claude --output-format stream-json --verbose --input-format stream-json --effort=medium --model=cla",
+   "role": "other"
+  },
+  {
+   "pid": 68586,
+   "ppid": 2,
+   "cpu": 0.58,
+   "cmd": "",
+   "role": "other"
+  },
+  {
+   "pid": 3479,
+   "ppid": 1760,
+   "cpu": 0.44,
+   "cmd": "/usr/lib/claude-desktop/claude-desktop",
+   "role": "other"
+  },
+  {
+   "pid": 3656,
+   "ppid": 3486,
+   "cpu": 0.44,
+   "cmd": "/usr/lib/claude-desktop/claude-desktop --type=renderer --crashpad-handler-pid=3506 --enable-crash-reporter=56ce8a79-fdd0-42b7-bab1-7514cac6e15e,no_channel --use",
+   "role": "other"
+  },
+  {
+   "pid": 71700,
+   "ppid": 71699,
+   "cpu": 0.44,
+   "cmd": "/home/jaehun/.config/Claude/claude-code/2.1.325/00b1b977bcc3/claude --output-format stream-json --verbose --input-format stream-json --effort=medium --model=cla",
+   "role": "other"
+  },
+  {
+   "pid": 4076,
+   "ppid": 4075,
+   "cpu": 0.36,
+   "cmd": "/home/jaehun/.config/Claude/claude-code/2.1.325/00b1b977bcc3/claude --output-format stream-json --verbose --input-format stream-json --effort=low --model=claude",
+   "role": "other"
+  },
+  {
+   "pid": 3522,
+   "ppid": 3483,
+   "cpu": 0.34,
+   "cmd": "/usr/lib/claude-desktop/claude-desktop --type=gpu-process --gpu-recent-crash-count=0 --ozone-platform=x11 --crashpad-handler-pid=3506 --enable-crash-reporter=56",
+   "role": "other"
+  },
+  {
+   "pid": 3933,
+   "ppid": 3932,
+   "cpu": 0.28,
+   "cmd": "/home/jaehun/.config/Claude/claude-code/2.1.325/00b1b977bcc3/claude --output-format stream-json --verbose --input-format stream-json --effort=medium --model=cla",
+   "role": "other"
+  },
+  {
+   "pid": 74685,
+   "ppid": 2,
+   "cpu": 0.28,
+   "cmd": "",
+   "role": "other"
+  },
+  {
+   "pid": 74420,
+   "ppid": 74419,
+   "cpu": 0.26,
+   "cmd": "ugrep -G --ignore-files --hidden -I --exclude-dir=.git --exclude-dir=.svn --exclude-dir=.hg --exclude-dir=.bzr --exclude-dir=.jj --exclude-dir=.sl --line-buffer",
+   "role": "other"
+  },
+  {
+   "pid": 65347,
+   "ppid": 2,
+   "cpu": 0.22,
+   "cmd": "",
+   "role": "other"
+  },
+  {
+   "pid": 17,
+   "ppid": 2,
+   "cpu": 0.2,
+   "cmd": "",
+   "role": "other"
+  },
+  {
+   "pid": 1417,
+   "ppid": 1,
+   "cpu": 0.18,
+   "cmd": "/usr/NX/bin/nxserver.bin --daemon",
+   "role": "other"
+  },
+  {
+   "pid": 1420,
+   "ppid": 1,
+   "cpu": 0.1,
+   "cmd": "/usr/sbin/zerotier-one",
+   "role": "other"
+  },
+  {
+   "pid": 743,
+   "ppid": 1,
+   "cpu": 0.08,
+   "cmd": "/lib/systemd/systemd-oomd",
+   "role": "other"
+  },
+  {
+   "pid": 873,
+   "ppid": 1,
+   "cpu": 0.08,
+   "cmd": "/usr/sbin/tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock --port=41641",
+   "role": "other"
+  },
+  {
+   "pid": 69465,
+   "ppid": 2,
+   "cpu": 0.06,
+   "cmd": "",
+   "role": "other"
+  }
+ ]
+}

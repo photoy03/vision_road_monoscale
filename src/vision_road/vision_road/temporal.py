@@ -7,6 +7,7 @@ from numpy.core.multiarray import interp  # np.interp without its Python wrapper
 from .core import Detector, Lane, to_world, median
 from .carla import clone
 from .marking_style import classify_lane
+from . import centreline
 try:
     from . import _native
 except ImportError:
@@ -80,7 +81,8 @@ class TemporalDetector:
         self.paint_history=[];self.style_binary=None
         self.next_fragment_id=0
         self.boundaries={};self.boundary_lanes=[];self.confirmed_tracking={}
-        self.outer_state={};self.outer_lanes=[];self.outer_style={};self.outer_frames=0
+        self.outer_state={};self.outer_lanes=[];self.outer_style={};self.outer_frames=0;self.pending=None
+        self.centre_lanes=[];self.lane_widths={};self.own_yellow={};self.last_lanes=[]
         self.detector.previous.clear(); self.detector.hits.clear()
         if hasattr(self.detector,'forget'):self.detector.forget()
 
@@ -220,7 +222,71 @@ class TemporalDetector:
                 self.boundary_lanes.append(Lane(side,points,.6,hits=hits,reprojected=True,source_time=observed_time))
         self.boundaries=current
 
-    def _outer(self,valid,matrix,t):
+    def finish(self):
+        """The outputs beside the own lines for the last processed frame: outer lines.  process() runs this
+        itself unless asked to defer it (the perception worker first sends the own lines to the display
+        filter); the results are the same either way."""
+        if self.pending is None:return
+        valid,matrix,t,last_time=self.pending;self.pending=None
+        if self.c.carla_outer_enabled:
+            if hasattr(self.detector,'finish_outer'):self.detector.finish_outer()
+            self._outer(valid,matrix,t,last_time)
+        if self.c.carla_centre_enabled:self._centres()
+
+    def _centres(self):
+        """Lane centrelines: own lane between left and right, the left lane between left_outer and left,
+        the right lane between right and right_outer (the fields: RoadNode.publish_centres).  The own lane
+        with one boundary is that boundary moved half its running width across, marked estimated; a
+        neighbouring lane needs both (its outer line is only given beside a shown own line, so it has
+        them whenever it has its outer line)."""
+        c=self.c;bounds={l.side:l for l in self.boundary_lanes};bounds.update({l.side:l for l in self.outer_lanes})
+        for side,yellow in getattr(self.detector,'own_yellow',{}).items():self.own_yellow[side]=yellow
+        styles={}
+        for lane in self.last_lanes:
+            if lane.side not in styles or lane.style_confidence>styles[lane.side].style_confidence:styles[lane.side]=lane
+        def describe(side):
+            lane=bounds.get(side)
+            if lane is None:return None
+            info=getattr(lane,'outer',None)
+            if info is not None:style=lane.style;yellow=bool(info.get('yellow'))
+            else:style=styles[side].style if side in styles else 'unknown';yellow=bool(self.own_yellow.get(side,False))
+            return dict(line=side,style=style,yellow=yellow,reprojected=bool(lane.reprojected))
+        lanes=[]
+        for name,index,lo,hi in (('ego',0,'left','right'),('left',-1,'left_outer','left'),('right',1,'right','right_outer')):
+            a,b=bounds.get(lo),bounds.get(hi)
+            if a is None and b is None:continue
+            if name!='ego' and (a is None or b is None):continue
+            width=self.lane_widths.get(name,getattr(self.detector,'lane_width',3.4))
+            both=[];estimated=False
+            if a is not None and b is not None:
+                points,span,widths=centreline.joined(a.points,b.points,width)
+                if span is None:estimated=True;width_now=width  # the two do not face each other: from the longer one
+                else:
+                    measured=float(np.median(widths));both=[round(span[0],2),round(span[1],2)]
+                    if 2.5<=measured<=4.5:self.lane_widths[name]=width=(1-c.carla_centre_width_alpha)*width+c.carla_centre_width_alpha*measured if name in self.lane_widths else measured
+                    width_now=measured
+            else:
+                estimated=True;one,side=(a,'left') if a is not None else (b,'right')
+                points=centreline.shifted(one.points,width,side);width_now=width
+            ref=centreline.at_reference(points,c.carla_centre_ref_m,c.carla_centre_curvature_m)
+            if ref is None:continue
+            left,right=describe(lo),describe(hi)
+            lane=dict(name=name,index=index,points=points,both_m=both,width_m=round(width_now,3),tracked_width_m=round(float(width),3),
+                      estimated=estimated,left_boundary=left,right_boundary=right,**{k:(round(v,4) if isinstance(v,float) else v) for k,v in ref.items()})
+            lane['opposite_direction']=name=='left' and (bool(self.own_yellow.get('left')) or bool((getattr(bounds['left_outer'],'outer',{}) or {}).get('opposite')))
+            if name!='ego':
+                shared=right if name=='left' else left;edge=left if name=='left' else right
+                # Over a white dashed line one may change lanes; a solid or yellow one says no.
+                lane['crossable']=bool(shared is not None and shared['style']=='dashed' and not shared['yellow'])
+                # A white solid outer edge may be a road edge with a shoulder beyond it, not a lane: say so,
+                # with the width against the own lane as the evidence for a lane.
+                ratio=width_now/max(self.lane_widths.get('ego',width_now),1e-6)
+                lane['edge_unknown']=bool(edge is not None and edge['style']=='solid' and not edge['yellow'])
+                lane['width_ratio']=round(ratio,3);lane['lane_like']=bool(.85<=ratio<=1.15 and width_now>=2.8)
+            lanes.append(lane)
+        self.centre_lanes=lanes
+
+    def _outer(self,valid,matrix,t,last_time):
         """Neighbouring lane outer lines, confirmed and blended frame to frame as _boundaries does
         the own lines (same EMA, confirmation count and short carry-over), shown only beside a
         confirmed own line of that side.  Style per side from this frame's paint along the line's
@@ -232,7 +298,7 @@ class TemporalDetector:
             points=self._visible(candidate.points,valid)
             if points is None:continue
             old=previous.get(candidate.side);hits=1
-            if old is not None and self.last_time is not None and 0<t-self.last_time<=max(.4,c.temporal_max_age_sec):
+            if old is not None and last_time is not None and 0<t-last_time<=max(.4,c.temporal_max_age_sec):
                 prior,old_hits,_,_=old
                 if matrix is not None:
                     prior=self.metric(self.pixel(prior)@matrix[:,:2].T+matrix[:,2]);prior=prior[np.argsort(prior[:,0])]
@@ -282,7 +348,9 @@ class TemporalDetector:
             lane.style=state['kind'];lane.style_confidence=state['confidence']
         self.outer_lanes=lanes
 
-    def process(self,bev,valid,t,pose=None,observation_mask=None,paint_mask=None):
+    def process(self,bev,valid,t,pose=None,observation_mask=None,paint_mask=None,defer=False):
+        """defer: leave the outputs beside the own lines (finish()) to the caller."""
+        if self.pending is not None:self.finish()
         if self.last_time is not None and t<=self.last_time: self.reset()
         c=self.c
         if c.temporal_enabled:
@@ -332,7 +400,7 @@ class TemporalDetector:
         chain_filter=(getattr(self.detector,'fragment_tracks',False) and c.carla_chain_filter_enabled)
         if chain_filter:
             self._boundaries(final_valid,matrix,t)
-            if c.carla_outer_enabled:self._outer(final_valid,matrix,t)
+            if c.carla_outer_enabled or c.carla_centre_enabled:self.pending=(final_valid,matrix,t,self.last_time)
             if c.carla_tracking_enabled:
                 for lane in self.boundary_lanes:
                     if not lane.reprojected:self.confirmed_tracking[lane.side]=(lane.points.copy(),float(t))
@@ -450,4 +518,6 @@ class TemporalDetector:
         same=paint_mask is None and getattr(self.detector,'gray_u8',None) is not None
         self.gray=self.detector.gray_u8 if same else cv2.cvtColor(bev,cv2.COLOR_BGR2GRAY); self.valid=valid.copy()
         self.measured_count=sum(not l.reprojected for l in result); self.predicted_count=sum(l.reprojected for l in result)
+        self.last_lanes=result
+        if not defer:self.finish()
         return result,binary

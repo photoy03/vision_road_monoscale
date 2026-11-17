@@ -1,0 +1,2 @@
+town05 offline predictions identical to commit
+maploop offline predictions identical to commit

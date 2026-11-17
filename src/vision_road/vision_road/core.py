@@ -105,6 +105,10 @@ class Settings:
     carla_outer_min_paint_m: float = 2.0  # paint along the line, at least
     carla_outer_extend_m: float = 6.0  # past its paint the line follows the own line's shape this far
     carla_outer_keep_m: float = 0.3  # a candidate within this of last frame's distance is preferred
+    carla_centre_enabled: bool = False  # lane centrelines: own lane (left-right) and, with carla_outer_enabled, the neighbouring lanes
+    carla_centre_ref_m: float = 5.0  # lateral offset, heading and curvature are given at this distance ahead (inside the view)
+    carla_centre_curvature_m: float = 15.0  # ... from a quadratic through this much centreline past it
+    carla_centre_width_alpha: float = 0.2  # running lane width (for a lane with one boundary): weight of a measured width
 
 
 class Projector:

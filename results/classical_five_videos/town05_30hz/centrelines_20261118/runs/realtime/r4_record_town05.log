@@ -1,0 +1,68 @@
+[WARN] [1794933696.328949334] [rcl]: Found remap rule 'display_filter_inline:=true'. This syntax is deprecated. Use '--ros-args --remap display_filter_inline:=true' instead.
+{"video": "town05", "frames": 1808, "processed_ratio": 1.0, "display_received": 1808, "latency_drift_ms_last_vs_first_tenth": -0.95, "display_gaps_over_100ms": 0}
+{
+ "publish_to_display": {
+  "n": 1808,
+  "mean": 25.23,
+  "median": 26.39,
+  "p95": 32.02,
+  "p99": 37.59,
+  "max": 51.86
+ },
+ "publish_to_receive": {
+  "n": 1808,
+  "mean": 6.16,
+  "median": 5.85,
+  "p95": 7.28,
+  "p99": 14.2,
+  "max": 30.24
+ },
+ "receive_to_start": {
+  "n": 1808,
+  "mean": 0.01,
+  "median": 0.01,
+  "p95": 0.02,
+  "p99": 0.02,
+  "max": 4.17
+ },
+ "start_to_finish": {
+  "n": 1808,
+  "mean": 23.56,
+  "median": 24.61,
+  "p95": 34.36,
+  "p99": 36.79,
+  "max": 51.38
+ },
+ "start_to_computed": {
+  "n": 1808,
+  "mean": 18.3,
+  "median": 19.7,
+  "p95": 24.16,
+  "p99": 25.71,
+  "max": 34.41
+ },
+ "computed_to_output_start": {
+  "n": 1808,
+  "mean": 1.02,
+  "median": 0.88,
+  "p95": 2.12,
+  "p99": 2.51,
+  "max": 4.38
+ },
+ "finish_to_boundary": {
+  "n": 1808,
+  "mean": 2.11,
+  "median": 1.9,
+  "p95": 4.33,
+  "p99": 6.5,
+  "max": 25.65
+ },
+ "boundary_to_display": {
+  "n": 1808,
+  "mean": -6.6,
+  "median": -6.14,
+  "p95": -0.9,
+  "p99": -0.56,
+  "max": 0.96
+ }
+}

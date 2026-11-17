@@ -37,8 +37,25 @@ def clone(lane,**changes):
 
 def shifted(image, offset, axis=1):
     """Replicated boundaries, unlike wrapping a row to the opposite image edge."""
-    indices=np.clip(np.arange(image.shape[axis])+offset,0,image.shape[axis]-1)
+    n=image.shape[axis]
+    if axis==0 and image.ndim==2 and 0<abs(offset)<n:
+        # Rows: the same values as the clipped take below, from two slices.
+        if offset>0:return np.concatenate([image[offset:],np.repeat(image[-1:],offset,axis=0)])
+        return np.concatenate([np.repeat(image[:1],-offset,axis=0),image[:offset]])
+    indices=np.clip(np.arange(n)+offset,0,n-1)
     return np.take(image,indices,axis=axis)
+
+
+def polyfit(x,y,deg,w=None):
+    """np.polyfit (NumPy 1.23) without its argument checks and warnings: the same operations, so the same
+    coefficients bit for bit, at a fraction of the call cost (pair_vote fits a few times per frame)."""
+    x=np.asarray(x)+0.;y=np.asarray(y)+0.
+    lhs=np.vander(x,deg+1);rhs=y
+    if w is not None:
+        w=np.asarray(w)+0.;lhs*=w[:,np.newaxis];rhs*=w
+    scale=np.sqrt((lhs*lhs).sum(axis=0));lhs/=scale
+    c=np.linalg.lstsq(lhs,rhs,len(x)*np.finfo(x.dtype).eps)[0]
+    return (c.T/scale).T
 
 
 def quantiles(values,qs):
@@ -85,6 +102,7 @@ class CarlaDetector(Detector):
         self.learned_outside=None;self.replaced_paint=None
         self.outer_candidates=[]  # carla_outer_enabled: this frame's neighbouring lane outer lines (side 'left_outer'/'right_outer')
         self.outer_gap={};self.outer_paint=None  # side -> last chosen distance from the own line; this frame's paint before selection
+        self.outer_inputs=None;self.own_yellow={}  # this frame's outer_lines arguments until finish_outer(); own line colours
 
     def binary(self,bev,valid):
         c=self.c
@@ -124,12 +142,15 @@ class CarlaDetector(Detector):
         raw=((response>0)&color&safe).astype(np.uint8)*255
         self.response=response;self.raw_mask=raw.copy()
         self.yellow_mask=((self.yellow)&(raw>0)).astype(np.uint8)*255
-        self.grid_mask=np.zeros_like(raw)
+        self.grid_mask=np.zeros_like(raw);across=None
+        def brighter_across():
+            # Paint brighter than the rows 0.25 m before and after it (used by the grid and the stop line test alike).
+            step=max(2,round(.25/c.mpp))
+            return (gray-np.maximum(shifted(smooth,-step,0),shifted(smooth,step,0))>=4)&color&safe
         if c.carla_stage>=2 and c.carla_grid_enabled:
             # A box junction has repeated long TRANSVERSE painted bars. A
             # crosswalk's parallel longitudinal rectangles are not this test.
-            step=max(2,round(.25/c.mpp))
-            horizontal=(gray-np.maximum(shifted(smooth,-step,0),shifted(smooth,step,0))>=4)&color&safe
+            horizontal=across=brighter_across()
             long=cv2.morphologyEx(horizontal.astype(np.uint8),cv2.MORPH_OPEN,np.ones((1,max(3,round(1.4/c.mpp))),np.uint8))
             rows=np.flatnonzero(np.sum(long,axis=1)*c.mpp>=1.4)
             groups=np.split(rows,np.flatnonzero(np.diff(rows)>max(2,round(.25/c.mpp)))+1) if len(rows) else []
@@ -144,8 +165,7 @@ class CarlaDetector(Detector):
         self.transverse=None
         if c.carla_tail_gap_m>0:
             # Paint brighter than the rows just before and after it, at least carla_tail_bar_m wide: a stop line.
-            step=max(2,round(.25/c.mpp))
-            across=(gray-np.maximum(shifted(smooth,-step,0),shifted(smooth,step,0))>=4)&color&safe
+            if across is None:across=brighter_across()
             self.transverse=cv2.morphologyEx(across.astype(np.uint8),cv2.MORPH_OPEN,np.ones((1,max(3,round(c.carla_tail_bar_m/c.mpp))),np.uint8))
             # Geometry is filtered once in paint_fragments, after the box mask.
         removed=self.learned_gate(raw)
@@ -405,7 +425,7 @@ class CarlaDetector(Detector):
             degree=1 if np.ptp(xs)>=4. else 0
             weights=np.ones(len(xs))
             for _ in range(3):
-                fit=np.polyfit(xs,cs,degree,w=weights)
+                fit=polyfit(xs,cs,degree,w=weights)
                 weights=np.minimum(1.,.05/np.maximum(np.abs(cs-np.polyval(fit,xs)),.001))
             changed=False
             for i in range(len(nodes)):
@@ -750,6 +770,12 @@ class CarlaDetector(Detector):
             chosen[side]=path
         return chosen
 
+    def finish_outer(self):
+        """This frame's outer line candidates (carla_outer_enabled), from what paint_fragments kept."""
+        if self.outer_inputs is not None:
+            self.outer_candidates=self.outer_lines(*self.outer_inputs);self.outer_inputs=None
+        return self.outer_candidates
+
     def outer_lines(self,fragments,own,own_yellow):
         """Each side's neighbouring lane outer line: leftover paint about a lane width outside the own line, parallel to it.
 
@@ -851,7 +877,7 @@ class CarlaDetector(Detector):
         Local row medians retain curved paint without extrapolation.
         """
         c=self.c;tile=max(8,round(2./c.mpp));lanes=[];nodes=[];selected=np.zeros_like(mask);self.frame_index+=1
-        self.boundary_candidates=[];self.outer_candidates=[]
+        self.boundary_candidates=[];self.outer_candidates=[];self.outer_inputs=None;self.own_yellow={}
         # Outer lines only: near fragments farther out than the own lines may start. They never
         # enter the own line selection below, which sees exactly the fragments it did without them.
         outer=c.carla_outer_enabled;extra=[]
@@ -988,10 +1014,11 @@ class CarlaDetector(Detector):
                 spine.corridor_m=band;remembered[side]=(sample,smooth+offset)
                 accepted_groups.append(merged);self.boundary_candidates.append(spine)
             self.last_spines=remembered
+            self.own_yellow={side:bool(spines[side][3]) for side in remembered}
             if outer:
+                # Kept for finish_outer(): the caller may first send the own lines on (the display path).
                 used={id(a) for value in support.values() for a in value}|{id(a) for group in groups.values() for a in group}
-                self.outer_candidates=self.outer_lines([a for a in nodes+extra if id(a) not in used],remembered,
-                                                       {side:spines[side][3] for side in remembered})
+                self.outer_inputs=([a for a in nodes+extra if id(a) not in used],remembered,dict(self.own_yellow))
         for group in accepted_groups:
             lanes.extend(a['lane'] for a in group)
             for a in group:selected[a['pixels']]=255

@@ -70,6 +70,9 @@ vision_road:
     # from the paint they left: 2.3-4.7 m (and within 0.9 m of the own lane width) outside the own line along
     # its normal, parallel to it (distance varies <= 0.3 m).  /road/lane_outer, /road/lane_outer_markers.
     carla_outer_enabled: true
+    # Lane centrelines (own lane; the neighbouring lanes beside their outer lines), across the lane, with
+    # offset, heading and curvature 5 m ahead.  /road/lane_centres, /road/lane_centre_markers.
+    carla_centre_enabled: true
     # Real time: only the newest image waits (a slow frame drops the older one, latency does not pile up),
     # and the image is read in place from its serialized form.
     image_job_depth: 1

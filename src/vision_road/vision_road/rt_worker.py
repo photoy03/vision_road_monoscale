@@ -5,7 +5,7 @@ from multiprocessing import shared_memory
 import cv2
 import numpy as np
 from .temporal import TemporalDetector
-from .carla import CarlaDetector
+from .carla import CarlaDetector,clone
 from .classical import PaintEvidenceDetector
 
 
@@ -87,8 +87,8 @@ class Perception:
         self.detector.reset()
         if self.extra is not None:self.extra.reset()
 
-    def __call__(self,frame,stamp,pose,learned=None):
-        from dataclasses import replace
+    def __call__(self,frame,stamp,pose,learned=None,side=True):
+        """side=False: leave the outer lines and centrelines to side_outputs() (after the result is sent)."""
         from .display_filter import simplify,lane_styles
         detector=self.detector;begin=time.perf_counter()
         if self.backend=='carla':detector.detector.learned=learned
@@ -96,14 +96,15 @@ class Perception:
         valid=self.projector.valid.copy();valid[self.projector.my>=frame.shape[0]*self.roi]=0
         bev=cv2.bitwise_and(bev,bev,mask=valid)
         warped=time.perf_counter()
-        lanes,binary=detector.process(bev,valid,stamp,pose)
+        lanes,binary=detector.process(bev,valid,stamp,pose,defer=True)
         markings=self.extra.after(detector,bev,valid,pose) if self.extra is not None else []
         detected=time.perf_counter()
         shown={}
         if self.core is not None:
             # As road_node does with its own messages: simplified lines, the side styles, this frame's pose.
-            paint=[replace(lane,points=simplify(lane.points,self.error)) for lane in lanes]
-            bounds=[replace(lane,points=simplify(lane.points,self.error)) for lane in detector.boundary_lanes]
+            # clone: dataclasses.replace without its per-call cost (Lane has no __post_init__; same fields).
+            paint=[clone(lane,points=simplify(lane.points,self.error)) for lane in lanes]
+            bounds=[clone(lane,points=simplify(lane.points,self.error)) for lane in detector.boundary_lanes]
             self.core.styles(stamp,lane_styles(lanes))
             shown=dict(display_lanes=paint,display_boundaries=bounds,display=self.core.step(stamp,
                 [(l.side,l.points,l.reprojected) for l in bounds if len(l.points)>=2],pose,
@@ -112,11 +113,22 @@ class Perception:
                 markers,styles,stage,Time=self.publisher;ns=round(stamp*1e9)
                 out=stage.messages(Time(sec=ns//1000000000,nanosec=ns%1000000000),shown.pop('display'))
                 markers.publish(out[0]);styles.publish(out[1]);shown['display_published']=True
-        # Time spent here, for the node's performance report (ms): warp, detector, display filter.
-        worker=dict(warp=(warped-begin)*1e3,detect=(detected-warped)*1e3,display=(time.perf_counter()-detected)*1e3)
-        return dict(**shown,worker_ms=worker,lanes=lanes,binary=binary,bev=bev,boundaries=detector.boundary_lanes,markings=markings,outer=detector.outer_lanes,
+        # After the display line: the outputs beside the own lines (outer lines, centrelines), off the display path.
+        shown_at=time.perf_counter()
+        if side:detector.finish();shown['outer']=detector.outer_lanes;shown['centres']=detector.centre_lanes
+        # Time spent here, for the node's performance report (ms): warp, detector, display filter (and the side outputs).
+        finished=time.perf_counter()
+        worker=dict(warp=(warped-begin)*1e3,detect=(detected-warped)*1e3,display=(shown_at-detected)*1e3)
+        if side:worker['extra']=(finished-shown_at)*1e3
+        return dict(**shown,worker_ms=worker,lanes=lanes,binary=binary,bev=bev,boundaries=detector.boundary_lanes,markings=markings,
                     measured=detector.measured_count,predicted=detector.predicted_count,
                     registration=detector.registration,diagnostics=getattr(detector.detector,'diagnostics',{}))
+
+    def side_outputs(self,stamp,t,topics=None):
+        """The last frame's outer lines and centrelines (finish()), published on topics (SideTopics) when given."""
+        self.detector.finish();outer=self.detector.outer_lanes;centres=self.detector.centre_lanes
+        if topics is not None:topics.publish(stamp,t,outer,centres)
+        return dict(outer=outer,centres=centres)
 
     def close(self):
         if self.node is not None:
@@ -162,6 +174,11 @@ def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
     perceive=None
     try:
         perceive=Perception(projector,cfg,backend,roi,threads,extras,display,ros=True);node=perceive.node
+        outer,centre,error=ros.get('side',(False,False,0.));topics=None
+        if outer or centre:
+            from .side_topics import SideTopics
+            from builtin_interfaces.msg import Time
+            topics=SideTopics(node,ros['base_frame'],ros['debug_hz'],error,outer,centre)
         timeline=Timeline(ros['odom_max_gap_sec']);state=dict(shape=None,last=None,reset=False,last_debug=-math.inf)
         def on_odom(msg):
             if msg.header.frame_id!=ros['world_frame'] or msg.child_frame_id!=ros['base_frame']:return
@@ -185,13 +202,17 @@ def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
             state['last']=t;start=time.perf_counter_ns()
             frame=np.frombuffer(raw,np.uint8,h*w*3,len(raw)-h*w*3).reshape(h,w,3)
             if encoding=='rgb8':frame=cv2.cvtColor(frame,cv2.COLOR_RGB2BGR)
-            pose=timeline.at(t);result=perceive(frame,t,pose)
+            pose=timeline.at(t);result=perceive(frame,t,pose,side=topics is None)
             result.update(stamp=(sec,nanosec),frame_id=frame_id,pose=pose,receive_ns=received,start_ns=start)
             if ros['debug_hz']>0 and t-state['last_debug']>=1/ros['debug_hz']-1e-8:
                 state['last_debug']=t;scale=min(1.,ros['overlay_max_width']/w) if ros['overlay_max_width'] else 1.
                 result.update(debug_frame=cv2.resize(frame,(round(w*scale),round(h*scale))) if scale<1 else frame.copy(),debug_scale=scale)
             else:result.update(bev=None,binary=None)  # only the debug images use them
             result['computed_ns']=time.perf_counter_ns();connection.send(result)
+            if topics is not None:
+                # Outer lines and centrelines after road_node has the main result: its own outputs go first.
+                begin=time.perf_counter();side=perceive.side_outputs(Time(sec=sec,nanosec=nanosec),t,topics)
+                connection.send(dict(side=side,extra_ms=(time.perf_counter()-begin)*1e3))
         node.create_subscription(Odometry,ros['odom_topic'],on_odom,QoSProfile(depth=200,reliability=ReliabilityPolicy.BEST_EFFORT))
         node.create_subscription(Image,ros['image_topic'],on_image,QoSProfile(depth=1,reliability=ReliabilityPolicy.RELIABLE
                                  if ros['reliability']=='reliable' else ReliabilityPolicy.BEST_EFFORT),raw=True)

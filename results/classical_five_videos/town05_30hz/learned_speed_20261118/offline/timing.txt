@@ -1,0 +1,2 @@
+town05 process mean 14.05 p95 18.70 ms
+learned on: town05 process mean 13.85 p95 18.36 ms

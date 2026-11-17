@@ -1,0 +1,1 @@
+{"window_s": 50.1, "hardware_threads": 16, "groups": {"other": 22.7, "eval": 16.76, "road_node": 40.17, "road_node.compute": 59.76, "hud": 4.77, "replay": 54.43}, "pipeline_threads": 1.59, "system_busy_pct": 197.0, "system_threads_used": 1.97}

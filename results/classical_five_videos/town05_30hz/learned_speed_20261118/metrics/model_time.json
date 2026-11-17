@@ -1,0 +1,9 @@
+{
+ "frames": 290,
+ "bev_call_mean_ms": 21.49,
+ "bev_call_p95_ms": 22.05,
+ "inference_mean_ms": 20.59,
+ "inference_p95_ms": 21.05,
+ "gpu": "NVIDIA GeForce RTX 3050 Laptop GPU",
+ "max_memory_allocated_mib": 151
+}
