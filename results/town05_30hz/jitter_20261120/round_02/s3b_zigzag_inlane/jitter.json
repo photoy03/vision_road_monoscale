@@ -1,0 +1,39 @@
+{
+ "5m": {
+  "n": 4208,
+  "p95": 0.005,
+  "p99": 0.007,
+  "over_5cm": 4,
+  "p99_outside_changes": 0.007,
+  "p99_in_changes": null,
+  "n_in_changes": 0
+ },
+ "10m": {
+  "n": 4289,
+  "p95": 0.008,
+  "p99": 0.009,
+  "over_5cm": 4,
+  "p99_outside_changes": 0.009,
+  "p99_in_changes": null,
+  "n_in_changes": 0
+ },
+ "18m": {
+  "n": 4086,
+  "p95": 0.013,
+  "p99": 0.016,
+  "over_5cm": 3,
+  "p99_outside_changes": 0.016,
+  "p99_in_changes": null,
+  "n_in_changes": 0
+ },
+ "curl_deg": {
+  "n": 4297,
+  "p95": 3.57,
+  "p99": 8.68
+ },
+ "over_5cm_times_18m": [
+  6.8
+ ],
+ "frames": 2205,
+ "goal_met": true
+}

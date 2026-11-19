@@ -321,3 +321,31 @@ def test_outside_the_seen_span_the_line_has_no_third_order_bend():
     assert np.all(np.diff(bend)<=1e-9) and bend[0]<=inside[-1]+1e-9  # the curvature only fades past 12 m
     q=drawn[False];k=np.searchsorted(q[:,0],p[-1,0])
     assert q[k,1]>p[-1,1]  # the cubic bends further away
+
+
+def test_trim_cuts_a_far_end_that_runs_off_the_kept_line():
+    # Plan 32 (trim_m): an observation is cut at its first point beyond the limit and the rest is taken.
+    f=DisplayFilter(FilterSettings(trim_m=.15,trim_per_10m=.15,end_from_seen=True))
+    for i in range(10):f.update(i*DT,[('left',line(1.75),False)],(0.,0.,0.))
+    track=f.sides['left']
+    hooked=np.array([[4.,1.75],[9.,1.75],[14.,1.76],[20.,2.3],[26.,2.9]])
+    cut=track.trimmed(hooked);assert len(cut)==3 and cut[-1,0]==14.
+    assert len(track.trimmed(line(1.80)))==6  # within 0.15 m: whole
+    f.update(10*DT,[('left',hooked,False)],(0.,0.,0.))
+    assert not track.predicted and track.seen[-1][1]==14.  # taken, as far as the cut
+
+
+def test_max_accel_draws_a_step_smoothly_but_gates_on_the_kept_line():
+    # Plan 32 (max_accel_m): the kept line taken again 0.2 m away is drawn without a jump (second difference at 10 m
+    # within the limit), reaches it without overshoot, and the gate still compares with the kept line.
+    a=.005;f=DisplayFilter(FilterSettings(max_accel_m=a,min_cutoff_hz=100.,beta=0.))
+    for i in range(10):feed(f,i*DT,1.75)
+    ys=[]
+    for i in range(10,70):ys.append(at10(feed(f,i*DT,1.95)))
+    d2=np.abs(np.diff(ys,2));track=f.sides['left']
+    assert d2.max()<=a+1e-3 and max(ys)<=1.95+1e-3 and abs(ys[-1]-1.95)<.01
+    assert abs(evaluate(track.value,np.array([10.]))[0]-1.95)<.01  # the kept line is not held back
+    # Off by default: the same step is drawn at once (the kept line follows quickly with this filter).
+    g=DisplayFilter(FilterSettings(min_cutoff_hz=100.,beta=0.))
+    for i in range(10):feed(g,i*DT,1.75)
+    assert abs(at10(feed(g,10*DT,1.95))-1.95)<.02

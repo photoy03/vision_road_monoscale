@@ -85,7 +85,7 @@ source install/setup.bash
 ```
 
 - C++ 빠른 경로(`_native*.so`)는 빌드가 만든다. 없으면 조용히 파이썬으로 돌아 느려진다.
-- 시험 (2026-11-20 계획 30 3회차 기준 통과 수): `hero_coach` 102, `vision_road` 157, `hero_hud` 33(계획 29 기준, HUD 는 그 뒤 안 바뀜). 실제로 쓰는 명령(ROS 와 `install/setup.bash` 를 source 한 뒤; source 하지 않으면 hero_coach 시험이 모으는 단계에서 오류가 난다):
+- 시험 (2026-11-20 계획 30 3회차 기준 통과 수): `hero_coach` 102, `vision_road` 160(계획 32 2회차), `hero_hud` 33(계획 29 기준, HUD 는 그 뒤 안 바뀜). 실제로 쓰는 명령(ROS 와 `install/setup.bash` 를 source 한 뒤; source 하지 않으면 hero_coach 시험이 모으는 단계에서 오류가 난다):
 
 ```bash
 python3 -m pytest -q tests                      # vision_road
@@ -114,6 +114,14 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 - `run_lane_hud.sh` 와 같은 구성으로 재려면 `--launch-arg display_filter_inline:=true lane_guidance:=true fake_vehicle_state:=true` 를 꼭 붙인다(빠뜨리면 화면 필터가 따로 돌아 몇 ms 늘고 안내가 꺼진다).
 - 신호·표지판까지: `--signs --signs-arg full_frame:=true imgsz:=1920`. 계획 30 의 새 녹화는 `--video town05_s3a_zigzag_cross` 처럼 부른다.
 - 세 영상 × 3 번 한꺼번에: `results/town05_30hz/gt_loop_20261119/scripts/realtime_d.sh 출력폴더 1920 0.0`.
+- 계획 31–32 의 town05 × 3 지연 판정(공유 메모리, 신호 켬·끔):
+  - 신호 켬: `SIGNS_EXTRA="image_shm:=vision_road_dashcam" LAUNCH_EXTRA="image_shm:=vision_road_dashcam" VIDEOS=town05 bash results/town05_30hz/gt_loop_20261119/scripts/realtime_d2.sh 폴더/realtime_signs 1920 0.0`
+  - 신호 끔: `SIGNS=0 VIDEOS=town05 bash …/realtime_d2.sh 폴더/realtime_nosigns 1920 0.0`
+  - 표: `python3 …/scripts/realtime_table.py 폴더/realtime_signs 폴더/realtime_nosigns`
+- 표시선 흔들림(계획 32):
+  - 한 파일: `python3 tools/jitter_eval.py <predictions.jsonl.gz 또는 frames.json> [--scene 장면]`
+  - 14 개 영상: `bash results/town05_30hz/jitter_20261120/jtry.sh 폴더 "" "max_accel_m=0.005 …"`
+  - 정답 경계 대비: `python3 results/town05_30hz/jitter_20261120/jaccuracy.py 폴더1 폴더2`
 
 ## 5. 자료 흐름과 토픽
 
@@ -149,6 +157,29 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 - 신호등·표지판 HUD 결합 (계획 27, 커밋 99aaef9, ddf6414)
 - 정지선·횡단보도·초록 신호 HUD 표시, `stop_line_m` (계획 28, f111f20)
 - 코치에 맞춘 신호 전달·경로 전달·정지 권고 (계획 29, e64c42e)
+
+### 진행 중: 계획 32 (2026-11-20, 사용자 지적 "직진인데 차선이 흔들림")
+
+- 결과 폴더: `results/town05_30hz/jitter_20261120/`(`round_NN/REPORT_KO.md`, `jitter.md`, `accuracy.md`).
+- 측정 도구:
+  - `tools/jitter_eval.py`: 표시선 5/10/18 m 의 2 차 차분과 끝 말림.
+  - `gt_eval.py predict`: 표시선(`display`)도 저장. `--display name=value` 로 바꾸고, `town05_30hz`·`maploop_30hz` 도 돈다.
+  - `jtry.sh`: 14 개 영상, `jtable.py`.
+  - `jaccuracy.py`: 표시선 대 정답 경계.
+- 목표: 18 m p99 ≤ 2 cm, 5 cm 넘음 ≤ 5, 10 m p99 ≤ 1 cm. 시내 town05_30hz 는 0.6 cm 이하를 유지한다.
+- 원인 1: 순환도로 출발 구간에서 조감도 20 m 너머의 난간 줄무늬에 선 끝이 붙어 휘었다. 1회차에서 끝 자르기를 켰다(`carla.yaml lane_display_filter`):
+  - `trim_m: 0.15`
+  - `trim_per_10m: 0.15`
+- 원인 2: 유지하던 선이 관측을 다시 받아들이는 프레임의 튐. 2회차에서 그리는 선만 가속 한도로 따라가게 했다:
+  - `max_accel_m: 0.005`
+  - `max_accel_leash_m: 0.3`
+  - 관문은 유지하는 선을 그대로 쓴다.
+- 지금: 목표 충족 11/14(기준선 2/14).
+  - 18 m p99·10 m p99 는 14 개 모두 지킨다.
+  - 미달은 5 cm 넘는 프레임 수뿐이다: s4 6, s5 6, s8c 10.
+  - 시내 0.6 cm·0 그대로다.
+  - 지연 가운데 켬 25.06, 끔 23.94 ms.
+- 표시 필터 설정은 HUD 선에만 쓰인다. 안내·정답 지표(A–C)는 바뀌지 않는다.
 
 ### 끝남: 계획 31 (2026-11-20, 연구 세션 지시)
 
@@ -290,7 +321,10 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 
 ## 7. 다음에 할 일 (순서대로)
 
-- **진행 중: 계획 32**(2026-11-20, 사용자 지적). 순환도로 영상의 출발 뒤 약 20초(밝은 콘크리트 노면)에서 표시선이 흔들리고 끝이 말린다. 떨림 지표(표시선 2차 차분)를 넣고 고친다. 목표 18 m p99 ≤ 2 cm. 시내 구간(사용자가 실행할 곳)은 지금도 안정적이라 깨지 않게 한다. 결과 `results/town05_30hz/jitter_20261120/`, 배경은 연구 문서의 "사용자 지적: 직선인데 표시되는 차선이 흔들림" 절.
+- **진행 중: 계획 32**(2026-11-20, 사용자 지적). 1–2회차 끝(6절 "진행 중: 계획 32").
+  - 남은 것: 5 cm 넘는 프레임(s4·s5·s8c).
+  - 그다음: s8c·s5 고친 뒤 HUD 영상과 같은 구간 전후 비교, `SUMMARY_KO.md`, 연구 세션 보고.
+  - 다시 재는 명령: `bash results/town05_30hz/jitter_20261120/jtry.sh <폴더> "" "<표시 설정>"`.
 
 0. (끝) 계획 31: 6절 "끝남: 계획 31" 과 `gt_loop2_20261120/SUMMARY_KO.md` 참고. 다음 후보는 거기 적혀 있다.
 1. (끝) 계획 30 기준선, 1–3회차. 표는 `results/town05_30hz/gt_loop_20261119/SUMMARY_KO.md` 에 있다.

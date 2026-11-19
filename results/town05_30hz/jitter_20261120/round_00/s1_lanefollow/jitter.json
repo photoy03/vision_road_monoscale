@@ -1,0 +1,42 @@
+{
+ "5m": {
+  "n": 3855,
+  "p95": 0.0022,
+  "p99": 0.0049,
+  "over_5cm": 5,
+  "p99_outside_changes": 0.005,
+  "p99_in_changes": 0.0038,
+  "n_in_changes": 236
+ },
+ "10m": {
+  "n": 3743,
+  "p95": 0.004,
+  "p99": 0.0068,
+  "over_5cm": 3,
+  "p99_outside_changes": 0.0069,
+  "p99_in_changes": 0.0051,
+  "n_in_changes": 236
+ },
+ "18m": {
+  "n": 3373,
+  "p95": 0.007,
+  "p99": 0.013,
+  "over_5cm": 11,
+  "p99_outside_changes": 0.013,
+  "p99_in_changes": 0.0087,
+  "n_in_changes": 219
+ },
+ "curl_deg": {
+  "n": 3736,
+  "p95": 6.33,
+  "p99": 10.55
+ },
+ "over_5cm_times_18m": [
+  57.8,
+  57.9,
+  58.2,
+  58.4
+ ],
+ "frames": 2349,
+ "goal_met": false
+}

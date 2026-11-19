@@ -68,6 +68,12 @@ class FilterSettings:
     start_from_seen:bool=False  # draw at most extend_m below the seen near end (0 m only once paint near the car was seen)
     outside_quadratic:bool=False  # beyond the seen span continue the end's slope and curvature, the curvature fading to 0
     outside_fade_m:float=6.     # over this distance (no third-order bend outside what was seen)
+    trim_m:float=0.             # >0: an observation is cut where it leaves the kept line by more than this (plan 32)
+    trim_per_10m:float=0.       # ... plus this per 10 m beyond 10 m
+    trim_from_m:float=8.        # ... from this x on (nearer, the kept line itself is least sure)
+    max_step_m:float=0.         # >0: the kept line moves at most this much per frame at each station (plan 32)
+    max_accel_m:float=0.        # >0: the drawn line's per-frame move changes by at most this from frame to frame (plan 32)
+    max_accel_leash_m:float=.3  # ... but it stays within this of the kept line at each station
     near_quadratic_m:float=0.   # >0: below this x the line continues its slope and curvature there (the cubic
                                 # through the 5-20 m stations swings most at 0 m, where it amplifies their noise)
 
@@ -169,12 +175,15 @@ class SideTrack:
         self.style=None;self.candidate=None;self.candidate_since=None
         self.memory=np.empty((0,3))  # x, y in base_link and the travel when seen
         self.seen=deque(maxlen=s.seen_frames)  # [near, far] in base_link of the last accepted observations
+        # max_accel_m: the drawn stations (following the kept line) and their last per-frame move beyond the car's motion
+        self.drawn=None;self.velocity=None
 
     @property
     def value(self):return self.filter.x
 
     def move(self,motion):
         if self.value is not None:self.filter.x=shift(self.value,motion)
+        if self.drawn is not None:self.drawn=shift(self.drawn,motion)
         self.pending=[shift(p,motion) for p in self.pending]
         if self.far is not None:self.far-=motion[0]
         for span in self.seen:span[0]-=motion[0];span[1]-=motion[0]
@@ -186,7 +195,7 @@ class SideTrack:
         # The style survives a short loss: style evidence is sparse (a dashed line in a
         # curve is often UNKNOWN), and re-learning it showed the line solid on return.
         self.shown=False;self.filter.reset();self.far=None;self.pending=[];self.history.clear();self.memory=np.empty((0,3))
-        self.seen.clear()
+        self.seen.clear();self.drawn=None
 
     def span(self):
         """(near, far) of the seen span, or None before an accepted observation: the nearest remembered or
@@ -246,17 +255,35 @@ class SideTrack:
         if self.value is None:
             self.filter.reset(stations,t);return True
         if abs(stations[1]-self.value[1])<=self.s.gate_m and (not self.s.gate_span or span is None or self.span_ok(stations,*span)):
-            self.pending=[];self.filter(stations,t);return True
+            before=np.array(self.value,float);self.pending=[];self.filter(stations,t)
+            if self.s.max_step_m>0:
+                # max_step_m (plan 32): the kept line moves at most this much per frame at each station (a line taken
+                # again after rejected frames slid instead of jumping); a sustained change below still resets at once.
+                step=np.clip(np.asarray(self.filter.x,float)-before,-self.s.max_step_m,self.s.max_step_m);self.filter.x=before+step
+            return True
         # Only the latest gate_frames candidates can make a sustained change.
         self.pending=(self.pending+[stations])[-self.s.gate_frames:]
         recent=[p[1] for p in self.pending]
         if len(recent)>=self.s.gate_frames and max(recent)-min(recent)<=self.s.gate_m:
             # A sustained change (new line, lane change): jump to it rather than slide, and forget the old line.
-            self.filter.reset(stations if alone is None else alone,t);self.pending=[];self.memory=np.empty((0,3));return True
+            self.filter.reset(stations if alone is None else alone,t);self.pending=[];self.memory=np.empty((0,3));self.drawn=None;return True
         return False
+
+    def trimmed(self,observed):
+        """trim_m (plan 32): the observation up to where it leaves the kept line by more than trim_m (+ trim_per_10m per
+        10 m beyond 10 m), from trim_from_m on; a far end that runs onto other paint (a barrier past the road's
+        end) is cut off instead of bending the line or being taken whole."""
+        if self.value is None or len(observed)<3:return observed
+        p=np.asarray(observed,float);kept=evaluate(self.value,p[:,0])
+        limit=self.s.trim_m+self.s.trim_per_10m*np.maximum(p[:,0]-10.,0.)/10.
+        bad=np.flatnonzero((np.abs(p[:,1]-kept)>limit)&(p[:,0]>=self.s.trim_from_m))
+        return p if not len(bad) else p[:bad[0]]
 
     def update(self,t,observed,hold_s,paint=None,travel=None):
         s=self.s;obs=None;accepted=False
+        if observed is not None and s.trim_m>0:
+            observed=self.trimmed(observed)
+            if len(observed)<2:observed=None
         if observed is not None:
             stations,near,far=fit(observed,near=s.fit_near_m,cubic=s.cubic_m,cubic_ridge=s.cubic_ridge)
             if far-near>=s.update_span_m and near<=s.max_start_m:
@@ -271,6 +298,8 @@ class SideTrack:
             stations,near,far,alone=obs
             accepted=self.take(stations,t,alone,(near,far))
             if accepted:
+                # (A cut observation's far end counts as seen too: leaving it out shook the ring-road scenes more,
+                # plan 32.)
                 self.seen.append([near,far])
                 # The drawn end grows quickly and shrinks slowly, so its length does not flicker.
                 self.far=far if self.far is None else self.far+(.5 if far>self.far else .1)*(far-self.far)
@@ -281,6 +310,7 @@ class SideTrack:
         # Confirmation counts accepted observations only; counting rejected ones let an unstable
         # stream re-confirm a dropped line within 5 frames, so it blinked about once a second.
         self.history.append(accepted)
+        if s.max_accel_m>0:self.draw()
         # Only a measurement taken this frame is drawn as observed; a rejected jump shows the kept line.
         self.predicted=not accepted
         if t-self.last_observed>s.hold_s+s.style_memory_s:self.style=self.candidate=None
@@ -297,6 +327,22 @@ class SideTrack:
         if style!=self.candidate:self.candidate=style;self.candidate_since=t
         if self.style!=style and t-self.candidate_since>=self.s.style_stable_s:self.style=style
 
+    def draw(self):
+        """max_accel_m (plan 32): the drawn line follows the kept line with its per-frame move changing by at most
+        max_accel_m (the second difference the eye sees as shake), slowing before the kept line so it does not overshoot.
+        Only the drawing lags: gating, trimming and memory use the kept line (a gate on the lagging line rejected a
+        lane change's observations and held the line away from the paint).  A jump of the kept line (new line, lane
+        change) is drawn at once."""
+        if self.value is None:self.drawn=None;return
+        target=np.asarray(self.value,float)
+        if self.drawn is None:self.drawn=target.copy();self.velocity=np.zeros_like(target);return
+        a=self.s.max_accel_m;d=target-self.drawn
+        lim=.5*(np.sqrt(a*a+8*a*np.abs(d))-a)  # v+(v-a)+... stops within d
+        self.velocity=np.clip(self.velocity+np.clip(d-self.velocity,-a,a),-lim,lim);self.drawn=self.drawn+self.velocity
+        # A leash: a lag that grows (the far stations in a quick sway; a bent drawn line turned with the car's yaw
+        # diverged without it) is dragged along, never more than max_accel_leash_m behind the kept line.
+        L=self.s.max_accel_leash_m;self.drawn=target-np.clip(target-self.drawn,-L,L)
+
     def points(self):
         if not self.shown or self.value is None:return None
         s=self.s;end=min(s.far_m,max(s.near_m+s.step_m,(self.far or s.far_m)+s.extend_m));start=s.near_m
@@ -305,12 +351,12 @@ class SideTrack:
             if s.end_from_seen:end=min(end,span[1]+s.extend_m)
             if s.start_from_seen:start=max(start,span[0]-s.extend_m)
         if end-start<s.step_m:return None
-        x=np.arange(start,end+1e-6,s.step_m)
-        y=evaluate(self.value,x)
+        x=np.arange(start,end+1e-6,s.step_m);v=self.drawn if s.max_accel_m>0 and self.drawn is not None else self.value
+        y=evaluate(v,x)
         if s.outside_quadratic and span is not None and span[1]>span[0]:
-            y=outside(self.value,x,y,span,s.outside_fade_m)
+            y=outside(v,x,y,span,s.outside_fade_m)
         if s.near_quadratic_m>0:
-            y=outside(self.value,x,y,(s.near_quadratic_m,math.inf),math.inf)
+            y=outside(v,x,y,(s.near_quadratic_m,math.inf),math.inf)
         return np.column_stack([x,y])
 
 

@@ -34,14 +34,22 @@ def name_of(scene):
     return scene if scene.startswith('town05_') else f'town05_{scene}_20261119'
 
 
+PLAIN = {'town05_30hz': 'town05', 'maploop_30hz': 'maploop'}  # recordings without GT (plan 32 jitter): offline caches only
+
+
 def paths(scene):
+    if scene in PLAIN:
+        k = PLAIN[scene];return dict(bag=DISK/'rosbag'/scene, sidecar=DISK/'rosbag'/scene/'sidecar', offline=DISK/'vision-road-cache'/f'{k}_offline',
+                                     cdrz=DISK/'vision-road-cache'/f'{k}_30hz_native.cdrz')
     n = name_of(scene)
     return dict(bag=DISK/'rosbag'/n, sidecar=DISK/'rosbag'/n/'sidecar', offline=DISK/'vision-road-cache'/f'{n}_offline',
                 cdrz=DISK/'vision-road-cache'/f'{n}_native.cdrz')
 
 
 def ground_truth(scene):
-    return [facing(json.loads(l)) for l in open(paths(scene)['sidecar']/'gt_frames.jsonl')]
+    f = paths(scene)['sidecar']/'gt_frames.jsonl'
+    if scene in PLAIN and not f.exists():return []
+    return [facing(json.loads(l)) for l in open(f)]
 
 
 def facing(r):
@@ -81,6 +89,14 @@ def predict(a):
     valid = cv2.imread(str(p['offline']/'valid.png'), 0);valid[M.projector(pk, cfg).my >= 1080*M.LAUNCH['image_roi_bottom']] = 0
     gt = {round(r['stamp'], 4): r for r in ground_truth(a.scene)}
     det = TemporalDetector(cfg);det.detector = CarlaDetector(cfg);extras = Extras(markings=True)
+    # The HUD's display line (road_node display_filter_inline: carla.yaml lane_display_filter, run as rt_worker does).
+    from vision_road.display_filter import DisplayCore, settings_from, lane_styles
+    import yaml
+    section = (yaml.safe_load(open(ROOT/'src/vision_road/config/carla.yaml')).get('lane_display_filter') or {}).get('ros__parameters', {})
+    section = dict(section)
+    for kv in a.display:
+        name, v = kv.split('=', 1);section[name] = eval(v)
+    display = DisplayCore(settings_from(section))
     tl = Timeline(.25);k = 0;gs = GuidanceSettings()
     for kv in a.guide:
         name, v = kv.split('=', 1);setattr(gs, name, type(getattr(gs, name))(eval(v)))
@@ -94,13 +110,18 @@ def predict(a):
             while k < len(poses) and poses[k][0] <= t+.05:tl.add(*poses[k]);k += 1
             pose = tl.at(t);bev = cv2.imread(str(p['offline']/'bev'/f'{i:05d}.png'))
             s = time.perf_counter();lanes, _ = det.process(bev, valid, t, pose, defer=True);clock.append((time.perf_counter()-s)*1e3)
+            paint = [(l.side, simplify(np.asarray(l.points, float), err)) for l in lanes if not l.reprojected and len(l.points) >= 2]
+            shown_bounds = [(l.side, simplify(np.asarray(l.points, float), err), l.reprojected) for l in det.boundary_lanes if len(l.points) >= 2]
+            display.styles(t, lane_styles(lanes))
+            shown = display.step(t, shown_bounds, pose, paint)
             marks = extras.after(det, bev, valid, pose);det.finish()
             centres = [dict(c, points=np.round(simplify(np.asarray(c['points'], float), err), 3).tolist()) for c in det.centre_lanes]
             g = gt.get(round(t, 4));speed = g['speed_mps'] if g else None
             gpose = None if pose is None else tuple(float(np.interp(t, poses[:, 0], poses[:, j])) for j in (1, 2, 3))
             out = guide.update(t, gpose, [Lane.from_message(c) for c in centres], path=False, speed=speed)
             stops = [min(q[0] for q in m['points']) for m in marks if m['kind'] == 'stop_line']
-            fo.write(json.dumps(dict(frame=i, stamp=t, bounds=[L(l) for l in det.boundary_lanes], outer=[L(l) for l in det.outer_lanes], centres=centres,
+            fo.write(json.dumps(dict(frame=i, stamp=t, bounds=[L(l) for l in det.boundary_lanes],
+                                     display=[dict(side=sd, points=np.round(np.asarray(pt, float), 3).tolist(), predicted=bool(pr), style=st) for sd, pt, pr, st in shown], outer=[L(l) for l in det.outer_lanes], centres=centres,
                                      markings=[dict(kind=m['kind'], points=np.round(np.asarray(m['points']), 3).tolist(), predicted=bool(m['predicted'])) for m in marks],
                                      stop_line_m=min([x for x in stops if x > 0], default=None),
                                      guidance=dict(state=out.state, target=out.target, shown=bool(out.shown), changes=out.changes, offset_m=round(out.offset_m, 3),
@@ -608,6 +629,7 @@ def main():
     ap.add_argument('--source', type=Path, help='reguide: the round directory of the scene whose centres are used')
     ap.add_argument('--name', default='', help='metrics: suffix of the output file (metrics<tag><name>.json)')
     ap.add_argument('--sign', nargs='*', default=[], help='metrics: SignSettings overrides name=value')
+    ap.add_argument('--display', nargs='*', default=[], help='predict: lane_display_filter parameter overrides name=value')
     ap.add_argument('--guide', nargs='*', default=[], help='predict: GuidanceSettings overrides name=value')
     ap.add_argument('--model', default=str(Path.home()/'Desktop/town05_yolo26m_detector/best.pt'))
     ap.add_argument('--full-frame', type=int, default=1);ap.add_argument('--conf', type=float, default=.25);ap.add_argument('--imgsz', type=int, default=1280)
