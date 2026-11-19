@@ -2,7 +2,7 @@
 
 이 파일만 읽고 바로 이어서 작업할 수 있게 쓴다. **작업 하나가 끝날 때마다 "지금 상태"와 "다음에 할 일"을 고치고, `docs/WORKLOG_KO.md` 에 한 줄을 더한다.**
 
-마지막 갱신: 2026-11-20 05:00 (계획 31 3회차 끝, 개선 세션)
+마지막 갱신: 2026-11-20 05:30 (계획 31 끝, 개선 세션)
 
 ---
 
@@ -150,7 +150,7 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 - 정지선·횡단보도·초록 신호 HUD 표시, `stop_line_m` (계획 28, f111f20)
 - 코치에 맞춘 신호 전달·경로 전달·정지 권고 (계획 29, e64c42e)
 
-### 진행 중: 계획 31 (2026-11-20 시작, 연구 세션 지시)
+### 끝남: 계획 31 (2026-11-20, 연구 세션 지시)
 
 - 목표: 계획 30 에서 "검출기 쪽"으로 남은 항목을 같은 반복으로 고친다.
   - 선을 넘는 동안 끊김(B2, A2)
@@ -167,7 +167,11 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
   - `gt_loop2_20261120/try.sh 출력폴더 "검출 설정"`: 12 개 예측 + 지표를 세 갈래로 돌린다.
   - `gt_loop2_20261120/cmp.py 시도폴더 [기준폴더]`: 10 % 넘게 나빠지거나 목표 밖으로 떨어진 곳에 '!' 를 붙인다.
   - 나머지는 계획 30 의 `scripts/` 를 쓴다.
-- 진행 (2026-11-20 05:00): 3회차 끝.
+- 진행 (2026-11-20 05:30): **끝.**
+  - 최종 요약은 `gt_loop2_20261120/SUMMARY_KO.md` 다.
+  - 마지막 영상: `final_hud/s3a_zigzag_cross`, `final_hud/s8c_lanechange_20kmh` 의 `road_and_hud.mp4`(커밋 안 함).
+  - A1 은 원인 확인 뒤 닫았다(출발 구간 정답이 칠한 선과 어긋남, s3a 는 선 넘을 때 실제 오차).
+- 3회차까지:
   - 3회차: `carla_own_min_m: 0.0` 을 켰다(`carla.yaml`). 파이썬과 `native.cpp` 를 모두 바꿨으므로, 커밋본에서는 `cd src/vision_road && python3 setup.py build_ext --inplace` 가 필요하다.
   - A4 방향은 세 번 실패로 닫았다(`carla_centre_heading_alpha`·`carla_centre_heading_turn`, 코드 기본 꺼짐).
   - 지연 판정은 세 번의 p95 중 가운데 값으로 한다(연구 세션 결정). 3회차는 같은 시간대 옛 설정과 대조해 기계 흔들림으로 보고 통과시켰다.
@@ -179,7 +183,7 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 - 1회차 메모:
   - `guidance.keep_target_far` 를 켰다(launch).
   - 선 이어 가기(`carla_carry_sec`, `carla_outer_carry_sec`, 코드 기본 0)는 세 번 실패로 닫았다.
-- 다음(4회차): A1 비스듬할 때(s3a 22, s4 17, s8c 17 cm). 그다음 최종 SUMMARY, s3a·s8c HUD 영상, 최종 보고.
+- 다음 계획 후보: s3a 처럼 큰 방향각으로 선을 넘나들 때의 선 짚기 오류(A1·B2), 갓길과 차로 구별(A5 s1), 커브 진입·탈출의 중앙선 방향(A4).
 - 백업: `backups/before-gt-loop2-20261120/`.
 
 ### 끝남: 계획 30 (2026-11-19–20)
@@ -286,7 +290,7 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 
 ## 7. 다음에 할 일 (순서대로)
 
-0. (진행 중) 계획 31: 6절 "진행 중: 계획 31" 참고.
+0. (끝) 계획 31: 6절 "끝남: 계획 31" 과 `gt_loop2_20261120/SUMMARY_KO.md` 참고. 다음 후보는 거기 적혀 있다.
 1. (끝) 계획 30 기준선, 1–3회차. 표는 `results/town05_30hz/gt_loop_20261119/SUMMARY_KO.md` 에 있다.
 2. (끝) 마지막 HUD 영상 s3a, s5, s6, s7(`final_hud/`). 다시 만들 때 쓰는 명령:
    - `tools/realtime_eval.py --video town05_<장면> --output <폴더> --record --signs --signs-arg full_frame:=true imgsz:=1920 image_shm:=vision_road_dashcam --launch-arg display_filter_inline:=true lane_guidance:=true fake_vehicle_state:=true image_shm:=vision_road_dashcam`

@@ -309,7 +309,7 @@ def lane_at(r, x):
 def metrics(a):
     gt = ground_truth(a.scene);pred = {round(r['stamp'], 4): r for r in (json.loads(l) for l in gzip.open(a.out/'predictions.jsonl.gz', 'rt'))}
     res = dict(scene=a.scene, frames=len(gt));A1 = {f'{s}_{int(x)}m': [] for s in ('left', 'right') for x in XS};A2 = dict(left=[0, 0], right=[0, 0])
-    A3s = dict(left=[0, 0, 0], right=[0, 0, 0]);A3c = dict(left=[0, 0, 0], right=[0, 0, 0]);A4o = [];A4h = [];A4e = [];A4z = [];A4oc = [];A4hc = [];A1m = [];A1i = [0, 0]
+    A3s = dict(left=[0, 0, 0], right=[0, 0, 0]);A3c = dict(left=[0, 0, 0], right=[0, 0, 0]);A4o = [];A4h = [];A4e = [];A4z = [];A4oc = [];A4hc = [];A1p = [];A1m = [];A1i = [0, 0]
     A5 = {s: dict(tp=0, fp=0, fn=0, tn=0, opp=[0, 0], cross=[0, 0], vis=[0, 0]) for s in ('left', 'right')};used = 0;bad_gt = []
     shown_far = [0, 0];shown_centre = [0, 0];guidance_frames = [];shown_far_gt = [0, 0];shown_centre_gt = [0, 0];painted = 0
     # GT errors: frames where the GT own-lane boundary is not on the paint (semantic camera, paint_stops) by more than
@@ -352,7 +352,12 @@ def metrics(a):
             for x in XS:
                 if x in bad:continue
                 yg = y_at(gtl, x);yd = y_at(b['points'], x) if b else None
-                if yg is not None and yd is not None:A1[f'{side}_{int(x)}m'].append(abs(yd-yg))
+                if yg is not None and yd is not None:
+                    A1[f'{side}_{int(x)}m'].append(abs(yd-yg))
+                    # Reference (plan 31): against the paint itself (the GT boundary moved by its measured offset to the
+                    # paint at that distance), where the paint was measured.
+                    po = gtp_at.get(st, {}).get(side, {}).get(str(int(x)))
+                    if po is not None:A1p.append(abs(yd-(yg+po)))
             # Geometry apart from lane identity: the detected line against the nearest GT lane line (any lane's boundary)
             # at 10 m, and whether that nearest line is the GT own lane's line of the same side.  Near a lane crossing the
             # detector names its own lane at 3 m ahead of the rear axle, the GT at the car origin: they can differ.
@@ -420,7 +425,7 @@ def metrics(a):
     res['used_frames'] = used;res['A1_switched_frames'] = switched;res['A1_on_line_frames'] = on_line;res['A4_gt_excluded'] = a4_gt
     res['A1_gt_excluded'] = {k: dict(frames=len(v), first=round(v[0], 2) if v else None, last=round(v[-1], 2) if v else None) for k, v in excluded.items()}
     res['A1_lateral_error_m'] = {k: stats(v) for k, v in A1.items()}
-    res['A1_all'] = stats([x for v in A1.values() for x in v])
+    res['A1_all'] = stats([x for v in A1.values() for x in v]);res['A1_vs_paint'] = stats(A1p)
     res['A1_nearest_line_10m'] = stats(A1m);res['A1_identity'] = round(A1i[0]/A1i[1], 4) if A1i[1] else None
     res['A2_observed'] = {s: round(v[0]/v[1], 4) if v[1] else None for s, v in A2.items()};res['A2_frames'] = {s: v[1] for s, v in A2.items()}
     res['A3_style'] = {s: dict(accuracy=round(v[0]/v[2], 4) if v[2] else None, known=round(v[1]/v[2], 4) if v[2] else None, n=v[2]) for s, v in A3s.items()}
