@@ -110,6 +110,7 @@ class Settings:
     carla_outer_parallel_m: float = 0.3  # the distance may vary at most this much along the outer paint (p10-p90)
     carla_outer_cluster_m: float = 0.2  # fragments within this of one distance form one line
     carla_outer_min_paint_m: float = 2.0  # paint along the line, at least
+    carla_outer_min_paint_kept_m: float = 0.0  # >0: this little for a line at last frame's distance (a short view keeps it)
     carla_outer_extend_m: float = 6.0  # past its paint the line follows the own line's shape this far
     carla_outer_keep_m: float = 0.3  # a candidate within this of last frame's distance is preferred
     carla_centre_enabled: bool = False  # lane centrelines: own lane (left-right) and, with carla_outer_enabled, the neighbouring lanes

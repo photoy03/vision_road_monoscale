@@ -1,0 +1,28 @@
+--- a/src/vision_road/vision_road/carla.py
++++ b/src/vision_road/vision_road/carla.py
+@@ -883,18 +883,21 @@
+                 paint=member@lens;centre=(member@(lens*mids))/np.maximum(paint,1e-9)
+                 score=paint-np.abs(centre-self.lane_width)
+                 if prior is not None:score=score+2.*(np.abs(centre-prior)<=c.carla_outer_keep_m)
++                # carla_outer_min_paint_kept_m: a line continuing last frame's (same distance) may show less paint.
++                kept=lambda i:prior is not None and c.carla_outer_min_paint_kept_m>0 and abs(centre[i]-prior)<=c.carla_outer_keep_m
++                need=lambda i:c.carla_outer_min_paint_kept_m if kept(i) else c.carla_outer_min_paint_m
+                 for i in np.argsort(-score,kind='stable')[:4]:
+-                    if paint[i]<c.carla_outer_min_paint_m:break
++                    if paint[i]<need(i):break
+                     members=[(ids[m],frag[m][2]) for m in np.flatnonzero(member[i])]
+                     values=np.concatenate([gap[sl][ok[sl]] for _,sl in members])
+                     lo,middle,hi=quantiles(values,(.1,.5,.9))
+                     if hi-lo>c.carla_outer_parallel_m*(1.5 if yel[i] else 1.):continue
+-                    best=(float(score[i]),members,middle,float(paint[i]));break
++                    best=(float(score[i]),members,middle,float(paint[i]),need(i));break
+             if best is None:continue
+-            _,members,centre,paint=best
++            _,members,centre,paint,min_paint=best
+             take=np.concatenate([np.arange(sl.start,sl.stop)[ok[sl]] for _,sl in members])
+             stations=x[nearest[take]];values=gap[take];lo,hi=float(stations.min()),float(stations.max())
+-            if hi-lo<c.carla_outer_min_paint_m:continue
++            if hi-lo<min_paint:continue
+             if hi-lo>=8.:
+                 sm=stations.mean();vm=values.mean();slope=float(((stations-sm)*(values-vm)).sum()/((stations-sm)**2).sum());offset=vm-slope*sm
+                 width=np.clip(slope*x+offset,*quantiles(values,(.1,.9)))

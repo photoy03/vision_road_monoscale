@@ -81,6 +81,9 @@ vision_road:
     # from the paint they left: 2.3-4.7 m (and within 0.9 m of the own lane width) outside the own line along
     # its normal, parallel to it (distance varies <= 0.3 m).  /road/lane_outer, /road/lane_outer_markers.
     carla_outer_enabled: true
+    # Plan 31: an outer line at last frame's distance stays with 1.2 m of paint (a new one still needs 2 m): a
+    # short view of it (2-4 m, or the car at an angle) keeps the neighbouring lane (s8c recall 78 -> 86 %).
+    carla_outer_min_paint_kept_m: 1.2
     # Lane centrelines (own lane; the neighbouring lanes beside their outer lines), across the lane, with
     # offset, heading and curvature 5 m ahead.  /road/lane_centres, /road/lane_centre_markers.
     carla_centre_enabled: true

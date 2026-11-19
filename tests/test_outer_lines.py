@@ -101,3 +101,19 @@ def test_native_and_python_fragments_give_the_same_outer_lines():
     a,_=run(c,im);b,_=run(replace(c,carla_native_enabled=False),im)
     assert [l.side for l in a.outer_lanes]==[l.side for l in b.outer_lanes]
     for x,y in zip(a.outer_lanes,b.outer_lanes):assert np.allclose(x.points,y.points,atol=1e-9)
+
+
+def test_a_kept_outer_line_needs_less_paint_than_a_new_one():
+    # Plan 31 (carla_outer_min_paint_kept_m): the right outer line seen whole, then only a short piece of it.
+    c,full=scene();short=full.copy();short[row(30):row(4),col(-5.15):col(-5.15)+3]=100
+    short[row(11.8):row(10),col(-5.15):col(-5.15)+3]=220  # about 1.5 m of paint as a fragment
+    def sides(kept):
+        cc=replace(c,carla_outer_enabled=True,carla_outer_min_paint_kept_m=kept)
+        d=TemporalDetector(cc);d.detector=CarlaDetector(cc);valid=np.full(full.shape[:2],255,np.uint8)
+        for i in range(5):d.process(full,valid,1+i*.05,(.0,0.,0.))
+        for i in range(5,9):d.process(short,valid,1+i*.05,(.0,0.,0.))
+        new=TemporalDetector(cc);new.detector=CarlaDetector(cc)
+        for i in range(4):new.process(short,valid,1+i*.05,(.0,0.,0.))
+        return {l.side for l in d.outer_lanes if not l.reprojected},{l.side for l in new.outer_lanes}
+    kept,fresh=sides(1.2);assert 'right_outer' in kept and 'right_outer' not in fresh  # kept, but not taken anew
+    kept,_=sides(0.);assert 'right_outer' not in kept  # 0: 2 m of paint as before
