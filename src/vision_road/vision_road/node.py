@@ -191,7 +191,9 @@ class RoadNode(Node):
                 dict(image_topic=image_topic,reliability=reliability,odom_topic=self.odom_topic,camera_info_topic=self.camera_info_topic,
                      world_frame=self.world_frame,base_frame=self.base_frame,odom_max_gap_sec=self.timeline.max_gap,
                      debug_hz=self.debug_hz if self.debug else 0.,overlay_max_width=self.overlay_max_width,side=self.side_config,
-                     learned=self.learned.model.handle() if self.learned_in_worker else None,learned_every=self.learned.every))
+                     learned=self.learned.model.handle() if self.learned_in_worker else None,learned_every=self.learned.every,
+                     # plan 30: the newest image in shared memory for the sign detector ('' = off; image_share.py)
+                     image_shm_name=param('image_shm_name',''),image_shm_every=param('image_shm_every',2)))
             self.result_worker=threading.Thread(target=self.take_results,name='road-perception-results',daemon=True);self.result_worker.start()
         elif self.raw_cdr:self.create_subscription(Image,image_topic,self.on_image_cdr,image_qos,raw=True)
         else:self.create_subscription(CompressedImage if compressed else Image, image_topic, self.on_compressed if compressed else self.on_image, image_qos)

@@ -184,22 +184,36 @@ def paint_stops(a):
             img = np.frombuffer(raw, np.uint8, h*w*3, len(raw)-h*w*3).reshape(h, w, 3)
             line = ((img[:, :, 2] == 24)*255).astype(np.uint8)
             bev = cv2.remap(line, proj.mx, proj.my, cv2.INTER_NEAREST);bev[proj.valid == 0] = 0;bev[proj.my >= h*M.LAUNCH['image_roi_bottom']] = 0
-            r = gt.get(round(t, 4));stop = None
+            r = gt.get(round(t, 4));stop = None;crossing = None
             ego = next((l for l in r['lanes'] if l['relation'] == 'ego'), None) if r else None
             if ego is not None:
-                left, right = to_base(ego['left_boundary_vehicle']), to_base(ego['right_boundary_vehicle']);bars = []
+                left, right = to_base(ego['left_boundary_vehicle']), to_base(ego['right_boundary_vehicle']);bars = [];stripes = []
                 for row in range(bev.shape[0]):
                     x = cfg.forward_max-row*mpp;yl, yr = y_at(left, x), y_at(right, x)
-                    if yl is None or yr is None or yl-yr < 2.:bars.append(False);continue
+                    if yl is None or yr is None or yl-yr < 2.:bars.append(False);stripes.append(False);continue
                     c0 = int(round((-(yl-.3)-cfg.lateral_min)/mpp));c1 = int(round((-(yr+.3)-cfg.lateral_min)/mpp))
-                    seg = bev[row, max(0, c0):min(bev.shape[1], c1)]
-                    bars.append(len(seg) > 5 and np.count_nonzero(seg) >= .8*len(seg))
+                    seg = bev[row, max(0, c0):min(bev.shape[1], c1)];on = seg > 0
+                    # Against the part of the row inside the view (near the car the BEV narrows): at least half the
+                    # lane width in view and 80 % of that painted.
+                    seen = int(np.count_nonzero(proj.valid[row, max(0, c0):min(bev.shape[1], c1)]))
+                    bars.append(len(seg) > 5 and seen >= .5*len(seg) and np.count_nonzero(seg) >= .8*seen)
+                    # A zebra crossing's stripes: part of the row painted, in at least 3 pieces.
+                    pieces = int(np.count_nonzero(on[1:] & ~on[:-1]))+int(on[0]) if len(on) else 0
+                    stripes.append(len(seg) > 5 and .2*len(seg) <= np.count_nonzero(seg) <= .75*len(seg) and pieces >= 3)
                 runs = [];start = None
                 for row, on in enumerate(bars+[False]):
                     if on and start is None:start = row
                     if not on and start is not None:runs.append((start, row));start = None
-                xs = [cfg.forward_max-(r0+r1-1)/2*mpp for r0, r1 in runs if (r1-r0)*mpp >= .1]
-                ahead = [x for x in xs if x > 0];stop = round(min(ahead), 3) if ahead else None
+                # A full-width bar with zebra stripes within 0.5 m of it is the crossing's border, not a stop line (the
+                # last junction of the s1 / s8a / s8b route has a crossing and no stop line): kept apart as crosswalk_m.
+                near = max(1, int(round(.5/mpp)));stop_xs = [];cross_xs = []
+                for r0, r1 in runs:
+                    if (r1-r0)*mpp < .1:continue
+                    x = cfg.forward_max-(r0+r1-1)/2*mpp
+                    beside = sum(stripes[max(0, r0-near):r0])+sum(stripes[r1:r1+near])
+                    (cross_xs if beside*mpp >= .15 else stop_xs).append(x)
+                ahead = [x for x in stop_xs if x > 0];stop = round(min(ahead), 3) if ahead else None
+                ahead = [x for x in cross_xs if x > 0];crossing = round(min(ahead), 3) if ahead else None
             # Does the GT boundary lie on paint?  At x = 6..24 m: the lateral offset from the GT own-lane boundary to the
             # nearest RoadLine pixel within PAINT_WINDOW_M (rows with paint there only); the median per side, or null (no paint).
             paint = {};paint_at = {}
@@ -233,7 +247,8 @@ def paint_stops(a):
                     row = int(round((cfg.forward_max-x)/mpp));c0 = int(round((-(yg+.3)-cfg.lateral_min)/mpp));c1 = int(round((-(yg-.3)-cfg.lateral_min)/mpp))
                     if 0 <= row < bev.shape[0] and bev[row, max(0, c0):min(bev.shape[1], c1+1)].any():seen += 1
                 outer[side] = seen*.5
-            fo.write(json.dumps(dict(stamp=t, stop_m=stop, gt_boundary_to_paint_m=paint, gt_boundary_to_paint_at=paint_at, outer_paint_m=outer))+'\n')
+            fo.write(json.dumps(dict(stamp=t, stop_m=stop, crosswalk_m=crossing, gt_boundary_to_paint_m=paint, gt_boundary_to_paint_at=paint_at,
+                                     outer_paint_m=outer))+'\n')
             if i % 500 == 0:print(a.scene, i, flush=True)
     con.close()
 
@@ -468,7 +483,34 @@ def signs_metrics(a, gt, pred):
     f4 = a.out/'paint_stops.jsonl.gz'
     if f4.exists():
         # C4 against the painted line (semantic camera RoadLine, paint_stops): what the detector is meant to find.
-        ps = {round(r['stamp'], 4): r['stop_m'] for r in (json.loads(l) for l in gzip.open(f4, 'rt'))};e = [];seen = [0, 0];false = [0, 0];offset = []
+        rows4 = [json.loads(l) for l in gzip.open(f4, 'rt')]
+        ps = {round(r['stamp'], 4): r['stop_m'] for r in rows4};e = [];seen = [0, 0];false = [0, 0];offset = []
+        # C6 (by eye in the plan; counted here for reference): a crossing's border 0-20 m ahead and a crosswalk marking.
+        cw = {round(r['stamp'], 4): r.get('crosswalk_m') for r in rows4};cw_seen = [0, 0];cw_err = []
+        for r in gt:
+            k = round(r['stamp'], 4);p = pred.get(k);want = cw.get(k)
+            if p is None or r['is_junction'] or want is None or not 0 < want <= 20.:continue
+            got = [min(q[0] for q in m['points']) for m in p['markings'] if m['kind'] == 'crosswalk']
+            got = [x for x in got if x > 0];cw_seen[1] += 1;cw_seen[0] += bool(got)
+            if got:cw_err.append(abs(min(got, key=lambda x: abs(x-want))-want))
+        # C4 with the crosswalk fallback (lane_guidance stop_line.crosswalk_fallback): where to stop is the stop line, else
+        # the near border of a crossing; predicted the same way from the markings.
+        pe = [];pseen = [0, 0]
+        for r in gt:
+            k = round(r['stamp'], 4);p = pred.get(k)
+            if p is None or r['is_junction'] or k not in ps:continue
+            want = ps[k] if ps[k] is not None else cw.get(k)
+            if want is None or not 0 < want <= 20.:continue
+            got = p['stop_line_m']
+            if got is None:
+                xs = [min(q[0] for q in m['points']) for m in p['markings'] if m['kind'] == 'crosswalk']
+                xs = [x for x in xs if x > 0];got = min(xs) if xs else None
+            pseen[1] += 1;pseen[0] += got is not None
+            if got is not None:pe.append(abs(got-want))
+        c['C4_stop_position'] = dict(detected=round(pseen[0]/pseen[1], 4) if pseen[1] else None, n=pseen[1], error_m=stats(pe),
+                                     note='stop line, else the crossing border (truth) / crosswalk marking (detector)')
+        c['C6_crosswalk'] = dict(detected=round(cw_seen[0]/cw_seen[1], 4) if cw_seen[1] else None, n=cw_seen[1], near_edge_error_m=stats(cw_err),
+                                 note='reference only: the border nearest the car against the crosswalk marking nearest to it')
         for r in gt:
             k = round(r['stamp'], 4);p = pred.get(k)
             if p is None or k not in ps or r['is_junction']:continue

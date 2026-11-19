@@ -42,6 +42,10 @@ def generate_launch_description():
         # traffic_sign_bridge (-> /hero/traffic_light, /hero/sign) and makes lane_guidance put them into its scene and
         # its traffic advice into the JSON.  Off by default.
         DeclareLaunchArgument('signs',default_value='false'),
+        # Plan 30 (D1): the perception worker also writes every 2nd image to this shared memory block for the sign
+        # detector (its image_shm parameter), so the camera is not subscribed twice.  '' (default): off.
+        DeclareLaunchArgument('image_shm',default_value=''),
+        DeclareLaunchArgument('image_shm_every',default_value='2'),
         ExecuteProcess(cmd=['python3',os.path.join(os.path.dirname(os.path.realpath(__file__)),'..','..','..','tools','fake_vehicle_state.py')],
                        name='fake_vehicle_state',output='screen',condition=IfCondition(LaunchConfiguration('fake_vehicle_state'))),
         Node(package='vision_road',executable='road_node',name='vision_road',output='screen',parameters=[share+'/config/carla.yaml',{
@@ -59,7 +63,9 @@ def generate_launch_description():
             'road_markings':ParameterValue(LaunchConfiguration('road_markings'),value_type=bool),
             'learned_every':ParameterValue(LaunchConfiguration('learned_every'),value_type=int),
             'display_filter_inline':ParameterValue(LaunchConfiguration('display_filter_inline'),value_type=bool),
-            'display_filter_config':ParameterValue(LaunchConfiguration('display_filter_config'),value_type=str)}]),
+            'display_filter_config':ParameterValue(LaunchConfiguration('display_filter_config'),value_type=str),
+            'image_shm_name':ParameterValue(LaunchConfiguration('image_shm'),value_type=str),
+            'image_shm_every':ParameterValue(LaunchConfiguration('image_shm_every'),value_type=int)}]),
         # HUD-only smoothing of the boundaries; road_node's own topics are unchanged.
         Node(package='vision_road',executable='lane_display_filter',
              condition=IfCondition(PythonExpression(["'",LaunchConfiguration('display_filter'),"'=='true' and '",LaunchConfiguration('display_filter_inline'),"'!='true'"])),
@@ -70,6 +76,8 @@ def generate_launch_description():
                           'signs.enabled':ParameterValue(LaunchConfiguration('signs'),value_type=bool),
                           'traffic.enabled':ParameterValue(LaunchConfiguration('signs'),value_type=bool),
                           'stop_line.enabled':ParameterValue(LaunchConfiguration('road_markings'),value_type=bool),
+                          # Plan 30: no stop line ahead, a crosswalk ahead: stop at its near edge (stop_source in the JSON).
+                          'stop_line.crosswalk_fallback':ParameterValue(LaunchConfiguration('road_markings'),value_type=bool),
                           # Plan 30 (GT loop): the offset at the car origin, a lane change over a white dashed line
                           # with no lane detected beyond it, and an estimated lane beside one measured line trusted.
                           'guidance.offset_at_m':1.4096,'guidance.change_without_neighbour':True,'guidance.trust_single_line':True,

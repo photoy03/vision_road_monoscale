@@ -203,6 +203,10 @@ def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
             from builtin_interfaces.msg import Time
             topics=SideTopics(node,ros['base_frame'],ros['debug_hz'],error,outer,centre)
         learned=LearnedMask(projector,every=ros.get('learned_every',1),client=ros['learned']) if ros.get('learned') is not None else None
+        share=None
+        if ros.get('image_shm_name'):
+            from .image_share import ImageShareWriter
+            share=ImageShareWriter(ros['image_shm_name'],ros.get('image_shm_every',2))
         timeline=Timeline(ros['odom_max_gap_sec']);state=dict(shape=None,last=None,reset=False,last_debug=-math.inf,roi=None,skipped=0)
         full_w,full_h=projector.source_size
         def on_info(msg):
@@ -264,6 +268,8 @@ def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
                 # Outer lines and centrelines after road_node has the main result: its own outputs go first.
                 begin=time.perf_counter();side=perceive.side_outputs(Time(sec=sec,nanosec=nanosec),t,topics)
                 connection.send(dict(side=side,extra_ms=(time.perf_counter()-begin)*1e3))
+            # image_shm_name (plan 30): this image for the sign detector, after the lane outputs (image_share.py).
+            if share is not None and not cropped:share.write(memoryview(raw)[len(raw)-h*w*3:],w,h,encoding,sec,nanosec)
         node.create_subscription(Odometry,ros['odom_topic'],on_odom,QoSProfile(depth=200,reliability=ReliabilityPolicy.BEST_EFFORT))
         if ros.get('camera_info_topic'):
             node.create_subscription(CameraInfo,ros['camera_info_topic'],on_info,QoSProfile(depth=5,reliability=ReliabilityPolicy.BEST_EFFORT))
@@ -281,6 +287,9 @@ def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
     finally:
         connection.close()
         if perceive is not None:perceive.close()
+        try:
+            if share is not None:share.close()
+        except NameError:pass
         try:
             if learned is not None:
                 print(f"Perception worker: learned mask used in {state.get('learned_used',0)} of {state.get('learned_frames',0)} frames",flush=True)

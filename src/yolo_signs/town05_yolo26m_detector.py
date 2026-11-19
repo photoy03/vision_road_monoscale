@@ -16,6 +16,9 @@ behind parameters whose defaults keep the original behaviour:
   - raw_cdr (default false; plan 30): take the images serialized and decode only the frame that is processed (the
     detector runs at about 11 Hz on 30 Hz images: building a 6 MB Python Image for every message costs the lane
     detector CPU time).  Packed bgr8 / rgb8 only (the first message is checked).
+  - image_shm (default '' = subscribe image_topic; plan 30): read the newest image from the shared memory block of
+    that name, written by road_node's perception worker (image_shm_name; layout in vision_road/image_share.py),
+    instead of subscribing the camera a second time.  image_frame_id names the frame in the detections.
 Run with the YOLO environment's Python and ROS sourced (run_lane_hud.sh --signs does this).
 """
 
@@ -114,6 +117,10 @@ class Town05Yolo26mDetector(Node):
         self.declare_parameter("full_frame", self.USE_FULL_FRAME)
         self.declare_parameter("stats_path", "")
         self.declare_parameter("raw_cdr", False)
+        self.declare_parameter("image_shm", "")
+        self.declare_parameter("image_frame_id", "dashcam_optical_link")
+        self.declare_parameter("cpu_threads", 0)
+        self.declare_parameter("cpu_affinity", "")
 
         model_path = self.get_parameter("model_path").value
         image_topic = self.get_parameter("image_topic").value
@@ -129,6 +136,25 @@ class Town05Yolo26mDetector(Node):
         self.stats_path = str(self.get_parameter("stats_path").value)
         self.raw_cdr = bool(self.get_parameter("raw_cdr").value)
         self.raw_shape = None  # (height, width, encoding, frame_id) from the first raw message
+        self.image_shm = str(self.get_parameter("image_shm").value)
+        self.image_frame_id = str(self.get_parameter("image_frame_id").value)
+        self.shm_reader = ShmImageReader(self.image_shm) if self.image_shm else None
+        # Plan 30 (D1): fewer CPU threads and given cores for this process, so the lane detector keeps its CPU time.
+        # cpu_threads 0 / cpu_affinity '' (defaults): unchanged.  cpu_affinity e.g. "12-15" or "12,13".
+        threads = int(self.get_parameter("cpu_threads").value)
+        if threads > 0:
+            import cv2
+            import torch
+            torch.set_num_threads(threads)
+            cv2.setNumThreads(threads)
+        affinity = str(self.get_parameter("cpu_affinity").value).strip()
+        if affinity:
+            import os
+            cores = set()
+            for part in affinity.split(","):
+                lo, _, hi = part.partition("-")
+                cores.update(range(int(lo), int(hi or lo) + 1))
+            os.sched_setaffinity(0, cores)
         self.stats: list[dict] = []
         self.use_half = False  # set when predict(quantize=...) is rejected
 
@@ -146,7 +172,7 @@ class Town05Yolo26mDetector(Node):
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.VOLATILE,
         )
-        self.image_subscription = self.create_subscription(
+        self.image_subscription = None if self.shm_reader is not None else self.create_subscription(
             Image, image_topic, self.on_image, sensor_qos, raw=self.raw_cdr
         )
         self.detections_publisher = self.create_publisher(String, detections_topic, 10)
@@ -179,6 +205,9 @@ class Town05Yolo26mDetector(Node):
     def inference_loop(self) -> None:
         """Process the newest available frame without blocking image reception."""
         while self.running:
+            if self.shm_reader is not None:
+                self.shm_step()
+                continue
             self.frame_event.wait(timeout=0.5)
             if not self.running:
                 break
@@ -216,6 +245,32 @@ class Town05Yolo26mDetector(Node):
                 self.get_logger().error(
                     f"inference failed: {error}", throttle_duration_sec=5.0
                 )
+
+    def shm_step(self) -> None:
+        """image_shm: wait for a new image in the block (polling every 3 ms), then detect on it."""
+        if self.max_inference_fps > 0.0:
+            remaining = self.last_inference_started + 1.0 / self.max_inference_fps - time.perf_counter()
+            if remaining > 0.0:
+                time.sleep(remaining)
+        got = self.shm_reader.read()
+        if got is None:
+            time.sleep(0.003)
+            return
+        received = time.perf_counter()
+        sec, nanosec, encoding, frame = got
+        if encoding == "rgb8":
+            frame = np.ascontiguousarray(frame[:, :, ::-1])
+        header = SimpleNamespace(stamp=SimpleNamespace(sec=sec, nanosec=nanosec), frame_id=self.image_frame_id)
+        message = SimpleNamespace(header=header, width=frame.shape[1], height=frame.shape[0])
+        try:
+            self.last_inference_started = time.perf_counter()
+            count = self.process_message(message, frame)
+            if self.stats_path:
+                self.stats.append(dict(stamp=sec + nanosec * 1e-9, received=received, start=self.last_inference_started,
+                                       end=time.perf_counter(), speed={k: round(float(v), 3) for k, v in self.last_speed.items()},
+                                       detections=count))
+        except Exception as error:
+            self.get_logger().error(f"inference failed: {error}", throttle_duration_sec=5.0)
 
     def from_cdr(self, raw: bytes):
         """(header-like message, BGR frame) from a serialized packed bgr8 / rgb8 Image, the pixels viewed in place."""
@@ -365,6 +420,38 @@ class Town05Yolo26mDetector(Node):
             Path(self.stats_path).write_text(json.dumps(dict(
                 full_frame=self.full_frame, imgsz=self.imgsz, half=self.use_half,
                 max_inference_fps=self.max_inference_fps, frames=self.stats)))
+
+
+class ShmImageReader:
+    """The reader of vision_road/image_share.py's block (the same layout, kept here so this file runs on its own)."""
+    HEADER = struct.Struct("<4sIQiIIII28x")
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.shm = None
+        self.last = 0
+
+    def read(self):
+        from multiprocessing import shared_memory
+        if self.shm is None:
+            try:
+                self.shm = shared_memory.SharedMemory(self.name)
+            except FileNotFoundError:
+                return None
+            try:  # only a user of the block: Python's resource tracker must not unlink it at exit (Python < 3.13)
+                from multiprocessing import resource_tracker
+                resource_tracker.unregister(self.shm._name, "shared_memory")
+            except Exception:
+                pass
+        buf = self.shm.buf
+        magic, _, seq, sec, nanosec, w, h, enc = self.HEADER.unpack_from(buf, 0)
+        if magic != b"VRIM" or seq % 2 or seq == self.last or not w or not h:
+            return None
+        frame = np.frombuffer(buf, np.uint8, w * h * 3, self.HEADER.size).reshape(h, w, 3).copy()
+        if self.HEADER.unpack_from(buf, 0)[2] != seq:
+            return None
+        self.last = seq
+        return sec, nanosec, ("rgb8" if enc == 1 else "bgr8"), frame
 
 
 def main(args: list[str] | None = None) -> None:

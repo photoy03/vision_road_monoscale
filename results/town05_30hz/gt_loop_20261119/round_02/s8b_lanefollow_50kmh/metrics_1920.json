@@ -189,21 +189,43 @@
    "false_n": 1188,
    "note": "against CARLA stop waypoints (stop_line_ahead_m), about 7.6 m before the painted line: not the scored C4"
   },
-  "C4_stop_line": {
+  "C4_stop_position": {
+   "detected": 0.7167,
+   "n": 240,
    "error_m": {
-    "n": 158,
-    "median": 0.0275,
-    "p95": 0.1021,
+    "n": 172,
+    "median": 0.0309,
+    "p95": 2.1982,
     "max": 2.5331
    },
-   "detected": 0.681,
-   "n": 232,
-   "false": 0.0144,
-   "false_n": 763,
+   "note": "stop line, else the crossing border (truth) / crosswalk marking (detector)"
+  },
+  "C6_crosswalk": {
+   "detected": 0.0952,
+   "n": 63,
+   "near_edge_error_m": {
+    "n": 6,
+    "median": 2.19,
+    "p95": 2.3228,
+    "max": 2.363
+   },
+   "note": "reference only: the border nearest the car against the crosswalk marking nearest to it"
+  },
+  "C4_stop_line": {
+   "error_m": {
+    "n": 166,
+    "median": 0.0303,
+    "p95": 0.0946,
+    "max": 2.5331
+   },
+   "detected": 0.9379,
+   "n": 177,
+   "false": 0.0037,
+   "false_n": 818,
    "paint_minus_waypoint_m": {
-    "n": 244,
-    "median": 7.0559,
-    "p95": 7.5784,
+    "n": 197,
+    "median": 6.9804,
+    "p95": 7.5958,
     "max": 10.1304
    },
    "truth": "semantic camera RoadLine bars across the own lane"

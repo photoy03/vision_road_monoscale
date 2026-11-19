@@ -90,23 +90,29 @@ class LaneGuidanceNode(Node):
         if p('stop_line.enabled', False):
             from visualization_msgs.msg import MarkerArray
             self.stop_line_max_age = float(p('stop_line.max_age_s', .35))
-            self.stop_lines = (None, [])  # (stamp, [nearest x of each stop line])
+            # Plan 30: with no stop line ahead, the near edge of a crosswalk ahead is where to stop (a junction with a
+            # crossing and no stop line); traffic.stop_source says which ('line' / 'crosswalk').  Off by default.
+            self.crosswalk_fallback = bool(p('stop_line.crosswalk_fallback', False))
+            self.stop_lines = (None, [], [])  # (stamp, [nearest x of each stop line], [nearest x of each crosswalk])
             self.create_subscription(MarkerArray, p('stop_line.topic', '/road/road_markings'), self.on_markings, 10)
         self.get_logger().info('Lane guidance: '+str(settings))
 
     def on_markings(self, msg):
         if not msg.markers:return
-        h = msg.markers[0].header.stamp;xs = []
+        h = msg.markers[0].header.stamp;xs = [];cs = []
         for m in msg.markers:
             if m.action == 0 and m.ns == 'stop_line' and m.points:xs.append(min(float(q.x) for q in m.points))
-        self.stop_lines = (h.sec+h.nanosec*1e-9, xs)
+            if m.action == 0 and m.ns == 'crosswalk' and m.points:cs.append(min(float(q.x) for q in m.points))
+        self.stop_lines = (h.sec+h.nanosec*1e-9, xs, cs)
 
     def stop_line_ahead(self, t):
-        """Distance (m, from the rear axle along x) to the nearest stop line ahead of the car at t, or None."""
-        stamp, xs = self.stop_lines
-        if stamp is None or abs(stamp-t) > self.stop_line_max_age:return None
+        """(distance m from the rear axle along x to where to stop at t, or None; 'line' / 'crosswalk' / None)."""
+        stamp, xs, cs = self.stop_lines
+        if stamp is None or abs(stamp-t) > self.stop_line_max_age:return None, None
         ahead = [x for x in xs if x > 0.]
-        return round(min(ahead), 2) if ahead else None
+        if ahead:return round(min(ahead), 2), 'line'
+        ahead = [x for x in cs if x > 0.] if self.crosswalk_fallback else []
+        return (round(min(ahead), 2), 'crosswalk') if ahead else (None, None)
 
     def on_signal(self, msg):
         self.signs['signal'] = msg;self.signs['signal_at'] = time.monotonic()
@@ -165,12 +171,13 @@ class LaneGuidanceNode(Node):
                 scene.has_signal = True;scene.signal = self.signs['signal']
             if sign is not None:
                 scene.has_sign = True;scene.sign = self.signs['sign']
-        stop_line = self.stop_line_ahead(t) if self.stop_lines is not None else None
+        stop_line, stop_source = self.stop_line_ahead(t) if self.stop_lines is not None else (None, None)
         traffic = None;path = out.path if out.shown else None
         if self.traffic is not None:
             tr = self.traffic;limit, over = tr['limit'].update(t, sign, out.speed_mps)
             traffic = dict(light=light, stop_line_m=stop_line, **tr['advise'](light, stop_line, out.speed_mps, tr['settings']),
                            speed_limit_kph=limit, over_limit=over)
+            if self.crosswalk_fallback:traffic['stop_source'] = stop_source
             # A red or yellow light with a stop advice: the guidance ribbon ends at the stop line (no path past it).
             if path is not None and light in ('red', 'yellow') and traffic['advice'] in tr['stop'] and stop_line is not None:
                 path = tr['cut_at'](list(path), stop_line) or None
@@ -187,6 +194,7 @@ class LaneGuidanceNode(Node):
         compute = (time.perf_counter()-begin)*1e3
         extra = dict(light=light, speed_sign=sign) if self.signs is not None else {}  # only with signs.enabled
         if self.stop_lines is not None:extra['stop_line_m'] = stop_line  # only with stop_line.enabled
+        if self.stop_lines is not None and self.crosswalk_fallback:extra['stop_source'] = stop_source
         if traffic is not None:extra['traffic'] = traffic  # only with traffic.enabled
         self.info_pub.publish(String(data=json.dumps(dict(
             stamp=t, state=out.state, target=out.target, offset_m=round(out.offset_m, 3), lateral_speed_mps=round(out.lateral_speed_mps, 3),

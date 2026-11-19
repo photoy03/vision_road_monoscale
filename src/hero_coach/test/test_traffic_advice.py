@@ -107,3 +107,16 @@ def test_lane_ribbon_only_without_a_parking_segment():
     assert lane_ideal(False, r, None) is None
     assert lane_ideal(False, SimpleNamespace(points=[1]), .1) is None
     assert lane_ideal(False, None, .1) is None
+
+
+def test_stop_position_falls_back_to_a_crosswalk_only_when_asked():
+    from types import SimpleNamespace
+    from hero_coach.lane_guidance_node import LaneGuidanceNode
+    ahead = LaneGuidanceNode.stop_line_ahead
+    both = SimpleNamespace(stop_lines=(10., [12.5, -3.], [9.]), stop_line_max_age=.35, crosswalk_fallback=True)
+    assert ahead(both, 10.1) == (12.5, 'line')  # a stop line wins over a nearer crosswalk
+    only = SimpleNamespace(stop_lines=(10., [], [14.2, -1.]), stop_line_max_age=.35, crosswalk_fallback=True)
+    assert ahead(only, 10.1) == (14.2, 'crosswalk')
+    only.crosswalk_fallback = False
+    assert ahead(only, 10.1) == (None, None)
+    assert ahead(both, 11.) == (None, None)  # too old

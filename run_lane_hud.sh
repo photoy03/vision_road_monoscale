@@ -28,6 +28,9 @@ DISK=/media/jaehun/38F7-677B
 VIDEO=${1:-}; shift || true
 HUD=1; LOOP=0; FRAMES=0; LEARNED=""; GUIDANCE=true; FAKE_VS=false; CROP=(); SIGNS=false
 YOLO_PYTHON=${YOLO_PYTHON:-$HOME/yolo_env/bin/python}; SIGNS_FULL_FRAME=${SIGNS_FULL_FRAME:-true}; SIGNS_FPS=${SIGNS_FPS:-0.0}
+# Plan 30 (D1): with --signs the perception worker hands every 2nd image to the sign detector through shared memory
+# (the camera is not subscribed twice: lane latency p95 27.7-28.2 -> 24.8-25.6 ms on town05).
+SIGNS_SHM=${SIGNS_SHM:-vision_road_dashcam}
 SIGNS_IMGSZ=${SIGNS_IMGSZ:-1920}  # plan 30: the full frame at 1920 finds far lights (s7 confirmed 14 -> 80 %)
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -57,12 +60,13 @@ cleanup() { for p in "${PIDS[@]}"; do kill -INT "$p" 2>/dev/null || true; done; 
 trap cleanup EXIT INT TERM
 
 # Detector with the display filter inside it (carla.yaml settings), reference pose adapter, TF.
-( exec "${SIGINT_EXEC[@]}" ros2 launch vision_road maploop.launch.py display_filter_inline:=true lane_guidance:=$GUIDANCE fake_vehicle_state:=$FAKE_VS signs:=$SIGNS $LEARNED ) &
+SHM="";[ "$SIGNS" = true ] && [ -n "$SIGNS_SHM" ] && SHM="image_shm:=$SIGNS_SHM"
+( exec "${SIGINT_EXEC[@]}" ros2 launch vision_road maploop.launch.py display_filter_inline:=true lane_guidance:=$GUIDANCE fake_vehicle_state:=$FAKE_VS signs:=$SIGNS $SHM $LEARNED ) &
 PIDS+=($!)
 if [ "$SIGNS" = true ]; then
   # The YOLO environment (ultralytics for YOLO26) with this ROS environment sourced: it imports rclpy.
   ( exec "${SIGINT_EXEC[@]}" "$YOLO_PYTHON" "$ROAD/src/yolo_signs/town05_yolo26m_detector.py" --ros-args \
-      -p full_frame:=$SIGNS_FULL_FRAME -p max_inference_fps:=$SIGNS_FPS -p imgsz:=$SIGNS_IMGSZ -p raw_cdr:=true ) &
+      -p full_frame:=$SIGNS_FULL_FRAME -p max_inference_fps:=$SIGNS_FPS -p imgsz:=$SIGNS_IMGSZ -p raw_cdr:=true -p image_shm:=$SIGNS_SHM ) &
   PIDS+=($!)
 fi
 /usr/bin/python3 - <<'PY'

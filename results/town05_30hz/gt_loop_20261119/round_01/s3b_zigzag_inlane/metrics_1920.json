@@ -187,6 +187,28 @@
    "false_n": 2205,
    "note": "against CARLA stop waypoints (stop_line_ahead_m), about 7.6 m before the painted line: not the scored C4"
   },
+  "C4_stop_position": {
+   "detected": null,
+   "n": 0,
+   "error_m": {
+    "n": 0,
+    "median": null,
+    "p95": null,
+    "max": null
+   },
+   "note": "stop line, else the crossing border (truth) / crosswalk marking (detector)"
+  },
+  "C6_crosswalk": {
+   "detected": null,
+   "n": 0,
+   "near_edge_error_m": {
+    "n": 0,
+    "median": null,
+    "p95": null,
+    "max": null
+   },
+   "note": "reference only: the border nearest the car against the crosswalk marking nearest to it"
+  },
   "C4_stop_line": {
    "error_m": {
     "n": 0,

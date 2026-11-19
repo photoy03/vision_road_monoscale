@@ -2,7 +2,7 @@
 
 이 파일만 읽고 바로 이어서 작업할 수 있게 쓴다. **작업 하나가 끝날 때마다 "지금 상태"와 "다음에 할 일"을 고치고, `docs/WORKLOG_KO.md` 에 한 줄을 더한다.**
 
-마지막 갱신: 2026-11-20 01:00 (계획 30 2회차와 실시간 측정 끝, 개선 세션)
+마지막 갱신: 2026-11-20 01:50 (계획 30 3회차 끝, HUD 영상 남음, 개선 세션)
 
 ---
 
@@ -155,9 +155,14 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 - 결과 폴더: `results/town05_30hz/gt_loop_20261119/`
   - `SUMMARY_KO.md`: 회차 비교. `scripts/summary_rounds.py round_00: round_01:_1920 round_02:_1920` 로 만든다.
   - `round_NN/REPORT_KO.md`, `round_NN/table.md`: 회차별 보고서와 목표 대비 표. 표는 `scripts/summary.py round_NN --tag _1920` 으로 만든다.
-- 진행 정도 (2026-11-20 01:00):
-  - 기준선 `round_00`, 1회차 `round_01`, 2회차 `round_02` 와 2회차 실시간(D) 측정이 끝났다.
-  - 커밋 요청과 연구 세션 보고를 보낸 뒤 3회차를 시작한다.
+- 진행 정도 (2026-11-20 01:50):
+  - 기준선, 1·2·3회차가 끝났다(1·2회차 커밋 8aa7de4).
+  - 남은 일은 마지막 HUD 영상(s3a, s5, s6, s7)과 최종 정리다.
+  - 3회차:
+    - 정지선 정답 정의를 고쳐 C4 를 충족했다.
+    - 정지 위치 대체(`stop_line.crosswalk_fallback`)를 넣었다.
+    - D1 공유 메모리를 넣었고, `run_lane_hud.sh --signs` 기본으로 켰다.
+    - B5·B3·D1 은 닫았다.
 
 #### 도구 (`tools/gt_eval.py`, 사용법은 파일 맨 위)
 
@@ -221,14 +226,25 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 - YOLO 신뢰도 하한 0.4–0.6, 신호 유지 1 초, 투표 1: 확정과 색 오류가 서로 맞바뀜.
 - 방향 구간 6·10·12 m: 8 m 보다 나쁨.
 
+#### 3회차에서 켠 것
+
+- `maploop.launch.py`:
+  - `image_shm`(기본 '' = 끔)과 `image_shm_every`(2): 차선 작업 프로세스가 결과를 낸 뒤 영상을 공유 메모리에 쓴다(`vision_road/image_share.py`).
+  - lane_guidance `stop_line.crosswalk_fallback`: `road_markings` 와 함께 켠다.
+- YOLO 사본(`src/yolo_signs`) 파라미터:
+  - `image_shm`: 영상 구독 대신 블록을 읽는다.
+  - `cpu_threads`, `cpu_affinity`: 시험만 했고 쓰지 않는다.
+  - `raw_cdr`.
+- `run_lane_hud.sh --signs`: `image_shm:=vision_road_dashcam` 을 양쪽에 준다(`SIGNS_SHM` 으로 바꾸거나 비워 끔).
+- 실시간 결과(모두 켬, town05): p95 24.8–25.6 ms(신호 끔 23.1–24.1). D1 은 닫았고 본체에서 다시 잰다.
+- 연구 세션 결정으로 더 시도하지 않는 것: C1 신호 확정·s8b 색 오류, C3 미국식 SPEED LIMIT·40 표지판(모델 한계).
+
 #### 지금 돌고 있는 것
 
-- 없음 (2026-11-20 01:00).
-- 실시간 측정 기록은 `round_02/realtime*/` 에 있다. 측정 중에는 다른 무거운 작업을 돌리지 않는다.
-  - `realtime_1920/` 은 실행 인자를 빠뜨린 측정이라 쓰지 않는다.
-- 실행 중인 bash 스크립트는 고치지 않는다. bash 는 파일을 읽어 가며 실행하므로, 도는 중에 고치면 뒷부분이 깨진다. 이번에 두 번 깨졌다.
-- `pgrep -f` 로 기다릴 때는 `town05_yolo26m_detector` 같은 이름을 쓰지 않는다. Claude 앱 프로세스의 명령줄에도 그 이름이 들어 있어 기다림이 끝나지 않는다.
-- 백업: `backups/before-gt-loop-20261119/` (lane_guidance.py, lane_guidance_node.py, traffic_signs.py, temporal.py, core.py, centreline.py, carla.yaml, maploop.launch.py, run_lane_hud.sh, realtime_eval.py, gt_eval.py).
+- 없음 (2026-11-20 01:50).
+- 실행 중인 bash 스크립트는 고치지 않는다. bash 는 읽어 가며 실행하므로 고치면 뒷부분이 깨진다.
+- `pgrep -f` 로 기다릴 때 `town05_yolo26m_detector` 같은 이름은 Claude 앱 명령줄에도 있어 기다림이 끝나지 않는다.
+- 실시간 측정 중에는 다른 무거운 작업을 돌리지 않는다.
 
 - 새 로스백 12 개: `town05_s1_lanefollow`, `s2_wobble`, `s3a_zigzag_cross`, `s3b_zigzag_inlane`, `s4_straddle`, `s5_lanechange`, `s6_yellow`, `s7_lights`, `s8a_lanefollow_20kmh`, `s8b_lanefollow_50kmh`, `s8c_lanechange_20kmh`, `s8d_lanechange_50kmh` (모두 `_20261119`).
   - 각 폴더에 `README.md`(대본, 토픽, 좌표 약속)와 `sidecar/`가 있다. `sidecar/` 에는 정답 `gt_frames.jsonl`·`.csv`, `lights.csv`, `target.csv`, `ticks.csv`, `static.json`, 지도 `.xodr` 가 들어 있다.
@@ -236,20 +252,17 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 
 ## 7. 다음에 할 일 (순서대로)
 
-1. (끝) 2회차 실시간 D. 차선 지연 D1 만 미달이고, YOLO 설정으로는 채울 수 없다. 영상 전달을 바꿀지는 연구 세션이 판단한다.
-2. (끝) 세 회차 다시 계산, `SUMMARY_KO.md`, 시험(hero_coach 101, vision_road 157 통과), 커밋 요청, 연구 세션 보고.
-3. 3회차 후보(가장 못 미치는 것부터):
-   - C4 정지선 검출 68–70 %: 경로 마지막 교차로에는 정지선이 없고 횡단보도만 있다. 정답은 횡단보도 테두리를 정지선으로 세고, 검출은 횡단보도로 본다. 정답 정의를 고치고, 정지선이 없으면 횡단보도 앞 끝을 정지 위치로 쓰는 것을 검토한다.
-   - A5 오른쪽 옆 차로 재현율: s3a 73, s8c 78 %.
-   - B5 멀 때 60–98 %: 차로를 새로 잡은 직후, 검출이 끊긴 동안, 교차로 회전 직후에 안내가 쉰다.
-   - A1 p95 s3a 23 cm, A2 관측 s3a 91 %: 큰 방향각으로 선을 넘나드는 장면이다.
-4. 모델 한계로 닫을 것(재학습 없이 못 고침):
-   - C1 신호등 확정: s7 말고는 37–49 %. 먼 신호등이 작다.
-   - s8b 빨간불을 초록으로 읽음(색 오류 33 %).
-   - 미국식 사각형 SPEED LIMIT 표지판과 40 표지판(모델이 모름).
-5. 끝내는 조건: 모든 목표 충족, 또는 같은 항목에 서로 다른 시도 3 번이 실패(원인·수치를 적고 넘어감).
-6. 끝나면 장면별 HUD 영상(s3a, s5, s6, s7)을 만든다.
-7. 그 뒤 남는 일: 본체 컴퓨터에서 코치 노드와 함께 실행, 본체 지연 측정(`tools/measure_latency.sh`), 정지 권고 음성 안내(제안만 됨).
+1. (끝) 계획 30 기준선, 1–3회차. 표는 `results/town05_30hz/gt_loop_20261119/SUMMARY_KO.md` 에 있다.
+2. (다음) 마지막 HUD 영상 s3a, s5, s6, s7. mp4 는 커밋하지 않는다.
+   - 명령: `tools/realtime_eval.py --video town05_<장면> --output <폴더> --record --signs --signs-arg full_frame:=true imgsz:=1920 image_shm:=vision_road_dashcam --launch-arg display_filter_inline:=true lane_guidance:=true fake_vehicle_state:=true image_shm:=vision_road_dashcam`
+3. 남은 미달(검출기 쪽, 다음 계획 후보):
+   - A5 오른쪽 옆 차로 재현율: s3a 73, s8c 78 %. 바깥 선이 짧게 보이거나 차가 비스듬할 때 놓친다.
+   - B2 빠른 차로 변경(s8c 2/4, s3a 19/24): 선을 넘는 동안 검출이 끊긴다.
+   - A1 p95 s3a 23 cm, A2 s3a 91 %.
+   - A4 방향 p95 커브(3/12 만 1.5° 이하).
+   - B5 멀 때 60–98 %(닫음).
+4. 모델 한계(재학습은 연구 세션이 사용자에게 알림): 신호등 확정, s8b 빨강 → 초록, 미국식 사각형·40 표지판.
+5. 본체 컴퓨터에서 코치 노드와 함께 실행하고, 본체에서 지연을 다시 잰다(D1).
 
 ## 8. 알려진 한계와 미해결
 

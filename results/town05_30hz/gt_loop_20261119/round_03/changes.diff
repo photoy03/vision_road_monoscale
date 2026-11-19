@@ -1,0 +1,528 @@
+diff --git a/run_lane_hud.sh b/run_lane_hud.sh
+index 453e22d..76b53b3 100755
+--- a/run_lane_hud.sh
++++ b/run_lane_hud.sh
+@@ -28,6 +28,9 @@ DISK=/media/jaehun/38F7-677B
+ VIDEO=${1:-}; shift || true
+ HUD=1; LOOP=0; FRAMES=0; LEARNED=""; GUIDANCE=true; FAKE_VS=false; CROP=(); SIGNS=false
+ YOLO_PYTHON=${YOLO_PYTHON:-$HOME/yolo_env/bin/python}; SIGNS_FULL_FRAME=${SIGNS_FULL_FRAME:-true}; SIGNS_FPS=${SIGNS_FPS:-0.0}
++# Plan 30 (D1): with --signs the perception worker hands every 2nd image to the sign detector through shared memory
++# (the camera is not subscribed twice: lane latency p95 27.7-28.2 -> 24.8-25.6 ms on town05).
++SIGNS_SHM=${SIGNS_SHM:-vision_road_dashcam}
+ SIGNS_IMGSZ=${SIGNS_IMGSZ:-1920}  # plan 30: the full frame at 1920 finds far lights (s7 confirmed 14 -> 80 %)
+ while [ $# -gt 0 ]; do
+   case "$1" in
+@@ -57,12 +60,13 @@ cleanup() { for p in "${PIDS[@]}"; do kill -INT "$p" 2>/dev/null || true; done;
+ trap cleanup EXIT INT TERM
+ 
+ # Detector with the display filter inside it (carla.yaml settings), reference pose adapter, TF.
+-( exec "${SIGINT_EXEC[@]}" ros2 launch vision_road maploop.launch.py display_filter_inline:=true lane_guidance:=$GUIDANCE fake_vehicle_state:=$FAKE_VS signs:=$SIGNS $LEARNED ) &
++SHM="";[ "$SIGNS" = true ] && [ -n "$SIGNS_SHM" ] && SHM="image_shm:=$SIGNS_SHM"
++( exec "${SIGINT_EXEC[@]}" ros2 launch vision_road maploop.launch.py display_filter_inline:=true lane_guidance:=$GUIDANCE fake_vehicle_state:=$FAKE_VS signs:=$SIGNS $SHM $LEARNED ) &
+ PIDS+=($!)
+ if [ "$SIGNS" = true ]; then
+   # The YOLO environment (ultralytics for YOLO26) with this ROS environment sourced: it imports rclpy.
+   ( exec "${SIGINT_EXEC[@]}" "$YOLO_PYTHON" "$ROAD/src/yolo_signs/town05_yolo26m_detector.py" --ros-args \
+-      -p full_frame:=$SIGNS_FULL_FRAME -p max_inference_fps:=$SIGNS_FPS -p imgsz:=$SIGNS_IMGSZ -p raw_cdr:=true ) &
++      -p full_frame:=$SIGNS_FULL_FRAME -p max_inference_fps:=$SIGNS_FPS -p imgsz:=$SIGNS_IMGSZ -p raw_cdr:=true -p image_shm:=$SIGNS_SHM ) &
+   PIDS+=($!)
+ fi
+ /usr/bin/python3 - <<'PY'
+diff --git a/src/hero_coach/hero_coach/lane_guidance_node.py b/src/hero_coach/hero_coach/lane_guidance_node.py
+index 3507fc0..b506f0d 100644
+--- a/src/hero_coach/hero_coach/lane_guidance_node.py
++++ b/src/hero_coach/hero_coach/lane_guidance_node.py
+@@ -90,23 +90,29 @@ class LaneGuidanceNode(Node):
+         if p('stop_line.enabled', False):
+             from visualization_msgs.msg import MarkerArray
+             self.stop_line_max_age = float(p('stop_line.max_age_s', .35))
+-            self.stop_lines = (None, [])  # (stamp, [nearest x of each stop line])
++            # Plan 30: with no stop line ahead, the near edge of a crosswalk ahead is where to stop (a junction with a
++            # crossing and no stop line); traffic.stop_source says which ('line' / 'crosswalk').  Off by default.
++            self.crosswalk_fallback = bool(p('stop_line.crosswalk_fallback', False))
++            self.stop_lines = (None, [], [])  # (stamp, [nearest x of each stop line], [nearest x of each crosswalk])
+             self.create_subscription(MarkerArray, p('stop_line.topic', '/road/road_markings'), self.on_markings, 10)
+         self.get_logger().info('Lane guidance: '+str(settings))
+ 
+     def on_markings(self, msg):
+         if not msg.markers:return
+-        h = msg.markers[0].header.stamp;xs = []
++        h = msg.markers[0].header.stamp;xs = [];cs = []
+         for m in msg.markers:
+             if m.action == 0 and m.ns == 'stop_line' and m.points:xs.append(min(float(q.x) for q in m.points))
+-        self.stop_lines = (h.sec+h.nanosec*1e-9, xs)
++            if m.action == 0 and m.ns == 'crosswalk' and m.points:cs.append(min(float(q.x) for q in m.points))
++        self.stop_lines = (h.sec+h.nanosec*1e-9, xs, cs)
+ 
+     def stop_line_ahead(self, t):
+-        """Distance (m, from the rear axle along x) to the nearest stop line ahead of the car at t, or None."""
+-        stamp, xs = self.stop_lines
+-        if stamp is None or abs(stamp-t) > self.stop_line_max_age:return None
++        """(distance m from the rear axle along x to where to stop at t, or None; 'line' / 'crosswalk' / None)."""
++        stamp, xs, cs = self.stop_lines
++        if stamp is None or abs(stamp-t) > self.stop_line_max_age:return None, None
+         ahead = [x for x in xs if x > 0.]
+-        return round(min(ahead), 2) if ahead else None
++        if ahead:return round(min(ahead), 2), 'line'
++        ahead = [x for x in cs if x > 0.] if self.crosswalk_fallback else []
++        return (round(min(ahead), 2), 'crosswalk') if ahead else (None, None)
+ 
+     def on_signal(self, msg):
+         self.signs['signal'] = msg;self.signs['signal_at'] = time.monotonic()
+@@ -165,12 +171,13 @@ class LaneGuidanceNode(Node):
+                 scene.has_signal = True;scene.signal = self.signs['signal']
+             if sign is not None:
+                 scene.has_sign = True;scene.sign = self.signs['sign']
+-        stop_line = self.stop_line_ahead(t) if self.stop_lines is not None else None
++        stop_line, stop_source = self.stop_line_ahead(t) if self.stop_lines is not None else (None, None)
+         traffic = None;path = out.path if out.shown else None
+         if self.traffic is not None:
+             tr = self.traffic;limit, over = tr['limit'].update(t, sign, out.speed_mps)
+             traffic = dict(light=light, stop_line_m=stop_line, **tr['advise'](light, stop_line, out.speed_mps, tr['settings']),
+                            speed_limit_kph=limit, over_limit=over)
++            if self.crosswalk_fallback:traffic['stop_source'] = stop_source
+             # A red or yellow light with a stop advice: the guidance ribbon ends at the stop line (no path past it).
+             if path is not None and light in ('red', 'yellow') and traffic['advice'] in tr['stop'] and stop_line is not None:
+                 path = tr['cut_at'](list(path), stop_line) or None
+@@ -187,6 +194,7 @@ class LaneGuidanceNode(Node):
+         compute = (time.perf_counter()-begin)*1e3
+         extra = dict(light=light, speed_sign=sign) if self.signs is not None else {}  # only with signs.enabled
+         if self.stop_lines is not None:extra['stop_line_m'] = stop_line  # only with stop_line.enabled
++        if self.stop_lines is not None and self.crosswalk_fallback:extra['stop_source'] = stop_source
+         if traffic is not None:extra['traffic'] = traffic  # only with traffic.enabled
+         self.info_pub.publish(String(data=json.dumps(dict(
+             stamp=t, state=out.state, target=out.target, offset_m=round(out.offset_m, 3), lateral_speed_mps=round(out.lateral_speed_mps, 3),
+diff --git a/src/hero_coach/test/test_traffic_advice.py b/src/hero_coach/test/test_traffic_advice.py
+index 8f0461c..5b84fb7 100644
+--- a/src/hero_coach/test/test_traffic_advice.py
++++ b/src/hero_coach/test/test_traffic_advice.py
+@@ -107,3 +107,16 @@ def test_lane_ribbon_only_without_a_parking_segment():
+     assert lane_ideal(False, r, None) is None
+     assert lane_ideal(False, SimpleNamespace(points=[1]), .1) is None
+     assert lane_ideal(False, None, .1) is None
++
++
++def test_stop_position_falls_back_to_a_crosswalk_only_when_asked():
++    from types import SimpleNamespace
++    from hero_coach.lane_guidance_node import LaneGuidanceNode
++    ahead = LaneGuidanceNode.stop_line_ahead
++    both = SimpleNamespace(stop_lines=(10., [12.5, -3.], [9.]), stop_line_max_age=.35, crosswalk_fallback=True)
++    assert ahead(both, 10.1) == (12.5, 'line')  # a stop line wins over a nearer crosswalk
++    only = SimpleNamespace(stop_lines=(10., [], [14.2, -1.]), stop_line_max_age=.35, crosswalk_fallback=True)
++    assert ahead(only, 10.1) == (14.2, 'crosswalk')
++    only.crosswalk_fallback = False
++    assert ahead(only, 10.1) == (None, None)
++    assert ahead(both, 11.) == (None, None)  # too old
+diff --git a/src/vision_road/launch/maploop.launch.py b/src/vision_road/launch/maploop.launch.py
+index 63a75c9..c4f1fdd 100644
+--- a/src/vision_road/launch/maploop.launch.py
++++ b/src/vision_road/launch/maploop.launch.py
+@@ -42,6 +42,10 @@ def generate_launch_description():
+         # traffic_sign_bridge (-> /hero/traffic_light, /hero/sign) and makes lane_guidance put them into its scene and
+         # its traffic advice into the JSON.  Off by default.
+         DeclareLaunchArgument('signs',default_value='false'),
++        # Plan 30 (D1): the perception worker also writes every 2nd image to this shared memory block for the sign
++        # detector (its image_shm parameter), so the camera is not subscribed twice.  '' (default): off.
++        DeclareLaunchArgument('image_shm',default_value=''),
++        DeclareLaunchArgument('image_shm_every',default_value='2'),
+         ExecuteProcess(cmd=['python3',os.path.join(os.path.dirname(os.path.realpath(__file__)),'..','..','..','tools','fake_vehicle_state.py')],
+                        name='fake_vehicle_state',output='screen',condition=IfCondition(LaunchConfiguration('fake_vehicle_state'))),
+         Node(package='vision_road',executable='road_node',name='vision_road',output='screen',parameters=[share+'/config/carla.yaml',{
+@@ -59,7 +63,9 @@ def generate_launch_description():
+             'road_markings':ParameterValue(LaunchConfiguration('road_markings'),value_type=bool),
+             'learned_every':ParameterValue(LaunchConfiguration('learned_every'),value_type=int),
+             'display_filter_inline':ParameterValue(LaunchConfiguration('display_filter_inline'),value_type=bool),
+-            'display_filter_config':ParameterValue(LaunchConfiguration('display_filter_config'),value_type=str)}]),
++            'display_filter_config':ParameterValue(LaunchConfiguration('display_filter_config'),value_type=str),
++            'image_shm_name':ParameterValue(LaunchConfiguration('image_shm'),value_type=str),
++            'image_shm_every':ParameterValue(LaunchConfiguration('image_shm_every'),value_type=int)}]),
+         # HUD-only smoothing of the boundaries; road_node's own topics are unchanged.
+         Node(package='vision_road',executable='lane_display_filter',
+              condition=IfCondition(PythonExpression(["'",LaunchConfiguration('display_filter'),"'=='true' and '",LaunchConfiguration('display_filter_inline'),"'!='true'"])),
+@@ -70,6 +76,8 @@ def generate_launch_description():
+                           'signs.enabled':ParameterValue(LaunchConfiguration('signs'),value_type=bool),
+                           'traffic.enabled':ParameterValue(LaunchConfiguration('signs'),value_type=bool),
+                           'stop_line.enabled':ParameterValue(LaunchConfiguration('road_markings'),value_type=bool),
++                          # Plan 30: no stop line ahead, a crosswalk ahead: stop at its near edge (stop_source in the JSON).
++                          'stop_line.crosswalk_fallback':ParameterValue(LaunchConfiguration('road_markings'),value_type=bool),
+                           # Plan 30 (GT loop): the offset at the car origin, a lane change over a white dashed line
+                           # with no lane detected beyond it, and an estimated lane beside one measured line trusted.
+                           'guidance.offset_at_m':1.4096,'guidance.change_without_neighbour':True,'guidance.trust_single_line':True,
+diff --git a/src/vision_road/vision_road/node.py b/src/vision_road/vision_road/node.py
+index c4979d2..c3a88c5 100644
+--- a/src/vision_road/vision_road/node.py
++++ b/src/vision_road/vision_road/node.py
+@@ -191,7 +191,9 @@ class RoadNode(Node):
+                 dict(image_topic=image_topic,reliability=reliability,odom_topic=self.odom_topic,camera_info_topic=self.camera_info_topic,
+                      world_frame=self.world_frame,base_frame=self.base_frame,odom_max_gap_sec=self.timeline.max_gap,
+                      debug_hz=self.debug_hz if self.debug else 0.,overlay_max_width=self.overlay_max_width,side=self.side_config,
+-                     learned=self.learned.model.handle() if self.learned_in_worker else None,learned_every=self.learned.every))
++                     learned=self.learned.model.handle() if self.learned_in_worker else None,learned_every=self.learned.every,
++                     # plan 30: the newest image in shared memory for the sign detector ('' = off; image_share.py)
++                     image_shm_name=param('image_shm_name',''),image_shm_every=param('image_shm_every',2)))
+             self.result_worker=threading.Thread(target=self.take_results,name='road-perception-results',daemon=True);self.result_worker.start()
+         elif self.raw_cdr:self.create_subscription(Image,image_topic,self.on_image_cdr,image_qos,raw=True)
+         else:self.create_subscription(CompressedImage if compressed else Image, image_topic, self.on_compressed if compressed else self.on_image, image_qos)
+diff --git a/src/vision_road/vision_road/rt_worker.py b/src/vision_road/vision_road/rt_worker.py
+index 6239129..aba6ef4 100644
+--- a/src/vision_road/vision_road/rt_worker.py
++++ b/src/vision_road/vision_road/rt_worker.py
+@@ -203,6 +203,10 @@ def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
+             from builtin_interfaces.msg import Time
+             topics=SideTopics(node,ros['base_frame'],ros['debug_hz'],error,outer,centre)
+         learned=LearnedMask(projector,every=ros.get('learned_every',1),client=ros['learned']) if ros.get('learned') is not None else None
++        share=None
++        if ros.get('image_shm_name'):
++            from .image_share import ImageShareWriter
++            share=ImageShareWriter(ros['image_shm_name'],ros.get('image_shm_every',2))
+         timeline=Timeline(ros['odom_max_gap_sec']);state=dict(shape=None,last=None,reset=False,last_debug=-math.inf,roi=None,skipped=0)
+         full_w,full_h=projector.source_size
+         def on_info(msg):
+@@ -264,6 +268,8 @@ def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
+                 # Outer lines and centrelines after road_node has the main result: its own outputs go first.
+                 begin=time.perf_counter();side=perceive.side_outputs(Time(sec=sec,nanosec=nanosec),t,topics)
+                 connection.send(dict(side=side,extra_ms=(time.perf_counter()-begin)*1e3))
++            # image_shm_name (plan 30): this image for the sign detector, after the lane outputs (image_share.py).
++            if share is not None and not cropped:share.write(memoryview(raw)[len(raw)-h*w*3:],w,h,encoding,sec,nanosec)
+         node.create_subscription(Odometry,ros['odom_topic'],on_odom,QoSProfile(depth=200,reliability=ReliabilityPolicy.BEST_EFFORT))
+         if ros.get('camera_info_topic'):
+             node.create_subscription(CameraInfo,ros['camera_info_topic'],on_info,QoSProfile(depth=5,reliability=ReliabilityPolicy.BEST_EFFORT))
+@@ -281,6 +287,9 @@ def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
+     finally:
+         connection.close()
+         if perceive is not None:perceive.close()
++        try:
++            if share is not None:share.close()
++        except NameError:pass
+         try:
+             if learned is not None:
+                 print(f"Perception worker: learned mask used in {state.get('learned_used',0)} of {state.get('learned_frames',0)} frames",flush=True)
+diff --git a/src/yolo_signs/town05_yolo26m_detector.py b/src/yolo_signs/town05_yolo26m_detector.py
+index 112d4a0..ec91b7d 100644
+--- a/src/yolo_signs/town05_yolo26m_detector.py
++++ b/src/yolo_signs/town05_yolo26m_detector.py
+@@ -16,6 +16,9 @@ behind parameters whose defaults keep the original behaviour:
+   - raw_cdr (default false; plan 30): take the images serialized and decode only the frame that is processed (the
+     detector runs at about 11 Hz on 30 Hz images: building a 6 MB Python Image for every message costs the lane
+     detector CPU time).  Packed bgr8 / rgb8 only (the first message is checked).
++  - image_shm (default '' = subscribe image_topic; plan 30): read the newest image from the shared memory block of
++    that name, written by road_node's perception worker (image_shm_name; layout in vision_road/image_share.py),
++    instead of subscribing the camera a second time.  image_frame_id names the frame in the detections.
+ Run with the YOLO environment's Python and ROS sourced (run_lane_hud.sh --signs does this).
+ """
+ 
+@@ -114,6 +117,10 @@ class Town05Yolo26mDetector(Node):
+         self.declare_parameter("full_frame", self.USE_FULL_FRAME)
+         self.declare_parameter("stats_path", "")
+         self.declare_parameter("raw_cdr", False)
++        self.declare_parameter("image_shm", "")
++        self.declare_parameter("image_frame_id", "dashcam_optical_link")
++        self.declare_parameter("cpu_threads", 0)
++        self.declare_parameter("cpu_affinity", "")
+ 
+         model_path = self.get_parameter("model_path").value
+         image_topic = self.get_parameter("image_topic").value
+@@ -129,6 +136,25 @@ class Town05Yolo26mDetector(Node):
+         self.stats_path = str(self.get_parameter("stats_path").value)
+         self.raw_cdr = bool(self.get_parameter("raw_cdr").value)
+         self.raw_shape = None  # (height, width, encoding, frame_id) from the first raw message
++        self.image_shm = str(self.get_parameter("image_shm").value)
++        self.image_frame_id = str(self.get_parameter("image_frame_id").value)
++        self.shm_reader = ShmImageReader(self.image_shm) if self.image_shm else None
++        # Plan 30 (D1): fewer CPU threads and given cores for this process, so the lane detector keeps its CPU time.
++        # cpu_threads 0 / cpu_affinity '' (defaults): unchanged.  cpu_affinity e.g. "12-15" or "12,13".
++        threads = int(self.get_parameter("cpu_threads").value)
++        if threads > 0:
++            import cv2
++            import torch
++            torch.set_num_threads(threads)
++            cv2.setNumThreads(threads)
++        affinity = str(self.get_parameter("cpu_affinity").value).strip()
++        if affinity:
++            import os
++            cores = set()
++            for part in affinity.split(","):
++                lo, _, hi = part.partition("-")
++                cores.update(range(int(lo), int(hi or lo) + 1))
++            os.sched_setaffinity(0, cores)
+         self.stats: list[dict] = []
+         self.use_half = False  # set when predict(quantize=...) is rejected
+ 
+@@ -146,7 +172,7 @@ class Town05Yolo26mDetector(Node):
+             reliability=ReliabilityPolicy.BEST_EFFORT,
+             durability=DurabilityPolicy.VOLATILE,
+         )
+-        self.image_subscription = self.create_subscription(
++        self.image_subscription = None if self.shm_reader is not None else self.create_subscription(
+             Image, image_topic, self.on_image, sensor_qos, raw=self.raw_cdr
+         )
+         self.detections_publisher = self.create_publisher(String, detections_topic, 10)
+@@ -179,6 +205,9 @@ class Town05Yolo26mDetector(Node):
+     def inference_loop(self) -> None:
+         """Process the newest available frame without blocking image reception."""
+         while self.running:
++            if self.shm_reader is not None:
++                self.shm_step()
++                continue
+             self.frame_event.wait(timeout=0.5)
+             if not self.running:
+                 break
+@@ -217,6 +246,32 @@ class Town05Yolo26mDetector(Node):
+                     f"inference failed: {error}", throttle_duration_sec=5.0
+                 )
+ 
++    def shm_step(self) -> None:
++        """image_shm: wait for a new image in the block (polling every 3 ms), then detect on it."""
++        if self.max_inference_fps > 0.0:
++            remaining = self.last_inference_started + 1.0 / self.max_inference_fps - time.perf_counter()
++            if remaining > 0.0:
++                time.sleep(remaining)
++        got = self.shm_reader.read()
++        if got is None:
++            time.sleep(0.003)
++            return
++        received = time.perf_counter()
++        sec, nanosec, encoding, frame = got
++        if encoding == "rgb8":
++            frame = np.ascontiguousarray(frame[:, :, ::-1])
++        header = SimpleNamespace(stamp=SimpleNamespace(sec=sec, nanosec=nanosec), frame_id=self.image_frame_id)
++        message = SimpleNamespace(header=header, width=frame.shape[1], height=frame.shape[0])
++        try:
++            self.last_inference_started = time.perf_counter()
++            count = self.process_message(message, frame)
++            if self.stats_path:
++                self.stats.append(dict(stamp=sec + nanosec * 1e-9, received=received, start=self.last_inference_started,
++                                       end=time.perf_counter(), speed={k: round(float(v), 3) for k, v in self.last_speed.items()},
++                                       detections=count))
++        except Exception as error:
++            self.get_logger().error(f"inference failed: {error}", throttle_duration_sec=5.0)
++
+     def from_cdr(self, raw: bytes):
+         """(header-like message, BGR frame) from a serialized packed bgr8 / rgb8 Image, the pixels viewed in place."""
+         if self.raw_shape is None:
+@@ -367,6 +422,38 @@ class Town05Yolo26mDetector(Node):
+                 max_inference_fps=self.max_inference_fps, frames=self.stats)))
+ 
+ 
++class ShmImageReader:
++    """The reader of vision_road/image_share.py's block (the same layout, kept here so this file runs on its own)."""
++    HEADER = struct.Struct("<4sIQiIIII28x")
++
++    def __init__(self, name: str) -> None:
++        self.name = name
++        self.shm = None
++        self.last = 0
++
++    def read(self):
++        from multiprocessing import shared_memory
++        if self.shm is None:
++            try:
++                self.shm = shared_memory.SharedMemory(self.name)
++            except FileNotFoundError:
++                return None
++            try:  # only a user of the block: Python's resource tracker must not unlink it at exit (Python < 3.13)
++                from multiprocessing import resource_tracker
++                resource_tracker.unregister(self.shm._name, "shared_memory")
++            except Exception:
++                pass
++        buf = self.shm.buf
++        magic, _, seq, sec, nanosec, w, h, enc = self.HEADER.unpack_from(buf, 0)
++        if magic != b"VRIM" or seq % 2 or seq == self.last or not w or not h:
++            return None
++        frame = np.frombuffer(buf, np.uint8, w * h * 3, self.HEADER.size).reshape(h, w, 3).copy()
++        if self.HEADER.unpack_from(buf, 0)[2] != seq:
++            return None
++        self.last = seq
++        return sec, nanosec, ("rgb8" if enc == 1 else "bgr8"), frame
++
++
+ def main(args: list[str] | None = None) -> None:
+     rclpy.init(args=args)
+     node = Town05Yolo26mDetector()
+diff --git a/tools/gt_eval.py b/tools/gt_eval.py
+index 64ff0b6..02599fb 100644
+--- a/tools/gt_eval.py
++++ b/tools/gt_eval.py
+@@ -184,22 +184,36 @@ def paint_stops(a):
+             img = np.frombuffer(raw, np.uint8, h*w*3, len(raw)-h*w*3).reshape(h, w, 3)
+             line = ((img[:, :, 2] == 24)*255).astype(np.uint8)
+             bev = cv2.remap(line, proj.mx, proj.my, cv2.INTER_NEAREST);bev[proj.valid == 0] = 0;bev[proj.my >= h*M.LAUNCH['image_roi_bottom']] = 0
+-            r = gt.get(round(t, 4));stop = None
++            r = gt.get(round(t, 4));stop = None;crossing = None
+             ego = next((l for l in r['lanes'] if l['relation'] == 'ego'), None) if r else None
+             if ego is not None:
+-                left, right = to_base(ego['left_boundary_vehicle']), to_base(ego['right_boundary_vehicle']);bars = []
++                left, right = to_base(ego['left_boundary_vehicle']), to_base(ego['right_boundary_vehicle']);bars = [];stripes = []
+                 for row in range(bev.shape[0]):
+                     x = cfg.forward_max-row*mpp;yl, yr = y_at(left, x), y_at(right, x)
+-                    if yl is None or yr is None or yl-yr < 2.:bars.append(False);continue
++                    if yl is None or yr is None or yl-yr < 2.:bars.append(False);stripes.append(False);continue
+                     c0 = int(round((-(yl-.3)-cfg.lateral_min)/mpp));c1 = int(round((-(yr+.3)-cfg.lateral_min)/mpp))
+-                    seg = bev[row, max(0, c0):min(bev.shape[1], c1)]
+-                    bars.append(len(seg) > 5 and np.count_nonzero(seg) >= .8*len(seg))
++                    seg = bev[row, max(0, c0):min(bev.shape[1], c1)];on = seg > 0
++                    # Against the part of the row inside the view (near the car the BEV narrows): at least half the
++                    # lane width in view and 80 % of that painted.
++                    seen = int(np.count_nonzero(proj.valid[row, max(0, c0):min(bev.shape[1], c1)]))
++                    bars.append(len(seg) > 5 and seen >= .5*len(seg) and np.count_nonzero(seg) >= .8*seen)
++                    # A zebra crossing's stripes: part of the row painted, in at least 3 pieces.
++                    pieces = int(np.count_nonzero(on[1:] & ~on[:-1]))+int(on[0]) if len(on) else 0
++                    stripes.append(len(seg) > 5 and .2*len(seg) <= np.count_nonzero(seg) <= .75*len(seg) and pieces >= 3)
+                 runs = [];start = None
+                 for row, on in enumerate(bars+[False]):
+                     if on and start is None:start = row
+                     if not on and start is not None:runs.append((start, row));start = None
+-                xs = [cfg.forward_max-(r0+r1-1)/2*mpp for r0, r1 in runs if (r1-r0)*mpp >= .1]
+-                ahead = [x for x in xs if x > 0];stop = round(min(ahead), 3) if ahead else None
++                # A full-width bar with zebra stripes within 0.5 m of it is the crossing's border, not a stop line (the
++                # last junction of the s1 / s8a / s8b route has a crossing and no stop line): kept apart as crosswalk_m.
++                near = max(1, int(round(.5/mpp)));stop_xs = [];cross_xs = []
++                for r0, r1 in runs:
++                    if (r1-r0)*mpp < .1:continue
++                    x = cfg.forward_max-(r0+r1-1)/2*mpp
++                    beside = sum(stripes[max(0, r0-near):r0])+sum(stripes[r1:r1+near])
++                    (cross_xs if beside*mpp >= .15 else stop_xs).append(x)
++                ahead = [x for x in stop_xs if x > 0];stop = round(min(ahead), 3) if ahead else None
++                ahead = [x for x in cross_xs if x > 0];crossing = round(min(ahead), 3) if ahead else None
+             # Does the GT boundary lie on paint?  At x = 6..24 m: the lateral offset from the GT own-lane boundary to the
+             # nearest RoadLine pixel within PAINT_WINDOW_M (rows with paint there only); the median per side, or null (no paint).
+             paint = {};paint_at = {}
+@@ -233,7 +247,8 @@ def paint_stops(a):
+                     row = int(round((cfg.forward_max-x)/mpp));c0 = int(round((-(yg+.3)-cfg.lateral_min)/mpp));c1 = int(round((-(yg-.3)-cfg.lateral_min)/mpp))
+                     if 0 <= row < bev.shape[0] and bev[row, max(0, c0):min(bev.shape[1], c1+1)].any():seen += 1
+                 outer[side] = seen*.5
+-            fo.write(json.dumps(dict(stamp=t, stop_m=stop, gt_boundary_to_paint_m=paint, gt_boundary_to_paint_at=paint_at, outer_paint_m=outer))+'\n')
++            fo.write(json.dumps(dict(stamp=t, stop_m=stop, crosswalk_m=crossing, gt_boundary_to_paint_m=paint, gt_boundary_to_paint_at=paint_at,
++                                     outer_paint_m=outer))+'\n')
+             if i % 500 == 0:print(a.scene, i, flush=True)
+     con.close()
+ 
+@@ -468,7 +483,34 @@ def signs_metrics(a, gt, pred):
+     f4 = a.out/'paint_stops.jsonl.gz'
+     if f4.exists():
+         # C4 against the painted line (semantic camera RoadLine, paint_stops): what the detector is meant to find.
+-        ps = {round(r['stamp'], 4): r['stop_m'] for r in (json.loads(l) for l in gzip.open(f4, 'rt'))};e = [];seen = [0, 0];false = [0, 0];offset = []
++        rows4 = [json.loads(l) for l in gzip.open(f4, 'rt')]
++        ps = {round(r['stamp'], 4): r['stop_m'] for r in rows4};e = [];seen = [0, 0];false = [0, 0];offset = []
++        # C6 (by eye in the plan; counted here for reference): a crossing's border 0-20 m ahead and a crosswalk marking.
++        cw = {round(r['stamp'], 4): r.get('crosswalk_m') for r in rows4};cw_seen = [0, 0];cw_err = []
++        for r in gt:
++            k = round(r['stamp'], 4);p = pred.get(k);want = cw.get(k)
++            if p is None or r['is_junction'] or want is None or not 0 < want <= 20.:continue
++            got = [min(q[0] for q in m['points']) for m in p['markings'] if m['kind'] == 'crosswalk']
++            got = [x for x in got if x > 0];cw_seen[1] += 1;cw_seen[0] += bool(got)
++            if got:cw_err.append(abs(min(got, key=lambda x: abs(x-want))-want))
++        # C4 with the crosswalk fallback (lane_guidance stop_line.crosswalk_fallback): where to stop is the stop line, else
++        # the near border of a crossing; predicted the same way from the markings.
++        pe = [];pseen = [0, 0]
++        for r in gt:
++            k = round(r['stamp'], 4);p = pred.get(k)
++            if p is None or r['is_junction'] or k not in ps:continue
++            want = ps[k] if ps[k] is not None else cw.get(k)
++            if want is None or not 0 < want <= 20.:continue
++            got = p['stop_line_m']
++            if got is None:
++                xs = [min(q[0] for q in m['points']) for m in p['markings'] if m['kind'] == 'crosswalk']
++                xs = [x for x in xs if x > 0];got = min(xs) if xs else None
++            pseen[1] += 1;pseen[0] += got is not None
++            if got is not None:pe.append(abs(got-want))
++        c['C4_stop_position'] = dict(detected=round(pseen[0]/pseen[1], 4) if pseen[1] else None, n=pseen[1], error_m=stats(pe),
++                                     note='stop line, else the crossing border (truth) / crosswalk marking (detector)')
++        c['C6_crosswalk'] = dict(detected=round(cw_seen[0]/cw_seen[1], 4) if cw_seen[1] else None, n=cw_seen[1], near_edge_error_m=stats(cw_err),
++                                 note='reference only: the border nearest the car against the crosswalk marking nearest to it')
+         for r in gt:
+             k = round(r['stamp'], 4);p = pred.get(k)
+             if p is None or k not in ps or r['is_junction']:continue
+diff --git a/src/vision_road/vision_road/image_share.py b/src/vision_road/vision_road/image_share.py
+new file mode 100644
+index 0000000..89dea52
+--- /dev/null
++++ b/src/vision_road/vision_road/image_share.py
+@@ -0,0 +1,87 @@
++"""The newest camera image in shared memory for other processes on this computer (plan 30, D1).
++
++road_node's perception worker (image_in_worker) writes every image_shm_every-th image into one block after it has
++published that frame's lane results; the sign detector (src/yolo_signs, image_shm) reads the block instead of
++subscribing the camera topic a second time (a second 6 MB subscriber cost the lane detector about 4 ms).
++
++Block layout (little endian): magic b'VRIM', version u32, seq u64 (odd while a frame is being written, even when
++done), sec i32, nanosec u32, width u32, height u32, encoding u32 (0 bgr8, 1 rgb8), 28 reserved bytes; then the
++pixels (height x width x 3).  A reader copies the pixels and accepts them when seq is even and unchanged across
++the copy (a sequence lock: the writer never waits for readers)."""
++import struct
++import numpy as np
++from multiprocessing import shared_memory
++
++HEADER = struct.Struct('<4sIQiIIII28x')  # 64 bytes
++MAGIC = b'VRIM'
++ENCODINGS = {'bgr8': 0, 'rgb8': 1}
++
++
++def untracked(shm):
++    """Keep Python's resource tracker from unlinking a block this process only uses (Python < 3.13)."""
++    try:
++        from multiprocessing import resource_tracker
++        resource_tracker.unregister(shm._name, 'shared_memory')
++    except Exception:
++        pass
++    return shm
++
++
++class ImageShareWriter:
++    def __init__(self, name, every=2):
++        self.name = name;self.every = max(1, int(every));self.count = 0;self.shm = None;self.seq = 0
++
++    def _open(self, size):
++        try:
++            shm = shared_memory.SharedMemory(self.name, create=True, size=size)
++        except FileExistsError:  # left by an earlier run: reuse it when large enough, else make it anew
++            shm = shared_memory.SharedMemory(self.name)
++            if shm.size < size:
++                shm.close();shm.unlink();shm = shared_memory.SharedMemory(self.name, create=True, size=size)
++        return shm
++
++    def write(self, pixels, width, height, encoding, sec, nanosec):
++        """pixels: the packed height x width x 3 bytes (a bytes-like view); every every-th call is written."""
++        self.count += 1
++        if (self.count-1) % self.every:return False
++        size = HEADER.size+width*height*3
++        if self.shm is None or self.shm.size < size:
++            if self.shm is not None:self.close()
++            self.shm = self._open(size)
++        buf = self.shm.buf
++        self.seq += 1  # odd: being written
++        buf[:HEADER.size] = HEADER.pack(MAGIC, 1, self.seq, sec, nanosec, width, height, ENCODINGS.get(encoding, 0))
++        buf[HEADER.size:size] = pixels
++        self.seq += 1  # even: done
++        buf[:HEADER.size] = HEADER.pack(MAGIC, 1, self.seq, sec, nanosec, width, height, ENCODINGS.get(encoding, 0))
++        return True
++
++    def close(self):
++        if self.shm is not None:
++            try:self.shm.close();self.shm.unlink()
++            except Exception:pass
++            self.shm = None
++
++
++class ImageShareReader:
++    def __init__(self, name):
++        self.name = name;self.shm = None;self.last = 0
++
++    def read(self):
++        """(sec, nanosec, encoding name, frame copy) of an image newer than the last one read, or None."""
++        if self.shm is None:
++            try:self.shm = untracked(shared_memory.SharedMemory(self.name))
++            except FileNotFoundError:return None
++        buf = self.shm.buf
++        magic, _, seq, sec, nanosec, w, h, enc = HEADER.unpack_from(buf, 0)
++        if magic != MAGIC or seq % 2 or seq == self.last or not w or not h:return None
++        frame = np.frombuffer(buf, np.uint8, w*h*3, HEADER.size).reshape(h, w, 3).copy()
++        if HEADER.unpack_from(buf, 0)[2] != seq:return None  # overwritten while copying
++        self.last = seq
++        return sec, nanosec, ('rgb8' if enc == 1 else 'bgr8'), frame
++
++    def close(self):
++        if self.shm is not None:
++            try:self.shm.close()
++            except Exception:pass
++            self.shm = None
