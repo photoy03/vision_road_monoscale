@@ -110,6 +110,8 @@ void RosBridge::declareParameters() {
       "road.lane_only_signals", config_.road_lane_only_signals);
   config_.road_lane_only_green = node_->declare_parameter<bool>(
       "road.lane_only_green", config_.road_lane_only_green);
+  config_.road_lane_only_markings = node_->declare_parameter<bool>(
+      "road.lane_only_markings", config_.road_lane_only_markings);
   config_.road_current_path_style = node_->declare_parameter<std::string>(
       "road.current_path.style", config_.road_current_path_style);
   config_.road_current_path_m = static_cast<float>(node_->declare_parameter<double>(

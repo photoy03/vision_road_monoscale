@@ -117,7 +117,6 @@ class Perception:
         bev=cv2.bitwise_and(bev,bev,mask=valid)
         warped=time.perf_counter()
         lanes,binary=detector.process(bev,valid,stamp,pose,defer=True)
-        markings=self.extra.after(detector,bev,valid,pose) if self.extra is not None else []
         detected=time.perf_counter()
         shown={}
         if self.core is not None:
@@ -133,13 +132,17 @@ class Perception:
                 markers,styles,stage,Time=self.publisher;ns=round(stamp*1e9)
                 out=stage.messages(Time(sec=ns//1000000000,nanosec=ns%1000000000),shown.pop('display'))
                 markers.publish(out[0]);styles.publish(out[1]);shown['display_published']=True
-        # After the display line: the outputs beside the own lines (outer lines, centrelines), off the display path.
         shown_at=time.perf_counter()
+        # Stop lines and crosswalks after the display line too (they only read this frame's detector state).
+        markings=self.extra.after(detector,bev,valid,pose) if self.extra is not None else []
+        marked=time.perf_counter()
+        # After the display line: the outputs beside the own lines (outer lines, centrelines), off the display path.
         if side:detector.finish();shown['outer']=detector.outer_lanes;shown['centres']=detector.centre_lanes
         # Time spent here, for the node's performance report (ms): warp, detector, display filter (and the side outputs).
         finished=time.perf_counter()
         worker=dict(warp=(warped-begin)*1e3,detect=(detected-warped)*1e3,display=(shown_at-detected)*1e3)
-        if side:worker['extra']=(finished-shown_at)*1e3
+        if self.extra is not None:worker['markings']=(marked-shown_at)*1e3
+        if side:worker['extra']=(finished-marked)*1e3
         return dict(**shown,worker_ms=worker,lanes=lanes,binary=binary,bev=bev,boundaries=detector.boundary_lanes,markings=markings,
                     measured=detector.measured_count,predicted=detector.predicted_count,
                     registration=detector.registration,diagnostics=getattr(detector.detector,'diagnostics',{}))

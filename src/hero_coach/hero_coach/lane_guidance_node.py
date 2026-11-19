@@ -10,7 +10,8 @@ Out: /hero/scene_overlay (hero_hud/SceneOverlay): has_ideal + ideal = the path (
      /hero/lane_guidance (std_msgs/String JSON): stamp, state (none/keep/return/change/forbidden),
      target (the target lane's current name), offset_m (car from the target centre, + left),
      lateral_speed_mps, speed_mps, shown, merge_m, changes (target moves so far), reason,
-     compute_ms, light / speed_sign (what the scene shows, with signs.enabled), path [[x, y], ...].
+     compute_ms, light / speed_sign (what the scene shows, with signs.enabled), stop_line_m (nearest stop line
+     ahead, m from the rear axle, or null; with stop_line.enabled), path [[x, y], ...].
      With signs.enabled: /yolo/detections (std_msgs/String JSON, the YOLO detector) -> the scene's has_signal /
      signal and has_sign / sign (traffic_signs.py).
 A process of its own, apart from the lane detector: it only reads the detector's output topics.
@@ -63,7 +64,29 @@ class LaneGuidanceNode(Node):
             self.signs = SignTracker(sign_settings)
             self.create_subscription(String, p('signs.topic', '/yolo/detections'), self.on_detections, 10)
             self.get_logger().info('Traffic lights and speed signs from '+self.get_parameter('signs.topic').value+': '+str(sign_settings))
+        # stop_line.enabled: the nearest stop line ahead (vision_road /road/road_markings, ns 'stop_line', base_link) as
+        # stop_line_m in /hero/lane_guidance, for a later red light + stop line rule.  Off: nothing changes.
+        self.stop_lines = None
+        if p('stop_line.enabled', False):
+            from visualization_msgs.msg import MarkerArray
+            self.stop_line_max_age = float(p('stop_line.max_age_s', .35))
+            self.stop_lines = (None, [])  # (stamp, [nearest x of each stop line])
+            self.create_subscription(MarkerArray, p('stop_line.topic', '/road/road_markings'), self.on_markings, 10)
         self.get_logger().info('Lane guidance: '+str(settings))
+
+    def on_markings(self, msg):
+        if not msg.markers:return
+        h = msg.markers[0].header.stamp;xs = []
+        for m in msg.markers:
+            if m.action == 0 and m.ns == 'stop_line' and m.points:xs.append(min(float(q.x) for q in m.points))
+        self.stop_lines = (h.sec+h.nanosec*1e-9, xs)
+
+    def stop_line_ahead(self, t):
+        """Distance (m, from the rear axle along x) to the nearest stop line ahead of the car at t, or None."""
+        stamp, xs = self.stop_lines
+        if stamp is None or abs(stamp-t) > self.stop_line_max_age:return None
+        ahead = [x for x in xs if x > 0.]
+        return round(min(ahead), 2) if ahead else None
 
     def on_detections(self, msg):
         data = json.loads(msg.data);stamp = data.get('stamp', {})
@@ -118,6 +141,7 @@ class LaneGuidanceNode(Node):
         self.scene_pub.publish(scene)
         compute = (time.perf_counter()-begin)*1e3
         extra = dict(light=light, speed_sign=sign) if self.signs is not None else {}  # only with signs.enabled
+        if self.stop_lines is not None:extra['stop_line_m'] = self.stop_line_ahead(t)  # only with stop_line.enabled
         self.info_pub.publish(String(data=json.dumps(dict(
             stamp=t, state=out.state, target=out.target, offset_m=round(out.offset_m, 3), lateral_speed_mps=round(out.lateral_speed_mps, 3),
             speed_mps=round(out.speed_mps, 2), speed_source='vehicle_state' if speed is not None else 'pose', shown=out.shown, merge_m=round(out.merge_m, 1), changes=out.changes, reason=out.reason,

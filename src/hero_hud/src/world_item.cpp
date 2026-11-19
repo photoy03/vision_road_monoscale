@@ -944,7 +944,9 @@ void WorldItem::drawRoadMarkings(VertexBuffer& out, const RoadPaint& paint,
   // 그 밖의 노면 표시(화살표·글자 자리)는 흰 테두리. 이번 프레임에 안 보인
   // 확정 표시는 어둡게 그린다. 0.35초 넘게 안 오면 지운다.
   if (!(now - paint.marking_stamp >= 0.0 && now - paint.marking_stamp < 0.35)) return;
+  const bool lane_only = config_.road_lane_only;
   for (const auto& mark : paint.markings) {
+    if (lane_only && mark.kind == RoadMarkingKind::Marking) continue;
     // 테두리를 0.25 m 간격으로 촘촘히 해야 투영 뒤에도 지면을 따라간다.
     std::vector<Vec2> path;
     for (size_t i = 0; i + 1 < mark.points.size(); ++i) {
@@ -964,7 +966,8 @@ void WorldItem::drawRoadMarkings(VertexBuffer& out, const RoadPaint& paint,
       c = dim(kRed, adapt(0.95f));
     } else if (mark.kind == RoadMarkingKind::Crosswalk) {
       half = 0.07f;
-      c = dim(kAmber, adapt(0.9f));
+      // In the lane-only view the guidance path is amber too: the crosswalk outline stays dimmer under it.
+      c = dim(kAmber, adapt(lane_only ? 0.55f : 0.9f));
     }
     if (mark.predicted) c = withAlpha(c, 0.45f);
     addWorldRibbon(out, path, half, std::vector<Rgba>(path.size(), c));
@@ -1126,7 +1129,8 @@ void WorldItem::buildFrame(VertexBuffer& out, double now) {
     projector_->setRange(24.0f);
     projector_->setLateralHalf(4.5f);
     if (road_fresh || boundary_fresh) drawRoadPaint(world, *road, now);
-    if (road) drawRoadMarkings(world, *road, now);
+    // Stop lines and crosswalks only, and only with road.lane_only_markings (other markings had false hits).
+    if (road && config_.road_lane_only_markings) drawRoadMarkings(world, *road, now);
     // The current path (where the present steering takes the car), as in the normal mode's corridor,
     // only while a vehicle state is fresh; without one the lane-only view is as before.  Under the guidance
     // path: grey "where it goes" against amber/red "where to go".

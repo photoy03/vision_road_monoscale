@@ -83,6 +83,9 @@ struct HudConfig {
   bool road_lane_only_signals{false};
   // 위와 함께: 녹색 신호도 그린다(일반 모드는 행동을 요구하는 적·황만 그린다, HUD_전략.md).
   bool road_lane_only_green{false};
+  // 차선 전용 모드에서 /road/road_markings 의 정지선과 횡단보도를 그린다(노면 표시 종류는 그리지 않는다).
+  // 끄면 차선 전용 모드는 노면 표시를 하나도 그리지 않는다.
+  bool road_lane_only_markings{false};
   std::string road_current_path_style{"fill"};
   // 얇은 선(edges/centre/dots)의 길이(m, 후륜축부터 호를 따라). 0 이면 화면 범위 끝까지.
   float road_current_path_m{0.0f};

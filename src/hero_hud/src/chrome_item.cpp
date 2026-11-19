@@ -306,9 +306,12 @@ QImage ChromeItem::render(int w, int h, HudMode mode, const VehicleState& v,
             << QPointF(cx - r * 0.92, cy + r * 0.62);
         p.drawPolygon(tri);
       } else if (scene->signal.state == SignalState::Green) {
-        // road.lane_only_green 에서만 온다: 녹색 원(적 팔각형·황 삼각형과 형태로도 구별).
-        p.setBrush(A(kGreen));
-        p.drawEllipse(QPointF(cx, cy), r * 0.9, r * 0.9);
+        // road.lane_only_green 에서만 온다: 녹색 원(적 팔각형·황 삼각형과 형태로도 구별). 행동을 요구하지
+        // 않으므로 적·황보다 작고 어둡게(반지름 0.6, 밝기 0.55) — 화면에서 가장 센 유인이 되지 않게.
+        const QColor g = A(kGreen);
+        p.setBrush(QColor(static_cast<int>(g.red() * 0.55), static_cast<int>(g.green() * 0.55),
+                          static_cast<int>(g.blue() * 0.55), g.alpha()));
+        p.drawEllipse(QPointF(cx, cy), r * 0.6, r * 0.6);
       }
     }
 

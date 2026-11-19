@@ -96,6 +96,9 @@ vision_road:
     display_publish_in_worker: true
     # The perception worker subscribes the camera and odometry itself: no image copy or hand-over in road_node.
     image_in_worker: true
+    # Plan 28: stop lines and crosswalks (road_markings.py, rule based, without the learned mask) on /road/road_markings,
+    # computed after the display line.  The lane outputs do not change.
+    road_markings: true
     # Plan 25: with learned_weights the worker takes the camera too and hands the frames to the model process
     # (the image no longer goes through road_node).  Without learned weights nothing changes.
     learned_in_worker: true

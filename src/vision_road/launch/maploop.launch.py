@@ -28,7 +28,8 @@ def generate_launch_description():
         # with weights set but no GPU the node logs it and runs as without.
         DeclareLaunchArgument('learned_weights',default_value=''),
         DeclareLaunchArgument('learned_gate',default_value='remove'),
-        DeclareLaunchArgument('road_markings',default_value='false'),
+        # Stop lines and crosswalks (plan 28; carla.yaml road_markings: true).  road_markings:=false turns them off.
+        DeclareLaunchArgument('road_markings',default_value='true'),
         DeclareLaunchArgument('learned_every',default_value='2'),
         # Lane return / lane change guidance for the HUD (hero_coach lane_guidance, its own process):
         # reads /road/lane_centres and /road/reference_odom, sends /hero/scene_overlay and /hero/lane_guidance.
@@ -65,7 +66,8 @@ def generate_launch_description():
         Node(package='hero_coach',executable='lane_guidance',name='lane_guidance',output='screen',
              condition=IfCondition(LaunchConfiguration('lane_guidance')),
              parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time'),
-                          'signs.enabled':ParameterValue(LaunchConfiguration('signs'),value_type=bool)}]),
+                          'signs.enabled':ParameterValue(LaunchConfiguration('signs'),value_type=bool),
+                          'stop_line.enabled':ParameterValue(LaunchConfiguration('road_markings'),value_type=bool)}]),
         Node(package='vision_road',executable='reference_pose',condition=IfCondition(LaunchConfiguration('reference_pose')),
              parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
         Node(package='tf2_ros',executable='static_transform_publisher',arguments=[
