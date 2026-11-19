@@ -85,7 +85,7 @@ source install/setup.bash
 ```
 
 - C++ 빠른 경로(`_native*.so`)는 빌드가 만든다. 없으면 조용히 파이썬으로 돌아 느려진다.
-- 시험 (2026-11-20 계획 30 3회차 기준 통과 수): `hero_coach` 102, `vision_road` 160(계획 32 2회차), `hero_hud` 33(계획 29 기준, HUD 는 그 뒤 안 바뀜). 실제로 쓰는 명령(ROS 와 `install/setup.bash` 를 source 한 뒤; source 하지 않으면 hero_coach 시험이 모으는 단계에서 오류가 난다):
+- 시험 (2026-11-20 계획 30 3회차 기준 통과 수): `hero_coach` 102, `vision_road` 162(계획 32 4회차; 다른 세션의 path_tracking 시험 3 개 포함), `hero_hud` 33(계획 29 기준, HUD 는 그 뒤 안 바뀜). 실제로 쓰는 명령(ROS 와 `install/setup.bash` 를 source 한 뒤; source 하지 않으면 hero_coach 시험이 모으는 단계에서 오류가 난다):
 
 ```bash
 python3 -m pytest -q tests                      # vision_road
@@ -160,9 +160,10 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 - 정지선·횡단보도·초록 신호 HUD 표시, `stop_line_m` (계획 28, f111f20)
 - 코치에 맞춘 신호 전달·경로 전달·정지 권고 (계획 29, e64c42e)
 
-### 진행 중: 계획 32 (2026-11-20, 사용자 지적 "직진인데 차선이 흔들림")
+### 끝남: 계획 32 (2026-11-20, 사용자 지적 "직진인데 차선이 흔들림")
 
-- 결과 폴더: `results/town05_30hz/jitter_20261120/`(`round_NN/REPORT_KO.md`, `jitter.md`, `accuracy.md`).
+- 결과 폴더: `results/town05_30hz/jitter_20261120/`. 최종 요약은 `SUMMARY_KO.md`, 회차별은 `round_NN/REPORT_KO.md`(`jitter.md`, `accuracy.md`, `coverage.md`).
+- HUD 영상과 전후 비교 그림: `final_hud/`(s8c, s5; mp4 는 커밋 안 함).
 - 측정 도구:
   - `tools/jitter_eval.py`: 표시선 5/10/18 m 의 2 차 차분과 끝 말림.
   - `gt_eval.py predict`: 표시선(`display`)도 저장. `--display name=value` 로 바꾸고, `town05_30hz`·`maploop_30hz` 도 돈다.
@@ -329,9 +330,9 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 
 ## 7. 다음에 할 일 (순서대로)
 
-- **진행 중: 계획 32**(2026-11-20, 사용자 지적). 1–4회차 끝(6절 "진행 중: 계획 32").
-  - 남은 것: s8c·s5 고친 뒤 HUD 영상과 같은 구간 전후 비교, `SUMMARY_KO.md`, 연구 세션 보고.
-  - 다시 재는 명령: `bash results/town05_30hz/jitter_20261120/jtry.sh <폴더> "" "<표시 설정>"`.
+- (끝) **계획 32**(2026-11-20, 사용자 지적): 6절 "끝남: 계획 32" 와 `jitter_20261120/SUMMARY_KO.md` 참고.
+  - 흔들림 목표 충족 2 → 8/14. 18 m p99 는 모두 ≤ 2 cm, 시내 0.6 cm 유지.
+  - 남은 것(다음 계획 후보): 선 교체 순간의 큰 이동, 조감도 20 m 너머 난간 줄무늬(검출기 쪽).
 
 0. (끝) 계획 31: 6절 "끝남: 계획 31" 과 `gt_loop2_20261120/SUMMARY_KO.md` 참고. 다음 후보는 거기 적혀 있다.
 1. (끝) 계획 30 기준선, 1–3회차. 표는 `results/town05_30hz/gt_loop_20261119/SUMMARY_KO.md` 에 있다.
