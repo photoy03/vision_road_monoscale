@@ -103,7 +103,9 @@ class Town05Yolo26mDetector(Node):
         self.declare_parameter("imgsz", self.DEFAULT_IMGSZ)
         self.declare_parameter("device", "0")
         self.declare_parameter("quantize", 16)
-        self.declare_parameter("max_inference_fps", 0.0)
+        # Accept an integer too (max_inference_fps:=10 on the command line is an INTEGER parameter).
+        from rcl_interfaces.msg import ParameterDescriptor
+        self.declare_parameter("max_inference_fps", 0.0, ParameterDescriptor(dynamic_typing=True))
         self.declare_parameter("full_frame", self.USE_FULL_FRAME)
         self.declare_parameter("stats_path", "")
 

@@ -26,7 +26,7 @@ HUD_CONFIG=$ROAD/src/hero_hud/config/hud.yaml
 DISK=/media/jaehun/38F7-677B
 VIDEO=${1:-}; shift || true
 HUD=1; LOOP=0; FRAMES=0; LEARNED=""; GUIDANCE=true; FAKE_VS=false; CROP=(); SIGNS=false
-YOLO_PYTHON=${YOLO_PYTHON:-$HOME/yolo_env/bin/python}; SIGNS_FULL_FRAME=${SIGNS_FULL_FRAME:-true}; SIGNS_FPS=${SIGNS_FPS:-0}
+YOLO_PYTHON=${YOLO_PYTHON:-$HOME/yolo_env/bin/python}; SIGNS_FULL_FRAME=${SIGNS_FULL_FRAME:-true}; SIGNS_FPS=${SIGNS_FPS:-0.0}
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-hud) HUD=0;; --loop) LOOP=1;; --frames) FRAMES=$2; shift;;
