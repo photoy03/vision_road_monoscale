@@ -1,17 +1,21 @@
-"""Traffic light state and speed limit for the HUD, from the YOLO detector's /yolo/detections (plan 27).
+"""Traffic light state and speed limit from the YOLO detector's /yolo/detections (plans 27, 29).
 
-Pure Python, no ROS: lane_guidance_node feeds it the detection messages and asks it, at each scene it
-publishes, what to show.  Times are the detection messages' stamps (the camera image's simulation time), the
-same clock as the lane centres the scene is stamped with.
+Pure Python, no ROS: traffic_sign_bridge feeds it the detection messages and asks it what is confirmed.  Times
+are the detection messages' stamps (the camera image's simulation time).
 
-Traffic light: in each detection message the light class (green / orange / red) with the highest confidence
-(on a tie the larger box) is that message's state; a message without a light says "none".  A state is shown
+Traffic light: in each detection message the light class (green / orange / red) with the highest score is that
+message's state; a message without a light says "none".  Score (plan 29): confidence x (box area / 1000 px^2)
+^ select_area_power x a Gaussian of the box centre's distance from the image's horizontal centre (sigma =
+select_centre_sigma x image width): with several lights in view, the large one ahead, the own lane's light more
+likely than a side road's, wins over a slightly more confident small one at the edge.  select_area_power 0 and
+select_centre_sigma 0 give the plain highest confidence (on a tie the larger box) of plan 27.  A state is shown
 once it is the state of at least `light_votes` of the last `light_window` messages, and only while the last
 message with a light is at most `light_hold_s` old (no light that long: off).
 Speed sign: the same vote on the speed value (30 / 60 / 90) of the most confident sign class per message; a
 confirmed value stays shown `sign_hold_s` after the last message that saw it.
 The detector's position in the image is not used (it gives no distance); the HUD draws both in fixed places.
 """
+import math
 from collections import deque
 from dataclasses import dataclass
 
@@ -28,6 +32,8 @@ class SignSettings:
     sign_votes: int = 2
     sign_hold_s: float = 3.     # a confirmed speed sign stays this long after it was last seen
     min_confidence: float = 0.  # detections below this are ignored (the detector has its own threshold)
+    select_area_power: float = .5    # score: confidence x (area/1000 px^2)^this ...
+    select_centre_sigma: float = .25  # ... x exp(-((cx - W/2) / (this x W))^2 / 2); 0: no centre weighting
 
 
 def area(box):
@@ -42,10 +48,19 @@ class SignTracker:
         self.lights = deque(maxlen=self.s.light_window);self.signs = deque(maxlen=self.s.sign_window)
         self.light_seen = None;self.light = None      # last stamp with a light; the confirmed state
         self.sign = None;self.sign_seen = None        # the confirmed value and when it was last seen
+        self.sign_confidence = 1.;self.light_confidence = 1.
         self.last = None
 
-    def update(self, stamp, detections):
-        """One detection message: stamp (s) and [{class_name, confidence, xyxy}]."""
+    def score(self, conf, box, width):
+        """The selection score of one detection (see the module text)."""
+        value = conf*((area(box)/1000.)**self.s.select_area_power if self.s.select_area_power else 1.)
+        if self.s.select_centre_sigma > 0 and width:
+            off = ((box[0]+box[2])/2.-width/2.)/(self.s.select_centre_sigma*width);value *= math.exp(-.5*off*off)
+        return value
+
+    def update(self, stamp, detections, image_width=None):
+        """One detection message: stamp (s), [{class_name, confidence, xyxy}] and the image width (px; None: no
+        centre weighting)."""
         if self.last is not None and stamp < self.last-.5:self.reset()  # replay restarted
         self.last = stamp
         # After a gap longer than the hold, start over: an old confirmed state must not come back on one frame.
@@ -57,9 +72,10 @@ class SignTracker:
             if conf < self.s.min_confidence:continue
             kind = 'light' if name in LIGHTS else 'sign' if name in SIGNS else None
             if kind is None:continue
-            key = (conf, area(d.get('xyxy', [0, 0, 0, 0])))
-            if kind not in best or key > best[kind][0]:best[kind] = (key, name)
+            box = d.get('xyxy', [0, 0, 0, 0]);key = (self.score(conf, box, image_width), area(box))
+            if kind not in best or key > best[kind][0]:best[kind] = (key, name, conf)
         light = LIGHTS[best['light'][1]] if 'light' in best else None
+        if light is not None and light == self.light:self.light_confidence = best['light'][2]
         self.lights.append(light)
         if light is not None:self.light_seen = stamp
         votes = [v for v in self.lights if v is not None]
@@ -70,7 +86,7 @@ class SignTracker:
         values = [v for v in self.signs if v is not None]
         top = max(set(values), key=values.count) if values else None
         if top is not None and values.count(top) >= self.s.sign_votes:self.sign = top
-        if sign is not None and sign == self.sign:self.sign_seen = stamp
+        if sign is not None and sign == self.sign:self.sign_seen = stamp;self.sign_confidence = best['sign'][2]
 
     def state(self, t):
         """(light 'red'/'yellow'/'green' or None, speed value or None) to show at time t."""

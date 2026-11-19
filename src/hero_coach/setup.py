@@ -31,6 +31,7 @@ setup(
             'coach_node = hero_coach.coach_node:main',
             'voice_node = hero_coach.voice_node:main',
             'lane_guidance = hero_coach.lane_guidance_node:main',
+            'traffic_sign_bridge = hero_coach.traffic_sign_bridge:main',
         ],
     },
 )

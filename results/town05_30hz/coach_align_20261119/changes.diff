@@ -1,0 +1,794 @@
+diff --git a/src/hero_coach/hero_coach/coach_node.py b/src/hero_coach/hero_coach/coach_node.py
+index 9b1627e..5683ad0 100644
+--- a/src/hero_coach/hero_coach/coach_node.py
++++ b/src/hero_coach/hero_coach/coach_node.py
+@@ -9,7 +9,8 @@ import time
+ from autoware_planning_msgs.msg import Trajectory
+ from geometry_msgs.msg import Point32
+ from hero_hud.msg import (
+-    ObstacleMarker, SceneOverlay, SourceHealth, TrajectoryRibbon, VehicleState,
++    ObstacleMarker, SceneOverlay, SignalIndicator, SignMarker, SourceHealth,
++    TrajectoryRibbon, VehicleState,
+ )
+ from nav_msgs.msg import OccupancyGrid, Odometry
+ import rclpy
+@@ -20,6 +21,7 @@ from hero_coach.core import (
+     UNKNOWN, OdometryWatch, SegmentTracker, advised_gear, densify, grid_obstacles,
+     ribbon_points, split_segments, threat_of,
+ )
++from hero_coach.lane_ribbon import lane_ideal
+ from hero_coach.ros_io import (
+     LATCHED, LATEST, declare_footprint, ego_from_odometry, grid_array, trajectory_waypoints,
+ )
+@@ -42,25 +44,49 @@ class CoachNode(Node):
+         declare('arrive_m', 0.5)
+         declare('ribbon_step_m', 0.25)
+         declare('vehicle_topic', '/hero/vehicle_state')
++        # 신호등과 표지판. 시뮬에서는 carla_traffic 이, 실차에서는 영상 검출이
++        # 채운다 -- 코치는 어느 쪽인지 묻지 않는다.
++        declare('signal_topic', '/hero/traffic_light')
++        declare('sign_topic', '/hero/sign')
++        # 이보다 오래된 것은 없는 셈 친다. 신호가 바뀌었는데 옛 색을 띄우는
++        # 것이 아무것도 안 띄우는 것보다 나쁘다.
++        declare('signal_timeout_sec', 1.0)
+         # 정상 주기의 지식은 상류에 있다(SourceHealth.msg). 격자는 타이머 5 Hz,
+         # 오도메트리는 누적 시차마다 — 기준은 core.OdometryWatch 가 달린 거리로 정한다.
+         declare('occupancy_timeout_sec', 2.0)
++        # vision-road 사본에 더함(계획 29): 차로 안내 띠(lane_guidance 의 /hero/lane_guidance/ribbon). 주차 계획이 없거나
++        # 지금 구간이 없을 때, 이보다 새로운 띠를 ideal 로 싣는다. 빈 문자열(기본)이면 원본과 같다.
++        declare('lane_ribbon_topic', '')
++        declare('lane_ribbon_timeout_sec', 0.5)
+         self.p = lambda name: self.get_parameter(name).value  # noqa: E731
+         self.footprint = declare_footprint(self)
+ 
+         self.grid = None
+         self.grid_at = None
++        self.signal = None
++        self.signal_at = None
++        self.sign = None
++        self.sign_at = None
+         self.ego = None
+         self.odometry = OdometryWatch()
+         self.tracker = None
++        self.lane_ribbon = None
++        self.lane_ribbon_at = None
+ 
+         self.pub = self.create_publisher(SceneOverlay, str(self.p('output_topic')), LATEST)
+         self.create_subscription(OccupancyGrid, str(self.p('grid_topic')), self.on_grid, LATCHED)
+         self.create_subscription(Odometry, str(self.p('odometry_topic')), self.on_odometry, LATEST)
+         self.create_subscription(
+             VehicleState, str(self.p('vehicle_topic')), self.on_vehicle, LATEST)
++        self.create_subscription(
++            SignalIndicator, str(self.p('signal_topic')), self.on_signal, LATEST)
++        self.create_subscription(
++            SignMarker, str(self.p('sign_topic')), self.on_sign, LATEST)
+         self.create_subscription(
+             Trajectory, str(self.p('trajectory_topic')), self.on_trajectory, LATCHED)
++        if str(self.p('lane_ribbon_topic')):
++            self.create_subscription(
++                TrajectoryRibbon, str(self.p('lane_ribbon_topic')), self.on_lane_ribbon, LATEST)
+         self.create_timer(1.0 / float(self.p('rate_hz')), self.tick,
+                           clock=Clock(clock_type=ClockType.STEADY_TIME))
+ 
+@@ -72,6 +98,18 @@ class CoachNode(Node):
+         self.ego = ego_from_odometry(msg)
+         self.odometry.on_odometry(time.monotonic())
+ 
++    def on_signal(self, message):
++        self.signal = message
++        self.signal_at = time.monotonic()
++
++    def on_sign(self, message):
++        self.sign = message
++        self.sign_at = time.monotonic()
++
++    def on_lane_ribbon(self, message):
++        self.lane_ribbon = message
++        self.lane_ribbon_at = time.monotonic()
++
+     def on_vehicle(self, msg: VehicleState):
+         self.odometry.on_speed(time.monotonic(), msg.speed_mps)
+ 
+@@ -90,6 +128,18 @@ class CoachNode(Node):
+         out.advised_gear = UNKNOWN
+ 
+         now = time.monotonic()
++        # 신호등과 표지판은 인지·계획과 무관하게 실린다. 격자가 없어도, 목표가
++        # 없어도 빨간불은 띄워야 한다 -- 그것이 가장 먼저 안 보이는 것이다.
++        timeout = float(self.p('signal_timeout_sec'))
++        if (self.signal is not None and self.fresh(self.signal_at, timeout)
++                and self.signal.state != SignalIndicator.STATE_NONE):
++            out.has_signal = True
++            out.signal = self.signal
++        if (self.sign is not None and self.fresh(self.sign_at, timeout)
++                and self.sign.kind != SignMarker.KIND_UNKNOWN):
++            out.has_sign = True
++            out.sign = self.sign
++
+         odometry_ok = self.odometry.ok(now)
+         occupancy_ok = self.fresh(self.grid_at, float(self.p('occupancy_timeout_sec')))
+         grid_age = -1.0 if self.grid_at is None else now - self.grid_at
+@@ -106,6 +156,14 @@ class CoachNode(Node):
+             self.fill_obstacles(out)
+         if odometry_ok and self.tracker is not None:
+             self.fill_plan(out)
++        if str(self.p('lane_ribbon_topic')):
++            plan_active = self.tracker is not None and self.tracker.current is not None
++            age = None if self.lane_ribbon_at is None else now - self.lane_ribbon_at
++            ribbon = lane_ideal(plan_active, self.lane_ribbon, age,
++                                float(self.p('lane_ribbon_timeout_sec')))
++            if ribbon is not None and not out.has_ideal:
++                out.has_ideal = True
++                out.ideal = ribbon
+         self.pub.publish(out)
+ 
+     def fill_obstacles(self, out: SceneOverlay):
+diff --git a/src/hero_coach/hero_coach/lane_guidance_node.py b/src/hero_coach/hero_coach/lane_guidance_node.py
+index d20f8f3..3507fc0 100644
+--- a/src/hero_coach/hero_coach/lane_guidance_node.py
++++ b/src/hero_coach/hero_coach/lane_guidance_node.py
+@@ -12,8 +12,12 @@ Out: /hero/scene_overlay (hero_hud/SceneOverlay): has_ideal + ideal = the path (
+      lateral_speed_mps, speed_mps, shown, merge_m, changes (target moves so far), reason,
+      compute_ms, light / speed_sign (what the scene shows, with signs.enabled), stop_line_m (nearest stop line
+      ahead, m from the rear axle, or null; with stop_line.enabled), path [[x, y], ...].
+-     With signs.enabled: /yolo/detections (std_msgs/String JSON, the YOLO detector) -> the scene's has_signal /
+-     signal and has_sign / sign (traffic_signs.py).
++     With signs.enabled: /hero/traffic_light (SignalIndicator) and /hero/sign (SignMarker) -> the scene's has_signal /
++     signal and has_sign / sign, as hero_coach's coach_node does (traffic_sign_bridge makes them from YOLO).
++     With traffic.enabled: "traffic" in the JSON (traffic_advice.py: advice, distance, deceleration, speed limit),
++     and a stop advice ends the ribbon at the stop line.
++     /hero/lane_guidance/ribbon (hero_hud/TrajectoryRibbon, base_link): the guidance ribbon every frame (empty when
++     none), for coach_node's lane_ribbon_topic; publish_scene false leaves /hero/scene_overlay to coach_node.
+ A process of its own, apart from the lane detector: it only reads the detector's output topics.
+ NumPy's BLAS is held to one thread: its pool of spinning threads would take CPU from the detector for
+ matrices this small."""
+@@ -24,6 +28,7 @@ import time
+ import math
+ from collections import deque
+ import rclpy
++from rclpy.executors import ExternalShutdownException
+ from rclpy.node import Node
+ from rclpy.qos import QoSProfile, ReliabilityPolicy
+ from std_msgs.msg import String
+@@ -53,17 +58,32 @@ class LaneGuidanceNode(Node):
+         from hero_hud.msg import VehicleState
+         self.vehicle = None;self.vehicle_timeout = float(p('vehicle_state_timeout_sec', .3))  # (speed, receipt time)
+         self.create_subscription(VehicleState, p('vehicle_state_topic', '/hero/vehicle_state'), self.on_vehicle, 10)
+-        # signs.enabled: the traffic light state and speed sign from the YOLO detector (/yolo/detections, std_msgs/String
+-        # JSON) go into the same scene (one publisher of /hero/scene_overlay).  Off: no subscription, nothing changes.
++        # publish_scene: this node sends /hero/scene_overlay itself (the laptop's lane-only HUD).  false: it does not
++        # (with hero_coach's coach_node on the car, which takes the ribbon below as its ideal when it has no parking plan).
++        self.publish_scene = bool(p('publish_scene', True))
++        from hero_hud.msg import TrajectoryRibbon
++        self.TrajectoryRibbon = TrajectoryRibbon
++        # The lane guidance ribbon on its own, every frame (no points while no guidance is shown).
++        self.ribbon_pub = self.create_publisher(TrajectoryRibbon, p('ribbon_topic', '/hero/lane_guidance/ribbon'), 10)
++        # signs.enabled: the traffic light and speed sign as coach_node takes them (plan 29): /hero/traffic_light
++        # (SignalIndicator) and /hero/sign (SignMarker), from traffic_sign_bridge (YOLO) or carla_traffic; older than
++        # signs.timeout_sec (1 s, as coach_node) or STATE_NONE / KIND_UNKNOWN: none.  Off: no subscription.
+         self.signs = None
+         if p('signs.enabled', False):
+-            from .traffic_signs import SignTracker, SignSettings
+-            sign_settings = SignSettings()
+-            for name in sign_settings.__dataclass_fields__:
+-                setattr(sign_settings, name, type(getattr(sign_settings, name))(p('signs.'+name, getattr(sign_settings, name))))
+-            self.signs = SignTracker(sign_settings)
+-            self.create_subscription(String, p('signs.topic', '/yolo/detections'), self.on_detections, 10)
+-            self.get_logger().info('Traffic lights and speed signs from '+self.get_parameter('signs.topic').value+': '+str(sign_settings))
++            from hero_hud.msg import SignalIndicator, SignMarker
++            self.SignalIndicator, self.SignMarker = SignalIndicator, SignMarker
++            self.signs = dict(signal=None, signal_at=None, sign=None, sign_at=None, timeout=float(p('signs.timeout_sec', 1.)))
++            self.create_subscription(SignalIndicator, p('signs.signal_topic', '/hero/traffic_light'), self.on_signal, 10)
++            self.create_subscription(SignMarker, p('signs.sign_topic', '/hero/sign'), self.on_sign, 10)
++        # traffic.enabled: light + stop line advice and the speed limit (traffic_advice.py) as "traffic" in the JSON; a stop
++        # advice ends the guidance ribbon at the stop line.  Needs signs.enabled (and stop_line.enabled for distances).
++        self.traffic = None
++        if p('traffic.enabled', False):
++            from .traffic_advice import AdviceSettings, SpeedLimit, advise, cut_at, STOP_ADVICE
++            advice = AdviceSettings()
++            for name in advice.__dataclass_fields__:
++                setattr(advice, name, type(getattr(advice, name))(p('traffic.'+name, getattr(advice, name))))
++            self.traffic = dict(settings=advice, limit=SpeedLimit(advice), advise=advise, cut_at=cut_at, stop=STOP_ADVICE)
+         # stop_line.enabled: the nearest stop line ahead (vision_road /road/road_markings, ns 'stop_line', base_link) as
+         # stop_line_m in /hero/lane_guidance, for a later red light + stop line rule.  Off: nothing changes.
+         self.stop_lines = None
+@@ -88,9 +108,21 @@ class LaneGuidanceNode(Node):
+         ahead = [x for x in xs if x > 0.]
+         return round(min(ahead), 2) if ahead else None
+ 
+-    def on_detections(self, msg):
+-        data = json.loads(msg.data);stamp = data.get('stamp', {})
+-        self.signs.update(float(stamp.get('sec', 0))+float(stamp.get('nanosec', 0))*1e-9, data.get('detections', []))
++    def on_signal(self, msg):
++        self.signs['signal'] = msg;self.signs['signal_at'] = time.monotonic()
++
++    def on_sign(self, msg):
++        self.signs['sign'] = msg;self.signs['sign_at'] = time.monotonic()
++
++    def signs_now(self):
++        """(light 'red'/'yellow'/'green' or None, speed sign km/h or None), as coach_node fills its scene."""
++        s = self.signs;now = time.monotonic();light = sign = None
++        fresh = lambda at: at is not None and now-at < s['timeout']
++        if s['signal'] is not None and fresh(s['signal_at']):
++            light = {self.SignalIndicator.STATE_RED: 'red', self.SignalIndicator.STATE_YELLOW: 'yellow',
++                     self.SignalIndicator.STATE_GREEN: 'green'}.get(s['signal'].state)
++        if s['sign'] is not None and fresh(s['sign_at']) and s['sign'].kind == self.SignMarker.KIND_SPEED:sign = float(s['sign'].value)
++        return light, sign
+ 
+     def on_vehicle(self, msg):
+         self.vehicle = (float(msg.speed_mps), time.monotonic())
+@@ -126,22 +158,36 @@ class LaneGuidanceNode(Node):
+         if nanosec >= 1000000000:sec += 1;nanosec -= 1000000000
+         scene = self.SceneOverlay();scene.header.stamp.sec = sec;scene.header.stamp.nanosec = nanosec
+         scene.header.frame_id = data.get('frame_id', 'base_link')
+-        if out.shown and out.path is not None:
+-            scene.has_ideal = True;scene.ideal.width_m = self.width;scene.ideal.confidence = 1.
+-            scene.ideal.points = [Point32(x=float(x), y=float(y), z=0.) for x, y in out.path]
+-            text, severity = TEXT[out.state]
+-            scene.has_coach = True;scene.coach.text = text;scene.coach.severity = severity;scene.coach.ttl_sec = .5
+         light = sign = None
+         if self.signs is not None:
+-            light, sign = self.signs.state(t)
++            light, sign = self.signs_now()
+             if light is not None:
+-                scene.has_signal = True;scene.signal.state = {'red': scene.signal.STATE_RED, 'yellow': scene.signal.STATE_YELLOW, 'green': scene.signal.STATE_GREEN}[light]
++                scene.has_signal = True;scene.signal = self.signs['signal']
+             if sign is not None:
+-                scene.has_sign = True;scene.sign.kind = scene.sign.KIND_SPEED;scene.sign.value = float(sign);scene.sign.confidence = 1.
+-        self.scene_pub.publish(scene)
++                scene.has_sign = True;scene.sign = self.signs['sign']
++        stop_line = self.stop_line_ahead(t) if self.stop_lines is not None else None
++        traffic = None;path = out.path if out.shown else None
++        if self.traffic is not None:
++            tr = self.traffic;limit, over = tr['limit'].update(t, sign, out.speed_mps)
++            traffic = dict(light=light, stop_line_m=stop_line, **tr['advise'](light, stop_line, out.speed_mps, tr['settings']),
++                           speed_limit_kph=limit, over_limit=over)
++            # A red or yellow light with a stop advice: the guidance ribbon ends at the stop line (no path past it).
++            if path is not None and light in ('red', 'yellow') and traffic['advice'] in tr['stop'] and stop_line is not None:
++                path = tr['cut_at'](list(path), stop_line) or None
++            traffic['ribbon_cut'] = path is not (out.path if out.shown else None)
++        ribbon = self.TrajectoryRibbon();ribbon.width_m = self.width;ribbon.confidence = 1.
++        if path is not None:
++            ribbon.points = [Point32(x=float(x), y=float(y), z=0.) for x, y in path]
++            scene.has_ideal = True;scene.ideal = ribbon
++        if out.shown and out.path is not None:  # the guidance text also when the ribbon was cut away entirely
++            text, severity = TEXT[out.state]
++            scene.has_coach = True;scene.coach.text = text;scene.coach.severity = severity;scene.coach.ttl_sec = .5
++        self.ribbon_pub.publish(ribbon)
++        if self.publish_scene:self.scene_pub.publish(scene)
+         compute = (time.perf_counter()-begin)*1e3
+         extra = dict(light=light, speed_sign=sign) if self.signs is not None else {}  # only with signs.enabled
+-        if self.stop_lines is not None:extra['stop_line_m'] = self.stop_line_ahead(t)  # only with stop_line.enabled
++        if self.stop_lines is not None:extra['stop_line_m'] = stop_line  # only with stop_line.enabled
++        if traffic is not None:extra['traffic'] = traffic  # only with traffic.enabled
+         self.info_pub.publish(String(data=json.dumps(dict(
+             stamp=t, state=out.state, target=out.target, offset_m=round(out.offset_m, 3), lateral_speed_mps=round(out.lateral_speed_mps, 3),
+             speed_mps=round(out.speed_mps, 2), speed_source='vehicle_state' if speed is not None else 'pose', shown=out.shown, merge_m=round(out.merge_m, 1), changes=out.changes, reason=out.reason,
+@@ -152,6 +198,6 @@ class LaneGuidanceNode(Node):
+ def main():
+     rclpy.init();node = LaneGuidanceNode()
+     try:rclpy.spin(node)
+-    except KeyboardInterrupt:pass
++    except (KeyboardInterrupt, ExternalShutdownException):pass  # Ctrl+C or a launch shutdown
+     finally:
+         node.destroy_node();rclpy.try_shutdown()
+diff --git a/src/hero_coach/hero_coach/parking_planner.py b/src/hero_coach/hero_coach/parking_planner.py
+index 38bebaf..6f98302 100644
+--- a/src/hero_coach/hero_coach/parking_planner.py
++++ b/src/hero_coach/hero_coach/parking_planner.py
+@@ -12,7 +12,6 @@ legacy `isaac_autoware_bridge/parking_planner.py` 에서 가져왔다. A* 구성
+ 
+ A* 는 수 초 걸릴 수 있어 coach_node 와 다른 프로세스로 돈다.
+ """
+-
+ import array
+ import math
+ import time
+@@ -26,7 +25,8 @@ import rclpy
+ from rclpy.clock import Clock, ClockType
+ from rclpy.node import Node
+ 
+-from hero_coach.core import Waypoint, densify, nearest_index, path_blocked, planning_costmap
++from hero_coach.core import (Footprint, Waypoint, densify, nearest_index, path_blocked,
++                             planning_costmap)
+ from hero_coach.ros_io import (
+     LATCHED, LATEST, declare_footprint, ego_from_odometry, grid_array, yaw_of,
+ )
+@@ -41,7 +41,7 @@ class ParkingPlanner(Node):
+         declare('goal_topic', '/goal_pose')
+         declare('trajectory_topic', '/hero_coach/trajectory')
+         declare('tick_hz', 2.0)
+-        declare('window_margin_m', 8.0)
++        declare('window_margin_m', 20.0)
+         declare('replan_cooldown_sec', 1.0)
+         declare('course_out_m', 1.0)
+         declare('arrive_m', 0.5)
+@@ -101,6 +101,19 @@ class ParkingPlanner(Node):
+     def build_astar(self):
+         fpr = self.footprint
+         margin = float(self.p('vehicle_shape_margin_m'))
++        # A* 가 충돌을 보는 상자. 계획 창의 자차 지우기도 이것을 쓴다.
++        #
++        # margin 만으로는 모자란다. A* 는 theta 를 theta_size 구간으로 나누고
++        # 충돌 셀 목록을 구간마다 미리 만들어 두므로, 실제 자세가 구간 중심에서
++        # 최대 반 구간만큼 어긋난 채 판정된다. 앞 모서리는 후륜축에서 3.87 m 라
++        # 60 구간(6 도)이면 0.20 m 가 밖으로 쓸린다 -- 그만큼 안 지우면 자차가
++        # 시작부터 충돌로 읽힌다 (2026-11-06, 실패 23 건 전부 "출발충돌
++        # 목표깨끗"). 구간 안의 어느 각도에서도 덮이도록 그만큼 더 지운다.
++        reach = math.hypot(fpr.front + margin, fpr.half_width + margin)
++        slack = reach * math.sin(math.pi / float(self.p('theta_size')))
++        self.cleared_footprint = Footprint(fpr.front + margin + slack,
++                                           fpr.rear - margin - slack,
++                                           fpr.half_width + margin + slack)
+         shape = fp.VehicleShape(
+             float(fpr.front - fpr.rear + 2.0 * margin),
+             float(2.0 * fpr.half_width + 2.0 * margin),
+@@ -199,9 +212,16 @@ class ParkingPlanner(Node):
+     def plan(self, reason: str):
+         data, res, origin = self.grid
+         goal = self.goal.pose
++        # 자차 자리를 지울 때는 A* 가 보는 상자와 같은 것을 써야 한다. A* 에
++        # 넘기는 VehicleShape 는 길이·폭에 vehicle_shape_margin_m 를 양쪽으로
++        # 더해 만드는데, 지우기를 맨 차체로 하면 그 테두리(0.1 m, 134 칸)가
++        # 남는다. 자차가 점유 셀에 붙어 있으면 시작부터 충돌로 읽혀
++        # "Invalid start or goal pose" 가 난다 -- 2026-11-06 에 계획 612 회 중
++        # 578 회가 그렇게 비었고, 목표는 내내 깨끗했다.
+         costmap, costmap_origin = planning_costmap(
+             data, res, origin, [self.ego[:2], (goal.position.x, goal.position.y)],
+-            float(self.p('window_margin_m')), ego=self.ego, footprint=self.footprint)
++            float(self.p('window_margin_m')), ego=self.ego,
++            footprint=self.cleared_footprint)
+ 
+         grid = OccupancyGrid()
+         grid.header.frame_id = self.grid_frame
+@@ -224,7 +244,19 @@ class ParkingPlanner(Node):
+             self.astar.setMap(grid)
+             ok = self.astar.makePlan(start, goal)
+         except RuntimeError as error:
+-            self.get_logger().error(f'makePlan: {error}')
++            # 예외 문구만으로는 출발인지 목표인지 갈리지 않는다. 칸 좌표와
++            # 코스트맵 최대값만 적어 둔다 -- 2026-11-06 에 이 두 수가 "출발
++            # 차체가 점유에 닿았다"를 가리켰다. 더 깊이 갈라야 하면 그때
++            # makePlan(X, X) 를 따로 불러 X 자신이 충돌인지 물으면 된다.
++            def cell(x, y):
++                return (int((x - costmap_origin[0]) / res),
++                        int((y - costmap_origin[1]) / res))
++            self.get_logger().error(
++                f'makePlan: {error} | 맵 {costmap.shape[1]}x{costmap.shape[0]} '
++                f'최대{int(costmap.max())} | 출발 {cell(self.ego[0], self.ego[1])} '
++                f'{math.degrees(self.ego[2]):.0f}도 | '
++                f'목표 {cell(goal.position.x, goal.position.y)} '
++                f'{math.degrees(yaw_of(goal.orientation)):.0f}도')
+             ok = False
+         elapsed = time.monotonic() - began
+ 
+diff --git a/src/hero_coach/hero_coach/traffic_signs.py b/src/hero_coach/hero_coach/traffic_signs.py
+index fbee77f..b4c8dc2 100644
+--- a/src/hero_coach/hero_coach/traffic_signs.py
++++ b/src/hero_coach/hero_coach/traffic_signs.py
+@@ -1,17 +1,21 @@
+-"""Traffic light state and speed limit for the HUD, from the YOLO detector's /yolo/detections (plan 27).
++"""Traffic light state and speed limit from the YOLO detector's /yolo/detections (plans 27, 29).
+ 
+-Pure Python, no ROS: lane_guidance_node feeds it the detection messages and asks it, at each scene it
+-publishes, what to show.  Times are the detection messages' stamps (the camera image's simulation time), the
+-same clock as the lane centres the scene is stamped with.
++Pure Python, no ROS: traffic_sign_bridge feeds it the detection messages and asks it what is confirmed.  Times
++are the detection messages' stamps (the camera image's simulation time).
+ 
+-Traffic light: in each detection message the light class (green / orange / red) with the highest confidence
+-(on a tie the larger box) is that message's state; a message without a light says "none".  A state is shown
++Traffic light: in each detection message the light class (green / orange / red) with the highest score is that
++message's state; a message without a light says "none".  Score (plan 29): confidence x (box area / 1000 px^2)
++^ select_area_power x a Gaussian of the box centre's distance from the image's horizontal centre (sigma =
++select_centre_sigma x image width): with several lights in view, the large one ahead, the own lane's light more
++likely than a side road's, wins over a slightly more confident small one at the edge.  select_area_power 0 and
++select_centre_sigma 0 give the plain highest confidence (on a tie the larger box) of plan 27.  A state is shown
+ once it is the state of at least `light_votes` of the last `light_window` messages, and only while the last
+ message with a light is at most `light_hold_s` old (no light that long: off).
+ Speed sign: the same vote on the speed value (30 / 60 / 90) of the most confident sign class per message; a
+ confirmed value stays shown `sign_hold_s` after the last message that saw it.
+ The detector's position in the image is not used (it gives no distance); the HUD draws both in fixed places.
+ """
++import math
+ from collections import deque
+ from dataclasses import dataclass
+ 
+@@ -28,6 +32,8 @@ class SignSettings:
+     sign_votes: int = 2
+     sign_hold_s: float = 3.     # a confirmed speed sign stays this long after it was last seen
+     min_confidence: float = 0.  # detections below this are ignored (the detector has its own threshold)
++    select_area_power: float = .5    # score: confidence x (area/1000 px^2)^this ...
++    select_centre_sigma: float = .25  # ... x exp(-((cx - W/2) / (this x W))^2 / 2); 0: no centre weighting
+ 
+ 
+ def area(box):
+@@ -42,10 +48,19 @@ class SignTracker:
+         self.lights = deque(maxlen=self.s.light_window);self.signs = deque(maxlen=self.s.sign_window)
+         self.light_seen = None;self.light = None      # last stamp with a light; the confirmed state
+         self.sign = None;self.sign_seen = None        # the confirmed value and when it was last seen
++        self.sign_confidence = 1.;self.light_confidence = 1.
+         self.last = None
+ 
+-    def update(self, stamp, detections):
+-        """One detection message: stamp (s) and [{class_name, confidence, xyxy}]."""
++    def score(self, conf, box, width):
++        """The selection score of one detection (see the module text)."""
++        value = conf*((area(box)/1000.)**self.s.select_area_power if self.s.select_area_power else 1.)
++        if self.s.select_centre_sigma > 0 and width:
++            off = ((box[0]+box[2])/2.-width/2.)/(self.s.select_centre_sigma*width);value *= math.exp(-.5*off*off)
++        return value
++
++    def update(self, stamp, detections, image_width=None):
++        """One detection message: stamp (s), [{class_name, confidence, xyxy}] and the image width (px; None: no
++        centre weighting)."""
+         if self.last is not None and stamp < self.last-.5:self.reset()  # replay restarted
+         self.last = stamp
+         # After a gap longer than the hold, start over: an old confirmed state must not come back on one frame.
+@@ -57,9 +72,10 @@ class SignTracker:
+             if conf < self.s.min_confidence:continue
+             kind = 'light' if name in LIGHTS else 'sign' if name in SIGNS else None
+             if kind is None:continue
+-            key = (conf, area(d.get('xyxy', [0, 0, 0, 0])))
+-            if kind not in best or key > best[kind][0]:best[kind] = (key, name)
++            box = d.get('xyxy', [0, 0, 0, 0]);key = (self.score(conf, box, image_width), area(box))
++            if kind not in best or key > best[kind][0]:best[kind] = (key, name, conf)
+         light = LIGHTS[best['light'][1]] if 'light' in best else None
++        if light is not None and light == self.light:self.light_confidence = best['light'][2]
+         self.lights.append(light)
+         if light is not None:self.light_seen = stamp
+         votes = [v for v in self.lights if v is not None]
+@@ -70,7 +86,7 @@ class SignTracker:
+         values = [v for v in self.signs if v is not None]
+         top = max(set(values), key=values.count) if values else None
+         if top is not None and values.count(top) >= self.s.sign_votes:self.sign = top
+-        if sign is not None and sign == self.sign:self.sign_seen = stamp
++        if sign is not None and sign == self.sign:self.sign_seen = stamp;self.sign_confidence = best['sign'][2]
+ 
+     def state(self, t):
+         """(light 'red'/'yellow'/'green' or None, speed value or None) to show at time t."""
+diff --git a/src/hero_coach/setup.py b/src/hero_coach/setup.py
+index d3d13af..b121c8e 100644
+--- a/src/hero_coach/setup.py
++++ b/src/hero_coach/setup.py
+@@ -31,6 +31,7 @@ setup(
+             'coach_node = hero_coach.coach_node:main',
+             'voice_node = hero_coach.voice_node:main',
+             'lane_guidance = hero_coach.lane_guidance_node:main',
++            'traffic_sign_bridge = hero_coach.traffic_sign_bridge:main',
+         ],
+     },
+ )
+diff --git a/src/vision_road/launch/maploop.launch.py b/src/vision_road/launch/maploop.launch.py
+index eec3fdc..7fc0f8e 100644
+--- a/src/vision_road/launch/maploop.launch.py
++++ b/src/vision_road/launch/maploop.launch.py
+@@ -37,9 +37,10 @@ def generate_launch_description():
+         # Until the driving node (src/hero_calib --ros-output) runs: /hero/vehicle_state and /hero/steering_wheel
+         # made up from /road/reference_odom (tools/fake_vehicle_state.py). Off by default.
+         DeclareLaunchArgument('fake_vehicle_state',default_value='false'),
+-        # Traffic lights and speed signs (plan 27): the YOLO detector (src/yolo_signs, the YOLO environment's
+-        # Python, started by run_lane_hud.sh --signs) publishes /yolo/detections; signs:=true makes lane_guidance
+-        # put the confirmed light and speed sign into its /hero/scene_overlay.  Off by default.
++        # Traffic lights and speed signs (plans 27, 29): the YOLO detector (src/yolo_signs, the YOLO environment's
++        # Python, started by run_lane_hud.sh --signs) publishes /yolo/detections; signs:=true starts
++        # traffic_sign_bridge (-> /hero/traffic_light, /hero/sign) and makes lane_guidance put them into its scene and
++        # its traffic advice into the JSON.  Off by default.
+         DeclareLaunchArgument('signs',default_value='false'),
+         ExecuteProcess(cmd=['python3',os.path.join(os.path.dirname(os.path.realpath(__file__)),'..','..','..','tools','fake_vehicle_state.py')],
+                        name='fake_vehicle_state',output='screen',condition=IfCondition(LaunchConfiguration('fake_vehicle_state'))),
+@@ -67,7 +68,11 @@ def generate_launch_description():
+              condition=IfCondition(LaunchConfiguration('lane_guidance')),
+              parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time'),
+                           'signs.enabled':ParameterValue(LaunchConfiguration('signs'),value_type=bool),
++                          'traffic.enabled':ParameterValue(LaunchConfiguration('signs'),value_type=bool),
+                           'stop_line.enabled':ParameterValue(LaunchConfiguration('road_markings'),value_type=bool)}]),
++        # YOLO detections -> /hero/traffic_light and /hero/sign (the coach's topics), with signs:=true (plan 29).
++        Node(package='hero_coach',executable='traffic_sign_bridge',name='traffic_sign_bridge',output='screen',
++             condition=IfCondition(LaunchConfiguration('signs')),parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
+         Node(package='vision_road',executable='reference_pose',condition=IfCondition(LaunchConfiguration('reference_pose')),
+              parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
+         Node(package='tf2_ros',executable='static_transform_publisher',arguments=[
+diff --git a/src/hero_coach/hero_coach/traffic_sign_bridge.py b/src/hero_coach/hero_coach/traffic_sign_bridge.py
+new file mode 100644
+index 0000000..ca09ddb
+--- /dev/null
++++ b/src/hero_coach/hero_coach/traffic_sign_bridge.py
+@@ -0,0 +1,70 @@
++"""YOLO detections -> the coach's traffic light and sign topics (plan 29).
++
++In:  /yolo/detections (std_msgs/String JSON from src/yolo_signs: stamp, image_width, detections [{class_name,
++     confidence, xyxy}]).
++Out: /hero/traffic_light (hero_hud/SignalIndicator) and /hero/sign (hero_hud/SignMarker, KIND_SPEED + value,
++     SOURCE_FRONT), the topics hero_coach's coach_node reads (in simulation carla_traffic fills them; the coach does
++     not ask which).  lane_guidance reads the same topics.
++What is shown comes from traffic_signs.SignTracker (2 of the last 3 messages, light off 0.5 s after the last light,
++sign kept 3 s; with several lights the large, central one wins).  While something is confirmed it is sent again with
++every detection message (the coach drops what is older than signal_timeout_sec, 1 s); when it goes off,
++STATE_NONE / KIND_UNKNOWN is sent once.  Parameters: input_topic, signal_topic, sign_topic and sign.<SignSettings
++field> (e.g. sign.select_centre_sigma)."""
++import json
++
++import rclpy
++from rclpy.executors import ExternalShutdownException
++from rclpy.node import Node
++from std_msgs.msg import String
++
++from .traffic_signs import SignTracker, SignSettings
++
++STATES = {'red': 1, 'yellow': 2, 'green': 3}  # SignalIndicator.STATE_RED / YELLOW / GREEN
++
++
++class TrafficSignBridge(Node):
++    def __init__(self):
++        super().__init__('traffic_sign_bridge')
++        p = lambda name, default: self.declare_parameter(name, default).value
++        settings = SignSettings()
++        for name in settings.__dataclass_fields__:
++            setattr(settings, name, type(getattr(settings, name))(p('sign.'+name, getattr(settings, name))))
++        self.tracker = SignTracker(settings)
++        from hero_hud.msg import SignalIndicator, SignMarker
++        self.SignalIndicator, self.SignMarker = SignalIndicator, SignMarker
++        self.signal_pub = self.create_publisher(SignalIndicator, p('signal_topic', '/hero/traffic_light'), 10)
++        self.sign_pub = self.create_publisher(SignMarker, p('sign_topic', '/hero/sign'), 10)
++        self.create_subscription(String, p('input_topic', '/yolo/detections'), self.on_detections, 10)
++        self.shown = (None, None)
++        self.get_logger().info('Traffic sign bridge: '+str(settings))
++
++    def on_detections(self, msg):
++        data = json.loads(msg.data);stamp = data.get('stamp', {})
++        t = float(stamp.get('sec', 0))+float(stamp.get('nanosec', 0))*1e-9
++        self.tracker.update(t, data.get('detections', []), data.get('image_width'))
++        light, sign = self.tracker.state(t)
++        for out in messages(self.SignalIndicator, self.SignMarker, light, sign, self.shown, self.tracker):
++            (self.signal_pub if isinstance(out, self.SignalIndicator) else self.sign_pub).publish(out)
++        self.shown = (light, sign)
++
++
++def messages(SignalIndicator, SignMarker, light, sign, shown, tracker):
++    """The messages to send for this detection message: the confirmed light and sign (again each time), and
++    STATE_NONE / KIND_UNKNOWN once when one goes off."""
++    out = []
++    if light is not None or shown[0] is not None:
++        m = SignalIndicator();m.state = STATES[light] if light is not None else SignalIndicator.STATE_NONE;out.append(m)
++    if sign is not None or shown[1] is not None:
++        m = SignMarker();m.source = SignMarker.SOURCE_FRONT
++        if sign is not None:m.kind = SignMarker.KIND_SPEED;m.value = float(sign);m.confidence = float(tracker.sign_confidence)
++        else:m.kind = SignMarker.KIND_UNKNOWN
++        out.append(m)
++    return out
++
++
++def main():
++    rclpy.init();node = TrafficSignBridge()
++    try:rclpy.spin(node)
++    except (KeyboardInterrupt, ExternalShutdownException):pass  # Ctrl+C or a launch shutdown
++    finally:
++        node.destroy_node();rclpy.try_shutdown()
+diff --git a/src/hero_coach/hero_coach/traffic_advice.py b/src/hero_coach/hero_coach/traffic_advice.py
+new file mode 100644
+index 0000000..426ed43
+--- /dev/null
++++ b/src/hero_coach/hero_coach/traffic_advice.py
+@@ -0,0 +1,89 @@
++"""Traffic light + stop line advice, and the speed limit (plan 29).  Pure Python, no ROS.
++
++lane_guidance_node puts the result into /hero/lane_guidance as "traffic" and, for a red or yellow light with a stop
++advice, ends the lane guidance ribbon at the stop line.
++
++Distance to the car's front end: d = stop_line_m (rear axle to the line) - front_overhang_m (rear axle to the front
++bumper: 3.656 m, Prius gen 3, docs/설계.md).  Deceleration needed: a = v^2 / (2 max(d, 0.1 m)).
++
++  light red:    |v| < stopped_mps                    -> 'hold'
++                no stop line known                   -> 'stop_unknown_distance' (distance and deceleration null)
++                d <= 0 and moving                    -> 'over_line'
++                a <= prepare_decel_mps2 (2.0)        -> 'prepare_stop'
++                a <= stop_decel_mps2 (3.5)           -> 'stop'
++                else                                 -> 'stop_hard'
++  light yellow: no stop line known                   -> 'stop_unknown_distance'
++                a <= stop_decel_mps2                 -> as red
++                else (cannot stop before the line)   -> 'proceed'
++  green / none:                                      -> 'none'
++
++Speed limit: the last confirmed speed sign is kept until the next one (speed_limit_kph); over_limit is true once the
++speed has been above the limit + over_limit_kph for over_limit_s.
++"""
++import math
++from dataclasses import dataclass
++
++STOP_ADVICE = ('hold', 'prepare_stop', 'stop', 'stop_hard')  # the ribbon ends at the stop line for these
++
++
++@dataclass
++class AdviceSettings:
++    front_overhang_m: float = 3.656   # rear axle to the front bumper (Prius gen 3, docs/설계.md)
++    prepare_decel_mps2: float = 2.    # up to this a gentle stop: prepare
++    stop_decel_mps2: float = 3.5      # up to this a firm stop; above it hard (red) or go on (yellow)
++    stopped_mps: float = .3           # below this the car is standing
++    min_distance_m: float = .1        # d in the deceleration is at least this
++    over_limit_kph: float = 5.        # over the speed limit by more than this ...
++    over_limit_s: float = 1.          # ... for this long: over_limit
++
++
++def advise(light, stop_line_m, speed_mps, s=None):
++    """dict(advice, distance_m (to the car's front, or None), decel_mps2 (or None))."""
++    s = s or AdviceSettings()
++    v = abs(float(speed_mps or 0.))
++    if light not in ('red', 'yellow'):return dict(advice='none', distance_m=None, decel_mps2=None)
++    d = None if stop_line_m is None else float(stop_line_m)-s.front_overhang_m
++    a = None if d is None else v*v/(2.*max(d, s.min_distance_m))
++    out = lambda advice: dict(advice=advice, distance_m=None if d is None else round(d, 2), decel_mps2=None if a is None else round(a, 2))
++    if light == 'red' and v < s.stopped_mps:return out('hold')
++    if d is None:return dict(advice='stop_unknown_distance', distance_m=None, decel_mps2=None)
++    if light == 'yellow' and a > s.stop_decel_mps2:return out('proceed')
++    if light == 'yellow' and v < s.stopped_mps:return out('hold')
++    if d <= 0. and v >= s.stopped_mps:return out('over_line')
++    if a <= s.prepare_decel_mps2:return out('prepare_stop')
++    if a <= s.stop_decel_mps2:return out('stop')
++    return out('stop_hard')
++
++
++class SpeedLimit:
++    """The last confirmed speed sign until the next one, and whether the car is over it."""
++
++    def __init__(self, settings=None):
++        self.s = settings or AdviceSettings();self.reset()
++
++    def reset(self):
++        self.limit = None;self.over_since = None;self.last = None
++
++    def update(self, t, sign_kph, speed_mps):
++        """t (s), the confirmed sign now (km/h or None) and the speed; returns (limit km/h or None, over_limit)."""
++        if self.last is not None and t < self.last-.5:self.reset()  # replay restarted
++        self.last = t
++        if sign_kph is not None:self.limit = float(sign_kph)
++        over = False
++        if self.limit is not None and speed_mps is not None and abs(speed_mps)*3.6 > self.limit+self.s.over_limit_kph:
++            if self.over_since is None:self.over_since = t
++            over = t-self.over_since >= self.s.over_limit_s
++        else:self.over_since = None
++        return self.limit, over
++
++
++def cut_at(points, x_end):
++    """A ribbon (base_link [(x, y), ...], from the car) ending at x = x_end: points past it removed, the last one
++    interpolated onto it.  Fewer than 2 points left: []."""
++    out = []
++    for i, (x, y) in enumerate(points):
++        if x <= x_end:out.append((x, y));continue
++        if out:
++            x0, y0 = out[-1];u = (x_end-x0)/(x-x0) if x != x0 else 0.;out.append((x_end, y0+u*(y-y0)))
++        break
++    return out if len(out) >= 2 else []
+diff --git a/src/hero_coach/hero_coach/lane_ribbon.py b/src/hero_coach/hero_coach/lane_ribbon.py
+new file mode 100644
+index 0000000..be63b73
+--- /dev/null
++++ b/src/hero_coach/hero_coach/lane_ribbon.py
+@@ -0,0 +1,11 @@
++"""The lane guidance ribbon as coach_node's ideal when it has no parking segment (plan 29).  Pure Python, no ROS."""
++
++
++def lane_ideal(plan_active, ribbon, ribbon_age, max_age=.5):
++    """The ribbon (hero_hud TrajectoryRibbon, base_link, from lane_guidance) to show as the scene's ideal, or None.
++
++    plan_active: coach_node has a parking plan with a current segment (that one wins, it is the drive's own plan).
++    ribbon_age: seconds since the ribbon arrived (None: none yet).  A ribbon with fewer than 2 points means
++    lane_guidance shows nothing now."""
++    if plan_active or ribbon is None or ribbon_age is None or not 0. <= ribbon_age <= max_age:return None
++    return ribbon if len(ribbon.points) >= 2 else None
+diff --git a/src/hero_coach/test/test_traffic_advice.py b/src/hero_coach/test/test_traffic_advice.py
+new file mode 100644
+index 0000000..8f0461c
+--- /dev/null
++++ b/src/hero_coach/test/test_traffic_advice.py
+@@ -0,0 +1,109 @@
++"""Plan 29: light selection (centre and size), the bridge's messages, traffic advice, speed limit, ribbon cut and
++the coach's lane ribbon fallback."""
++from types import SimpleNamespace
++
++import pytest
++
++from hero_coach.traffic_signs import SignTracker, SignSettings
++from hero_coach.traffic_advice import advise, AdviceSettings, SpeedLimit, cut_at, STOP_ADVICE
++from hero_coach.lane_ribbon import lane_ideal
++from hero_coach import traffic_sign_bridge as bridge
++
++
++def det(name, conf, box):
++    return dict(class_name=name, confidence=conf, xyxy=list(box))
++
++
++def test_central_large_light_beats_a_more_confident_small_edge_light():
++    small_edge = det('traffic_light_green', .9, (1850, 100, 1860, 120))   # x 1855 of 1920, 10x20 px
++    big_centre = det('traffic_light_red', .7, (940, 80, 980, 170))        # x 960, 40x90 px
++    new = SignTracker()
++    for k in range(2):new.update(k*.033, [small_edge, big_centre], 1920)
++    assert new.state(.04)[0] == 'red'
++    old = SignTracker(SignSettings(select_area_power=0., select_centre_sigma=0.))  # plan 27: highest confidence
++    for k in range(2):old.update(k*.033, [small_edge, big_centre], 1920)
++    assert old.state(.04)[0] == 'green'
++
++
++def test_without_image_width_no_centre_weighting():
++    t = SignTracker(SignSettings(select_area_power=0.))
++    a = det('traffic_light_red', .8, (0, 0, 10, 10));b = det('traffic_light_green', .7, (950, 0, 960, 10))
++    for k in range(2):t.update(k*.033, [a, b])
++    assert t.state(.04)[0] == 'red'
++
++
++class FakeSignal:
++    STATE_NONE, STATE_RED, STATE_YELLOW, STATE_GREEN = 0, 1, 2, 3
++    def __init__(self):self.state = 0
++
++
++class FakeSign:
++    KIND_UNKNOWN, KIND_SPEED, SOURCE_FRONT = 0, 2, 1
++    def __init__(self):self.kind = 0;self.value = 0.;self.confidence = 0.;self.source = 0
++
++
++def test_bridge_sends_while_confirmed_and_none_once_when_off():
++    tr = SimpleNamespace(sign_confidence=.8)
++    m = bridge.messages(FakeSignal, FakeSign, 'red', 60., (None, None), tr)
++    assert [type(x).__name__ for x in m] == ['FakeSignal', 'FakeSign'] and m[0].state == 1 and (m[1].kind, m[1].value) == (2, 60.)
++    assert m[1].source == 1 and m[1].confidence == .8
++    m = bridge.messages(FakeSignal, FakeSign, 'red', 60., ('red', 60.), tr)  # again while confirmed
++    assert len(m) == 2
++    m = bridge.messages(FakeSignal, FakeSign, None, None, ('red', 60.), tr)  # off: NONE / UNKNOWN once
++    assert m[0].state == 0 and m[1].kind == 0
++    assert bridge.messages(FakeSignal, FakeSign, None, None, (None, None), tr) == []
++
++
++S = AdviceSettings()
++OH = S.front_overhang_m
++
++
++@pytest.mark.parametrize('light,stop,v,want', [
++    ('green', 10., 10., 'none'), (None, 10., 10., 'none'),
++    ('red', 10., .2, 'hold'), ('red', None, .2, 'hold'),
++    ('red', None, 10., 'stop_unknown_distance'), ('yellow', None, 10., 'stop_unknown_distance'),
++    ('red', OH-.5, 5., 'over_line'),
++    ('red', OH+25., 10., 'prepare_stop'),          # a = 100/50 = 2.0: the boundary is prepare
++    ('red', OH+25.-1e-6, 10., 'stop'),
++    ('red', OH+100/7., 10., 'stop'),               # a = 3.5: the boundary is stop
++    ('red', OH+100/7.-1e-6, 10., 'stop_hard'),
++    ('yellow', OH+25., 10., 'prepare_stop'), ('yellow', OH+100/7., 10., 'stop'),
++    ('yellow', OH+100/7.-1e-6, 10., 'proceed'), ('yellow', OH-1., 10., 'proceed'), ('yellow', OH+5., .1, 'hold'),
++])
++def test_advice_branches(light, stop, v, want):
++    assert advise(light, stop, v, S)['advice'] == want
++
++
++def test_advice_numbers():
++    out = advise('red', OH+20., 10., S)
++    assert out == dict(advice='stop', distance_m=20., decel_mps2=2.5)
++    assert advise('red', None, 10., S) == dict(advice='stop_unknown_distance', distance_m=None, decel_mps2=None)
++    assert set(STOP_ADVICE) == {'hold', 'prepare_stop', 'stop', 'stop_hard'}
++
++
++def test_speed_limit_kept_and_over_after_one_second():
++    s = SpeedLimit(S)
++    assert s.update(0., None, 20.) == (None, False)
++    assert s.update(1., 60., 60/3.6) == (60., False)
++    assert s.update(2., None, 66/3.6) == (60., False)   # over by 6 km/h: starts the second
++    assert s.update(2.9, None, 66/3.6) == (60., False)
++    assert s.update(3.0, None, 66/3.6) == (60., True)
++    assert s.update(3.1, None, 64/3.6) == (60., False)  # within +5
++    assert s.update(4., 30., 20/3.6) == (30., False)    # the next sign replaces it
++
++
++def test_cut_at_the_stop_line():
++    pts = [(0., 0.), (5., .5), (10., 1.), (15., 1.)]
++    assert cut_at(pts, 7.5) == [(0., 0.), (5., .5), (7.5, .75)]
++    assert cut_at(pts, 20.) == pts
++    assert cut_at(pts, -1.) == []
++
++
++def test_lane_ribbon_only_without_a_parking_segment():
++    r = SimpleNamespace(points=[1, 2, 3])
++    assert lane_ideal(False, r, .1) is r
++    assert lane_ideal(True, r, .1) is None          # the parking plan wins
++    assert lane_ideal(False, r, .6) is None         # stale
++    assert lane_ideal(False, r, None) is None
++    assert lane_ideal(False, SimpleNamespace(points=[1]), .1) is None
++    assert lane_ideal(False, None, .1) is None

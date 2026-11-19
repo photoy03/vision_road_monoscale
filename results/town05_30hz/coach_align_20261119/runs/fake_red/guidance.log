@@ -1,0 +1,18 @@
+[INFO] [1795079480.754469580] [lane_guidance]: Lane guidance: GuidanceSettings(ref_m=5.0, on_m=0.3, off_m=0.15, change_speed_mps=0.25, change_sec=0.6, change_gap_sec=0.15, change_line_m=0.5, half_width_m=0.91, match_m=0.5, carry_sec=1.5, settle_sec=0.5, near_m=15.0, turn_angle=0.9, turn_window_sec=3.0, implausible=1.3, memory_sec=1.5, near_window_m=3.0, merge_sec=3.0, merge_min_m=10.0, merge_max_m=30.0, merge_per_m=8.0, tail_m=6.0, step_m=0.5, speed_tau_sec=0.3, offset_tau_sec=0.1)
+Traceback (most recent call last):
+  File "/home/jaehun/Desktop/vision-road/install/hero_coach/lib/hero_coach/lane_guidance", line 33, in <module>
+    sys.exit(load_entry_point('hero-coach', 'console_scripts', 'lane_guidance')())
+  File "/home/jaehun/Desktop/vision-road/build/hero_coach/hero_coach/lane_guidance_node.py", line 199, in main
+    try:rclpy.spin(node)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 229, in spin
+    executor.spin_once()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 812, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 801, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(timeout_sec=timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 784, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 685, in _wait_for_ready_callbacks
+    raise ExternalShutdownException()
+rclpy.executors.ExternalShutdownException
+[ros2run]: Process exited with failure 1

@@ -1,0 +1,18 @@
+[INFO] [1795079480.642393286] [traffic_sign_bridge]: Traffic sign bridge: SignSettings(light_window=3, light_votes=2, light_hold_s=0.5, sign_window=3, sign_votes=2, sign_hold_s=3.0, min_confidence=0.0, select_area_power=0.5, select_centre_sigma=0.25)
+Traceback (most recent call last):
+  File "/home/jaehun/Desktop/vision-road/install/hero_coach/lib/hero_coach/traffic_sign_bridge", line 33, in <module>
+    sys.exit(load_entry_point('hero-coach', 'console_scripts', 'traffic_sign_bridge')())
+  File "/home/jaehun/Desktop/vision-road/build/hero_coach/hero_coach/traffic_sign_bridge.py", line 66, in main
+    try:rclpy.spin(node)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 229, in spin
+    executor.spin_once()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 812, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 801, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(timeout_sec=timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 784, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 685, in _wait_for_ready_callbacks
+    raise ExternalShutdownException()
+rclpy.executors.ExternalShutdownException
+[ros2run]: Process exited with failure 1

@@ -12,7 +12,6 @@ legacy `isaac_autoware_bridge/parking_planner.py` 에서 가져왔다. A* 구성
 
 A* 는 수 초 걸릴 수 있어 coach_node 와 다른 프로세스로 돈다.
 """
-
 import array
 import math
 import time
@@ -26,7 +25,8 @@ import rclpy
 from rclpy.clock import Clock, ClockType
 from rclpy.node import Node
 
-from hero_coach.core import Waypoint, densify, nearest_index, path_blocked, planning_costmap
+from hero_coach.core import (Footprint, Waypoint, densify, nearest_index, path_blocked,
+                             planning_costmap)
 from hero_coach.ros_io import (
     LATCHED, LATEST, declare_footprint, ego_from_odometry, grid_array, yaw_of,
 )
@@ -41,7 +41,7 @@ class ParkingPlanner(Node):
         declare('goal_topic', '/goal_pose')
         declare('trajectory_topic', '/hero_coach/trajectory')
         declare('tick_hz', 2.0)
-        declare('window_margin_m', 8.0)
+        declare('window_margin_m', 20.0)
         declare('replan_cooldown_sec', 1.0)
         declare('course_out_m', 1.0)
         declare('arrive_m', 0.5)
@@ -101,6 +101,19 @@ class ParkingPlanner(Node):
     def build_astar(self):
         fpr = self.footprint
         margin = float(self.p('vehicle_shape_margin_m'))
+        # A* 가 충돌을 보는 상자. 계획 창의 자차 지우기도 이것을 쓴다.
+        #
+        # margin 만으로는 모자란다. A* 는 theta 를 theta_size 구간으로 나누고
+        # 충돌 셀 목록을 구간마다 미리 만들어 두므로, 실제 자세가 구간 중심에서
+        # 최대 반 구간만큼 어긋난 채 판정된다. 앞 모서리는 후륜축에서 3.87 m 라
+        # 60 구간(6 도)이면 0.20 m 가 밖으로 쓸린다 -- 그만큼 안 지우면 자차가
+        # 시작부터 충돌로 읽힌다 (2026-11-06, 실패 23 건 전부 "출발충돌
+        # 목표깨끗"). 구간 안의 어느 각도에서도 덮이도록 그만큼 더 지운다.
+        reach = math.hypot(fpr.front + margin, fpr.half_width + margin)
+        slack = reach * math.sin(math.pi / float(self.p('theta_size')))
+        self.cleared_footprint = Footprint(fpr.front + margin + slack,
+                                           fpr.rear - margin - slack,
+                                           fpr.half_width + margin + slack)
         shape = fp.VehicleShape(
             float(fpr.front - fpr.rear + 2.0 * margin),
             float(2.0 * fpr.half_width + 2.0 * margin),
@@ -199,9 +212,16 @@ class ParkingPlanner(Node):
     def plan(self, reason: str):
         data, res, origin = self.grid
         goal = self.goal.pose
+        # 자차 자리를 지울 때는 A* 가 보는 상자와 같은 것을 써야 한다. A* 에
+        # 넘기는 VehicleShape 는 길이·폭에 vehicle_shape_margin_m 를 양쪽으로
+        # 더해 만드는데, 지우기를 맨 차체로 하면 그 테두리(0.1 m, 134 칸)가
+        # 남는다. 자차가 점유 셀에 붙어 있으면 시작부터 충돌로 읽혀
+        # "Invalid start or goal pose" 가 난다 -- 2026-11-06 에 계획 612 회 중
+        # 578 회가 그렇게 비었고, 목표는 내내 깨끗했다.
         costmap, costmap_origin = planning_costmap(
             data, res, origin, [self.ego[:2], (goal.position.x, goal.position.y)],
-            float(self.p('window_margin_m')), ego=self.ego, footprint=self.footprint)
+            float(self.p('window_margin_m')), ego=self.ego,
+            footprint=self.cleared_footprint)
 
         grid = OccupancyGrid()
         grid.header.frame_id = self.grid_frame
@@ -224,7 +244,19 @@ class ParkingPlanner(Node):
             self.astar.setMap(grid)
             ok = self.astar.makePlan(start, goal)
         except RuntimeError as error:
-            self.get_logger().error(f'makePlan: {error}')
+            # 예외 문구만으로는 출발인지 목표인지 갈리지 않는다. 칸 좌표와
+            # 코스트맵 최대값만 적어 둔다 -- 2026-11-06 에 이 두 수가 "출발
+            # 차체가 점유에 닿았다"를 가리켰다. 더 깊이 갈라야 하면 그때
+            # makePlan(X, X) 를 따로 불러 X 자신이 충돌인지 물으면 된다.
+            def cell(x, y):
+                return (int((x - costmap_origin[0]) / res),
+                        int((y - costmap_origin[1]) / res))
+            self.get_logger().error(
+                f'makePlan: {error} | 맵 {costmap.shape[1]}x{costmap.shape[0]} '
+                f'최대{int(costmap.max())} | 출발 {cell(self.ego[0], self.ego[1])} '
+                f'{math.degrees(self.ego[2]):.0f}도 | '
+                f'목표 {cell(goal.position.x, goal.position.y)} '
+                f'{math.degrees(yaw_of(goal.orientation)):.0f}도')
             ok = False
         elapsed = time.monotonic() - began
 
