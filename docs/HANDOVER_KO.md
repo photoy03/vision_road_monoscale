@@ -122,6 +122,8 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
   - 한 파일: `python3 tools/jitter_eval.py <predictions.jsonl.gz 또는 frames.json> [--scene 장면]`
   - 14 개 영상: `bash results/town05_30hz/jitter_20261120/jtry.sh 폴더 "" "max_accel_m=0.005 …"`
   - 정답 경계 대비: `python3 results/town05_30hz/jitter_20261120/jaccuracy.py 폴더1 폴더2`
+  - 맞는 선 표시 비율(15 m): `python3 results/town05_30hz/jitter_20261120/jcoverage.py 폴더1 폴더2`
+  - 전후 비교 그림: `python3 results/town05_30hz/jitter_20261120/compare_sheet.py 전_녹화 후_녹화 시작초 끝초 출력.png`
 
 ## 5. 자료 흐름과 토픽
 
@@ -177,11 +179,14 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 - 원인 3: 먼 끝 모양만 바뀐 같은 선이 새 선처럼 초기화되어 한 번에 옮겨졌다. 3회차에서 바꿨다:
   - `max_accel_same_m: 0.3`: 10 m 에서 0.3 m 안이면 그리는 선도 한도로 따라감.
   - `max_accel_leash_m: 0.45`.
-- 지금: 목표 충족 13/14(기준선 2/14).
-  - 18 m p99·10 m p99 는 14 개 모두 지킨다.
-  - 미달은 s8c 의 5 cm 넘는 10 프레임뿐이다. 선 교체(새 선, 차로 변경)라 닫았다.
+- 회귀 발견, 4회차에서 바로잡음: 1–3회차의 끝 자르기가 늦는 선에서 관측을 3 m 아래로 잘라 버리게 했다. 그래서 맞는 선을 보여 주는 비율이 줄었다(15 m, s3a 79.9 → 65.9 %).
+  - `trim_keep_m: 3.0`: 3 m 아래로 남는 자르기는 하지 않는다. 0회차와 1 %p 안으로 회복했다.
+  - 이제 맞는 선 비율(`jcoverage.py`)도 함께 본다.
+- 지금(4회차): 목표 충족 8/14(기준선 2/14).
+  - 18 m p99 ≤ 2 cm 는 14 개 모두, 10 m p99 ≤ 1 cm 는 s8d(1.1)만 빼고 지킨다.
+  - 미달은 5 cm 넘는 프레임 수다: s2 7, s3a 8, s3b 7, s4 6, s8c 15, s8d 9(기준선 36–49).
   - 시내 0.6 cm·0 그대로다.
-  - 지연 가운데 켬 25.64 ms(한도 25.6; 같은 시간대 2회차 설정 25.49, 기계 흔들림으로 봄), 끔 23.88 ms.
+  - 지연 가운데 켬 25.32, 끔 23.67 ms.
 - 표시 필터 설정은 HUD 선에만 쓰인다. 안내·정답 지표(A–C)는 바뀌지 않는다.
 
 ### 끝남: 계획 31 (2026-11-20, 연구 세션 지시)
@@ -324,7 +329,7 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 
 ## 7. 다음에 할 일 (순서대로)
 
-- **진행 중: 계획 32**(2026-11-20, 사용자 지적). 1–3회차 끝(6절 "진행 중: 계획 32").
+- **진행 중: 계획 32**(2026-11-20, 사용자 지적). 1–4회차 끝(6절 "진행 중: 계획 32").
   - 남은 것: s8c·s5 고친 뒤 HUD 영상과 같은 구간 전후 비교, `SUMMARY_KO.md`, 연구 세션 보고.
   - 다시 재는 명령: `bash results/town05_30hz/jitter_20261120/jtry.sh <폴더> "" "<표시 설정>"`.
 

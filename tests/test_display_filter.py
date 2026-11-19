@@ -366,3 +366,17 @@ def test_max_accel_same_draws_a_reshaped_far_end_smoothly():
     smooth,end=run(.3);jump,_=run(0.)
     # (Each station's move changes by at most 0.005; 18 m lies between stations, whose weights there add up to more.)
     assert smooth<=.02 and jump>3*smooth and abs(end-(1.75+.001*18*18))<.03
+
+
+def test_trim_keep_leaves_an_observation_whole_when_the_cut_would_starve_the_line():
+    # Plan 32 round 4 (trim_keep_m): a cut that leaves less than trim_keep_m is not made (the rest would be too short to
+    # be taken, and the line was held or dropped where the kept line lagged); a cut that leaves enough is still made.
+    def take(keep,obs):
+        f=DisplayFilter(FilterSettings(trim_m=.15,trim_per_10m=.15,trim_keep_m=keep))
+        for i in range(10):f.update(i*DT,[('left',line(1.75),False)],(0.,0.,0.))
+        f.update(10*DT,[('left',obs,False)],(0.,0.,0.));return f.sides['left']
+    early=np.array([[6.,1.75],[8.5,2.0],[12.,2.05],[20.,2.1]])  # off by 0.25 m from 8.5 m: the cut leaves 2.5 m
+    assert take(0.,early).predicted  # cut to 6-8.5 m: too short, not taken
+    assert not take(3.,early).predicted  # left whole and taken
+    hooked=np.array([[4.,1.75],[9.,1.75],[14.,1.76],[20.,2.3],[26.,2.9]])
+    t=take(3.,hooked);assert not t.predicted and t.seen[-1][1]==14.  # 10 m left: still cut

@@ -138,6 +138,9 @@ lane_display_filter:
     # chained onto them bent the display line from frame to frame (s8c 18 m jitter p99 10.8 -> 4.0 cm).
     trim_m: 0.15
     trim_per_10m: 0.15
+    # Plan 32 round 4: a cut that would leave under 3 m (too short to be taken) is not made; cutting there starved the
+    # line where the kept line lagged (s3a: correct line shown at 15 m 79.9 -> 65.9 % in rounds 1-3, now 79.5 %).
+    trim_keep_m: 3.0
     # Plan 32 round 2: the drawn line follows the kept line with its per-frame move changing by at most 0.5 cm (the
     # second difference seen as shake), never more than 0.3 m behind; gating still uses the kept line.  The step when
     # a line held through rejected frames is taken again was the rest of the ring-road shake (s8c 18 m p99 4.0 -> 1.3 cm).

@@ -1,0 +1,8 @@
+s7_lights 0 3072
+s7_lights 500 3072
+s7_lights 1000 3072
+s7_lights 1500 3072
+s7_lights 2000 3072
+s7_lights 2500 3072
+s7_lights 3000 3072
+s7_lights process mean 8.73 p95 11.56 ms

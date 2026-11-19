@@ -1,0 +1,4 @@
+s6_yellow 0 1040
+s6_yellow 500 1040
+s6_yellow 1000 1040
+s6_yellow process mean 10.29 p95 11.50 ms

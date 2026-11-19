@@ -71,6 +71,7 @@ class FilterSettings:
     trim_m:float=0.             # >0: an observation is cut where it leaves the kept line by more than this (plan 32)
     trim_per_10m:float=0.       # ... plus this per 10 m beyond 10 m
     trim_from_m:float=8.        # ... from this x on (nearer, the kept line itself is least sure)
+    trim_keep_m:float=0.        # >0: a cut that would leave less than this of the observation is not made
     max_step_m:float=0.         # >0: the kept line moves at most this much per frame at each station (plan 32)
     max_accel_m:float=0.        # >0: the drawn line's per-frame move changes by at most this from frame to frame (plan 32)
     max_accel_leash_m:float=.3  # ... but it stays within this of the kept line at each station
@@ -286,8 +287,12 @@ class SideTrack:
     def update(self,t,observed,hold_s,paint=None,travel=None):
         s=self.s;obs=None;accepted=False
         if observed is not None and s.trim_m>0:
-            observed=self.trimmed(observed)
-            if len(observed)<2:observed=None
+            whole=observed;observed=self.trimmed(observed)
+            if s.trim_keep_m>0 and (len(observed)<2 or float(observed[-1][0]-observed[0][0])<s.trim_keep_m):
+                # trim_keep_m (plan 32 round 4): cutting starved the line where the kept line lagged (zigzags, lane
+                # changes): the short rest was rejected or drew the line short, and the line was held, dropped or ended early.  The whole observation instead.
+                observed=whole
+            elif len(observed)<2:observed=None
         if observed is not None:
             stations,near,far=fit(observed,near=s.fit_near_m,cubic=s.cubic_m,cubic_ridge=s.cubic_ridge)
             if far-near>=s.update_span_m and near<=s.max_start_m:

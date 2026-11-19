@@ -1,0 +1,6 @@
+results/town05_30hz/jitter_20261120/round_04/realtime_signs/town05_1 p2d med/p95 21.59 25.32 p2r p95 7.72 s2f p95 26.22 proc 1.0 gaps>100 0 yolo fps 11.49 infer p95 81.9 recv->det p95 81.9
+results/town05_30hz/jitter_20261120/round_04/realtime_signs/town05_2 p2d med/p95 21.8 25.04 p2r p95 7.65 s2f p95 26.39 proc 1.0 gaps>100 0 yolo fps 11.79 infer p95 82.0 recv->det p95 82.0
+results/town05_30hz/jitter_20261120/round_04/realtime_signs/town05_3 p2d med/p95 21.7 25.5 p2r p95 7.54 s2f p95 27.03 proc 1.0 gaps>100 0 yolo fps 11.78 infer p95 81.9 recv->det p95 81.9
+results/town05_30hz/jitter_20261120/round_04/realtime_nosigns/town05_1 p2d med/p95 21.16 23.67 p2r p95 6.57 s2f p95 25.28 proc 1.0 gaps>100 0
+results/town05_30hz/jitter_20261120/round_04/realtime_nosigns/town05_2 p2d med/p95 21.63 23.82 p2r p95 7.18 s2f p95 24.78 proc 1.0 gaps>100 0
+results/town05_30hz/jitter_20261120/round_04/realtime_nosigns/town05_3 p2d med/p95 20.98 23.21 p2r p95 6.47 s2f p95 24.74 proc 1.0 gaps>100 0
