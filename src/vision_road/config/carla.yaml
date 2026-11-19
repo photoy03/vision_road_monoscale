@@ -33,6 +33,9 @@ vision_road:
     style_history_sec: 0.8
     style_history_frames: 8
     style_hold_sec: 1.0
+    # Plan 30: a confirmed style is also held until the car has gone 2 m (standing at a red light the line beside
+    # the car can be too short to judge).
+    style_hold_m: 2.0
     # Curve: a dashed side seen one dash at a time is judged from 12 m of paint gathered along the road.
     style_accumulate_m: 12.0
 
@@ -81,6 +84,9 @@ vision_road:
     # Lane centrelines (own lane; the neighbouring lanes beside their outer lines), across the lane, with
     # offset, heading and curvature 5 m ahead.  /road/lane_centres, /road/lane_centre_markers.
     carla_centre_enabled: true
+    # Plan 30: the offset and heading at the reference from 8 m of centreline only (the curvature still from 15 m):
+    # a curve starting or ending farther ahead no longer bends the heading (s1 heading p95 2.6 -> 1.8 deg).
+    carla_centre_heading_m: 8.0
     # Real time: only the newest image waits (a slow frame drops the older one, latency does not pile up),
     # and the image is read in place from its serialized form.
     image_job_depth: 1

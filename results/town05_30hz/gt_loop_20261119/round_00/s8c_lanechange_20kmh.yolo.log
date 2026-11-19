@@ -1,0 +1,5 @@
+s8c_lanechange_20kmh 0
+s8c_lanechange_20kmh 500
+s8c_lanechange_20kmh 1000
+s8c_lanechange_20kmh 1500
+s8c_lanechange_20kmh yolo full mean 37.6 p95 39.5 ms

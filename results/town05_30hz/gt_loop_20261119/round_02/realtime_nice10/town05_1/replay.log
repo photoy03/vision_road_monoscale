@@ -1,0 +1,7 @@
+[INFO] [1795102629.013285909] [maploop_header_replay]: 300 frames / 9.97 simulation seconds
+[INFO] [1795102638.997960953] [maploop_header_replay]: 600 frames / 19.97 simulation seconds
+[INFO] [1795102648.997453946] [maploop_header_replay]: 900 frames / 29.97 simulation seconds
+[INFO] [1795102658.996977351] [maploop_header_replay]: 1200 frames / 39.97 simulation seconds
+[INFO] [1795102668.997396909] [maploop_header_replay]: 1500 frames / 49.97 simulation seconds
+[INFO] [1795102678.996800001] [maploop_header_replay]: 1800 frames / 59.97 simulation seconds
+[INFO] [1795102679.774595519] [maploop_header_replay]: Done: 1808 recorded images; header-paced, bag unchanged

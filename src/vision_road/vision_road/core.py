@@ -43,6 +43,7 @@ class Settings:
     style_history_sec: float = 0.8
     style_history_frames: int = 8
     style_hold_sec: float = 0.0
+    style_hold_m: float = 0.0  # >0: a confirmed line style is also held while the car has gone at most this far since
     style_accumulate_m: float = 0.0  # >0: also judge dashed from paint accumulated along the road over the last 20 m travelled
     candidate_mask_enabled: bool = True
     candidate_max_width_m: float = 0.45
@@ -112,6 +113,7 @@ class Settings:
     carla_centre_enabled: bool = False  # lane centrelines: own lane (left-right) and, with carla_outer_enabled, the neighbouring lanes
     carla_centre_ref_m: float = 5.0  # lateral offset, heading and curvature are given at this distance ahead (inside the view)
     carla_centre_curvature_m: float = 15.0  # ... from a quadratic through this much centreline past it
+    carla_centre_heading_m: float = 0.0  # >0: the offset and heading from only this much past it (curve onsets)
     carla_centre_width_alpha: float = 0.2  # running lane width (for a lane with one boundary): weight of a measured width
 
 

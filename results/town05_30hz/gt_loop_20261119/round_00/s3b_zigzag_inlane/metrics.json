@@ -1,0 +1,234 @@
+{
+ "scene": "s3b_zigzag_inlane",
+ "frames": 2205,
+ "used_frames": 2205,
+ "A1_switched_frames": 0,
+ "A1_on_line_frames": 0,
+ "A4_gt_excluded": 0,
+ "A1_gt_excluded": {
+  "left": {
+   "frames": 182,
+   "first": 3.77,
+   "last": 15.73
+  },
+  "right": {
+   "frames": 201,
+   "first": 3.1,
+   "last": 15.8
+  }
+ },
+ "A1_lateral_error_m": {
+  "left_5m": {
+   "n": 0,
+   "median": null,
+   "p95": null,
+   "max": null
+  },
+  "left_10m": {
+   "n": 1546,
+   "median": 0.0121,
+   "p95": 0.1465,
+   "max": 0.6484
+  },
+  "left_15m": {
+   "n": 1987,
+   "median": 0.0175,
+   "p95": 0.0493,
+   "max": 0.6163
+  },
+  "right_5m": {
+   "n": 0,
+   "median": null,
+   "p95": null,
+   "max": null
+  },
+  "right_10m": {
+   "n": 1503,
+   "median": 0.0101,
+   "p95": 0.1586,
+   "max": 0.5416
+  },
+  "right_15m": {
+   "n": 1988,
+   "median": 0.0068,
+   "p95": 0.0371,
+   "max": 0.7107
+  }
+ },
+ "A1_all": {
+  "n": 7024,
+  "median": 0.0115,
+  "p95": 0.0614,
+  "max": 0.7107
+ },
+ "A1_nearest_line_10m": {
+  "n": 3133,
+  "median": 0.0115,
+  "p95": 0.1771,
+  "max": 1.0268
+ },
+ "A1_identity": 0.999,
+ "A2_observed": {
+  "left": 0.9782,
+  "right": 0.9751
+ },
+ "A2_frames": {
+  "left": 2205,
+  "right": 2205
+ },
+ "A3_style": {
+  "left": {
+   "accuracy": 0.9856,
+   "known": 0.9856,
+   "n": 2157
+  },
+  "right": {
+   "accuracy": 0.9958,
+   "known": 0.9958,
+   "n": 2150
+  }
+ },
+ "A3_colour": {
+  "left": {
+   "accuracy": 0.9995,
+   "n": 2157
+  },
+  "right": {
+   "accuracy": 0.9986,
+   "n": 2150
+  }
+ },
+ "A4_offset_m": {
+  "n": 2095,
+  "median": 0.0066,
+  "p95": 0.093,
+  "max": 0.6774
+ },
+ "A4_heading_deg": {
+  "n": 2095,
+  "median": 0.1702,
+  "p95": 1.5725,
+  "max": 7.6756
+ },
+ "A4_coverage": 0.9878,
+ "A4_offset_estimated_m": {
+  "n": 83,
+  "median": 0.0998,
+  "p95": 0.3869,
+  "max": 4.0164
+ },
+ "A4_at_origin_m": {
+  "n": 2178,
+  "median": 0.1285,
+  "p95": 0.5447,
+  "max": 2.9981
+ },
+ "A5": {
+  "left": {
+   "precision": 1.0,
+   "recall": 0.7946,
+   "opposite_accuracy": 1.0,
+   "crossable_accuracy": 0.984,
+   "recall_visible": 0.97,
+   "visible_n": 1735,
+   "tp": 1752,
+   "fp": 0,
+   "fn": 453,
+   "tn": 0
+  },
+  "right": {
+   "precision": 1.0,
+   "recall": 0.4939,
+   "opposite_accuracy": 1.0,
+   "crossable_accuracy": 0.9982,
+   "recall_visible": 0.9302,
+   "visible_n": 1103,
+   "tp": 1089,
+   "fp": 0,
+   "fn": 1116,
+   "tn": 0
+  }
+ },
+ "B_lane_changes": {
+  "ground_truth": 0,
+  "target_moves": 0,
+  "on_time": 0,
+  "spurious_moves": 0,
+  "gt_times": [],
+  "move_times": []
+ },
+ "B5_return_shown": {
+  "far": 0.7377,
+  "far_n": 1155,
+  "centre": 0.2624,
+  "centre_n": 724,
+  "painted_frames": 2
+ },
+ "B5_return_shown_gt": {
+  "far": 0.7377,
+  "centre": 0.2624
+ },
+ "B3": {
+  "over_line_frames": 0,
+  "return_shown": null,
+  "opposite_target_frames": 0
+ },
+ "C": {
+  "C4_stop_waypoint": {
+   "error_m": {
+    "n": 0,
+    "median": null,
+    "p95": null,
+    "max": null
+   },
+   "detected": null,
+   "n": 0,
+   "false": 0.0,
+   "false_n": 2205,
+   "note": "against CARLA stop waypoints (stop_line_ahead_m), about 7.6 m before the painted line: not the scored C4"
+  },
+  "C4_stop_line": {
+   "error_m": {
+    "n": 0,
+    "median": null,
+    "p95": null,
+    "max": null
+   },
+   "detected": null,
+   "n": 0,
+   "false": 0.0,
+   "false_n": 2204,
+   "paint_minus_waypoint_m": {
+    "n": 0,
+    "median": null,
+    "p95": null,
+    "max": null
+   },
+   "truth": "semantic camera RoadLine bars across the own lane"
+  },
+  "C1_light": {
+   "frames": 0,
+   "confirmed": null,
+   "wrong_colour": null,
+   "state_changes": 2
+  },
+  "C2_no_light_shown": {
+   "frames": 2205,
+   "shown": 0.0068,
+   "raw_frames": 2205,
+   "raw_shown": 0.0068
+  },
+  "C3_speed_signs": {
+   "signs": 0,
+   "confirmed_before": null,
+   "wrong_frames": 0,
+   "not_in_model": [],
+   "not_in_model_n": 0
+  },
+  "C5_advice": {
+   "over_line_frames": 0,
+   "hold": null,
+   "hold_n": 0
+  }
+ }
+}

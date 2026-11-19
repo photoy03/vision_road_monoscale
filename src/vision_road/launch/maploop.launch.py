@@ -69,10 +69,18 @@ def generate_launch_description():
              parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time'),
                           'signs.enabled':ParameterValue(LaunchConfiguration('signs'),value_type=bool),
                           'traffic.enabled':ParameterValue(LaunchConfiguration('signs'),value_type=bool),
-                          'stop_line.enabled':ParameterValue(LaunchConfiguration('road_markings'),value_type=bool)}]),
+                          'stop_line.enabled':ParameterValue(LaunchConfiguration('road_markings'),value_type=bool),
+                          # Plan 30 (GT loop): the offset at the car origin, a lane change over a white dashed line
+                          # with no lane detected beyond it, and an estimated lane beside one measured line trusted.
+                          'guidance.offset_at_m':1.4096,'guidance.change_without_neighbour':True,'guidance.trust_single_line':True,
+                          # ... and shown from 0.25 m, hidden below 0.20 m (inside the 0.30 / 0.15 m judged by the GT
+                          # loop, so the offset's few centimetres of noise neither delay nor prolong it).
+                          'guidance.on_m':.25,'guidance.off_m':.20}]),
         # YOLO detections -> /hero/traffic_light and /hero/sign (the coach's topics), with signs:=true (plan 29).
         Node(package='hero_coach',executable='traffic_sign_bridge',name='traffic_sign_bridge',output='screen',
-             condition=IfCondition(LaunchConfiguration('signs')),parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
+             condition=IfCondition(LaunchConfiguration('signs')),parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time'),
+                          # Plan 30: far speed signs are misread (90 as 60), side streets' lights sit at the image edge.
+                          'sign.sign_min_height_px':50.,'sign.light_max_offcentre':.3}]),
         Node(package='vision_road',executable='reference_pose',condition=IfCondition(LaunchConfiguration('reference_pose')),
              parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
         Node(package='tf2_ros',executable='static_transform_publisher',arguments=[

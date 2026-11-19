@@ -81,7 +81,7 @@ class TemporalDetector:
                     lane.style='dashed';lane.style_confidence=.7;lane.style_source_time=float(t)
 
     def reset(self):
-        self.odometer=0.;self.odom_pose=None;self.style_cells={}
+        self.odometer=0.;self.odom_pose=None;self.style_cells={};self.style_odo={};self.centre_styles={}
         self.tracks={}; self.last_pose=None; self.last_time=None; self.gray=None; self.valid=None
         self.registration='none'; self.measured_count=0; self.predicted_count=0
         self.paint_history=[];self.style_binary=None
@@ -262,6 +262,11 @@ class TemporalDetector:
             info=getattr(lane,'outer',None)
             if info is not None:style=lane.style;yellow=bool(info.get('yellow'))
             else:style=styles[side].style if side in styles else 'unknown';yellow=bool(self.own_yellow.get(side,False))
+            # style_hold_m: the last known style of the side while the car has gone at most that far since (standing at a
+            # red light the line beside the car can be too short to judge, or drop out of the style tracks).
+            if c.style_hold_m>0:
+                if style!='unknown':self.centre_styles[side]=(style,self.odometer)
+                elif side in self.centre_styles and self.odometer-self.centre_styles[side][1]<=c.style_hold_m:style=self.centre_styles[side][0]
             return dict(line=side,style=style,yellow=yellow,reprojected=bool(lane.reprojected))
         lanes=[]
         for name,index,lo,hi in (('ego',0,'left','right'),('left',-1,'left_outer','left'),('right',1,'right','right_outer')):
@@ -280,7 +285,7 @@ class TemporalDetector:
             else:
                 estimated=True;one,side=(a,'left') if a is not None else (b,'right')
                 points=centreline.shifted(one.points,width,side);width_now=width
-            ref=centreline.at_reference(points,c.carla_centre_ref_m,c.carla_centre_curvature_m)
+            ref=centreline.at_reference(points,c.carla_centre_ref_m,c.carla_centre_curvature_m,c.carla_centre_heading_m)
             if ref is None:continue
             left,right=describe(lo),describe(hi)
             lane=dict(name=name,index=index,points=points,both_m=both,width_m=round(width_now,3),tracked_width_m=round(float(width),3),
@@ -481,10 +486,14 @@ class TemporalDetector:
             lane.style=evidence.kind if streak>=required else 'unknown'
             lane.style_confidence=evidence.confidence if lane.style!='unknown' else 0.
             style_time=float(t) if lane.style!='unknown' else 0.
+            if lane.style!='unknown':self.style_odo[lane.side]=self.odometer
+            # Held style_hold_sec, and (style_hold_m > 0) as long as the car has gone at most style_hold_m since the
+            # style was last confirmed: a car standing at a red light sees the same lines.
+            still=c.style_hold_m>0 and self.odometer-self.style_odo.get(lane.side,-math.inf)<=c.style_hold_m
             if (lane.style=='unknown' and matched and old.lane.style!='unknown'
-                    and 0<t-old.style_time<=c.style_hold_sec):
+                    and (0<t-old.style_time<=c.style_hold_sec or (still and t>old.style_time))):
                 lane.style=old.lane.style
-                lane.style_confidence=old.lane.style_confidence*math.exp(-(t-self.last_time)/max(c.style_hold_sec,.01))
+                lane.style_confidence=old.lane.style_confidence*(1. if still else math.exp(-(t-self.last_time)/max(c.style_hold_sec,.01)))
                 style_time=old.style_time
             lane.style_source_time=style_time
             lane.style_span_m=evidence.span_m; lane.paint_fraction=evidence.paint_fraction; lane.dash_count=evidence.dash_count

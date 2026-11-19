@@ -29,6 +29,10 @@ VIDEOS=dict(maploop=(DISK/'rosbag/maploop_30hz',ROOT/'data/maploop30hz_native.cd
             town04=(DISK/'rosbag/town04_30hz',DISK/'vision-road-cache/town04_30hz_native.cdrz'),
             town05=(DISK/'rosbag/town05_30hz',DISK/'vision-road-cache/town05_30hz_native.cdrz'),
             town05_signs=(DISK/'rosbag/town05_signs',DISK/'vision-road-cache/town05_signs_native.cdrz'))
+# Plan 30: the GT recordings of 2026-11-19 (town05_<scene>_20261119), by their scene name.
+for _scene in ('s1_lanefollow','s2_wobble','s3a_zigzag_cross','s3b_zigzag_inlane','s4_straddle','s5_lanechange','s6_yellow','s7_lights',
+               's8a_lanefollow_20kmh','s8b_lanefollow_50kmh','s8c_lanechange_20kmh','s8d_lanechange_50kmh'):
+    VIDEOS['town05_'+_scene]=(DISK/'rosbag'/f'town05_{_scene}_20261119',DISK/'vision-road-cache'/f'town05_{_scene}_20261119_native.cdrz')
 
 
 def key(stamp):return stamp.sec*1000000000+stamp.nanosec
@@ -70,6 +74,7 @@ def main():
     ap.add_argument('--signs',action='store_true',help='also the YOLO traffic light / speed sign detector (src/yolo_signs, '
                     'YOLO_PYTHON or ~/yolo_env/bin/python) and lane_guidance signs:=true; its per-frame times go to OUTPUT/signs_stats.json')
     ap.add_argument('--signs-arg',nargs='*',default=[],help='detector parameters name:=value, e.g. full_frame:=true max_inference_fps:=10')
+    ap.add_argument('--signs-nice',type=int,default=0,help='run the sign detector with this niceness (nice -n); plan 30 found it does not lower the lane latency')
     ap.add_argument('--crop-rows',default='',help="replay sends only these image rows (LO:HI, replay_maploop.py --crop-rows); default: full images")
     a=ap.parse_args();a.output.mkdir(parents=True,exist_ok=True);bag,cache=VIDEOS[a.video]
     rclpy.init();node=Node('road_realtime_eval');arrivals={'boundary':{},'display':{},'paint':{}};content={'boundary':{},'display':{}}
@@ -104,8 +109,9 @@ def main():
         if a.signs:
             yolo=os.environ.get('YOLO_PYTHON',str(Path.home()/'yolo_env/bin/python'));params=[]
             for kv in a.signs_arg+['stats_path:='+str(a.output/'signs_stats.json')]:params+=['-p',kv]
-            signs=subprocess.Popen(['bash','-c','source /opt/ros/humble/setup.bash && source "$0/install/setup.bash" && exec "$@"',str(ROOT),
-                                    yolo,str(ROOT/'src/yolo_signs/town05_yolo26m_detector.py'),'--ros-args']+params,
+            nice=['nice','-n',str(a.signs_nice)] if a.signs_nice else []  # a lower CPU priority than the lane detector
+            signs=subprocess.Popen(['bash','-c','source /opt/ros/humble/setup.bash && source "$0/install/setup.bash" && exec "$@"',str(ROOT)]+nice+
+                                   [yolo,str(ROOT/'src/yolo_signs/town05_yolo26m_detector.py'),'--ros-args']+params,
                                    stdout=(a.output/'signs.log').open('w'),stderr=subprocess.STDOUT,start_new_session=True);procs.append(signs)
             deadline=time.monotonic()+90  # the model loads in a few seconds; its publisher appears after that
             while node.count_publishers('/yolo/detections')<1 and time.monotonic()<deadline:

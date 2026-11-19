@@ -13,15 +13,20 @@ behind parameters whose defaults keep the original behaviour:
   - full_frame (default false = the original upper-centre 640 x 640 tile): the whole image instead.
   - stats_path: per processed frame (image stamp, receive / start / end times, ultralytics speed, detection
     count) written as JSON when the node stops; for measurements.
+  - raw_cdr (default false; plan 30): take the images serialized and decode only the frame that is processed (the
+    detector runs at about 11 Hz on 30 Hz images: building a 6 MB Python Image for every message costs the lane
+    detector CPU time).  Packed bgr8 / rgb8 only (the first message is checked).
 Run with the YOLO environment's Python and ROS sourced (run_lane_hud.sh --signs does this).
 """
 
 from __future__ import annotations
 
 import json
+import struct
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import rclpy
@@ -108,6 +113,7 @@ class Town05Yolo26mDetector(Node):
         self.declare_parameter("max_inference_fps", 0.0, ParameterDescriptor(dynamic_typing=True))
         self.declare_parameter("full_frame", self.USE_FULL_FRAME)
         self.declare_parameter("stats_path", "")
+        self.declare_parameter("raw_cdr", False)
 
         model_path = self.get_parameter("model_path").value
         image_topic = self.get_parameter("image_topic").value
@@ -121,6 +127,8 @@ class Town05Yolo26mDetector(Node):
         )
         self.full_frame = bool(self.get_parameter("full_frame").value)
         self.stats_path = str(self.get_parameter("stats_path").value)
+        self.raw_cdr = bool(self.get_parameter("raw_cdr").value)
+        self.raw_shape = None  # (height, width, encoding, frame_id) from the first raw message
         self.stats: list[dict] = []
         self.use_half = False  # set when predict(quantize=...) is rejected
 
@@ -139,7 +147,7 @@ class Town05Yolo26mDetector(Node):
             durability=DurabilityPolicy.VOLATILE,
         )
         self.image_subscription = self.create_subscription(
-            Image, image_topic, self.on_image, sensor_qos
+            Image, image_topic, self.on_image, sensor_qos, raw=self.raw_cdr
         )
         self.detections_publisher = self.create_publisher(String, detections_topic, 10)
 
@@ -192,7 +200,11 @@ class Town05Yolo26mDetector(Node):
 
             try:
                 self.last_inference_started = time.perf_counter()
-                count = self.process_message(message)
+                if self.raw_cdr:
+                    message, frame = self.from_cdr(message)
+                    count = self.process_message(message, frame)
+                else:
+                    count = self.process_message(message)
                 if self.stats_path:
                     end = time.perf_counter()
                     self.stats.append(dict(
@@ -205,12 +217,30 @@ class Town05Yolo26mDetector(Node):
                     f"inference failed: {error}", throttle_duration_sec=5.0
                 )
 
-    def process_message(self, message: Image) -> None:
-        try:
-            frame = image_to_bgr(message)
-        except ValueError as error:
-            self.get_logger().error(str(error), throttle_duration_sec=5.0)
-            return
+    def from_cdr(self, raw: bytes):
+        """(header-like message, BGR frame) from a serialized packed bgr8 / rgb8 Image, the pixels viewed in place."""
+        if self.raw_shape is None:
+            from rclpy.serialization import deserialize_message
+            first = deserialize_message(raw, Image)
+            if first.encoding not in ("bgr8", "rgb8") or first.step != first.width * 3 or first.is_bigendian:
+                raise ValueError("raw_cdr needs packed bgr8 / rgb8 images")
+            self.raw_shape = (first.height, first.width, first.encoding, first.header.frame_id)
+        h, w, encoding, frame_id = self.raw_shape
+        # CDR: 4-byte encapsulation, then the header stamp; the pixel array is the last field.
+        sec, nanosec = struct.unpack_from("<iI", raw, 4)
+        frame = np.frombuffer(raw, np.uint8, h * w * 3, len(raw) - h * w * 3).reshape(h, w, 3)
+        if encoding == "rgb8":
+            frame = np.ascontiguousarray(frame[:, :, ::-1])
+        header = SimpleNamespace(stamp=SimpleNamespace(sec=sec, nanosec=nanosec), frame_id=frame_id)
+        return SimpleNamespace(header=header, width=w, height=h), frame
+
+    def process_message(self, message: Image, frame: np.ndarray | None = None) -> None:
+        if frame is None:
+            try:
+                frame = image_to_bgr(message)
+            except ValueError as error:
+                self.get_logger().error(str(error), throttle_duration_sec=5.0)
+                return
 
         if self.full_frame:
             sources = [frame]

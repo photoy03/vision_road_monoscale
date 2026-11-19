@@ -1,0 +1,5 @@
+s8b_lanefollow_50kmh 0 1621
+s8b_lanefollow_50kmh 500 1621
+s8b_lanefollow_50kmh 1000 1621
+s8b_lanefollow_50kmh 1500 1621
+s8b_lanefollow_50kmh process mean 9.33 p95 12.59 ms

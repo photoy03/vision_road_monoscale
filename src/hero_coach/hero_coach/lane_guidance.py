@@ -69,6 +69,12 @@ class GuidanceSettings:
     step_m: float = 0.5
     speed_tau_sec: float = 0.3  # low-pass of the speeds
     offset_tau_sec: float = 0.1  # low-pass of the offset used for the state
+    trust_single_line: bool = False  # an estimated lane beside one measured line counts as measured (from where
+                                     # that line starts) for the near_m test: the car on or over a line sees one side
+    change_without_neighbour: bool = False  # moving over a white dashed line with no lane detected beyond it: the
+                                            # target moves to the own lane shifted one width across
+    offset_at_m: float = 0.0  # where along the car (base_link x) its offset from the target centre is taken:
+                              # 0 the rear axle; 1.41 the car origin (the centre the GT and the driver judge by)
 
 
 def relative(previous, pose):
@@ -146,6 +152,7 @@ class Lane:
     left: dict = None
     right: dict = None
     measured_from: float = math.inf  # where the two boundaries start facing each other (both_m); inf: estimated
+    single_from: float = math.inf  # an estimated lane with one measured (not reprojected) boundary: where it starts
 
     @classmethod
     def from_message(cls, item):
@@ -154,10 +161,26 @@ class Lane:
                         curvature_1pm=item['curvature_1pm']),
                    float(item['width_m']), bool(item.get('opposite_direction')), bool(item.get('lane_like', True)),
                    item.get('left_boundary'), item.get('right_boundary'),
-                   float(item['both_m'][0]) if item.get('both_m') else math.inf)
+                   float(item['both_m'][0]) if item.get('both_m') else math.inf, single_from(item))
 
     def at(self, x):
         return float(centre_at(self.points, [x], self.ref)[0])
+
+
+def single_from(item):
+    """Where an estimated centre (no both_m) with exactly one measured, not reprojected boundary starts; else inf."""
+    if item.get('both_m') or not len(item.get('points') or []):return math.inf
+    sides = [item.get('left_boundary'), item.get('right_boundary')]
+    seen = [b for b in sides if b and not b.get('reprojected')]
+    return float(item['points'][0][0]) if len(seen) == 1 and len([b for b in sides if b]) == 1 else math.inf
+
+
+def shifted(lane, sign, shared):
+    """The lane beyond one of the lane's lines (sign +1 left, -1 right): the lane moved one width across, that line
+    its near boundary, the far one unknown.  Named 'shifted'; the next frames match it to a detected lane by position."""
+    w = sign*lane.width;ref = None if lane.ref is None else dict(lane.ref, offset_m=lane.ref['offset_m']+w)
+    left, right = (None, shared) if sign > 0 else (shared, None)
+    return Lane('shifted', lane.points+np.array([0., w]), ref, lane.width, False, True, left, right, lane.measured_from, lane.single_from)
 
 
 def crossable(boundary):
@@ -211,6 +234,14 @@ class LaneGuidance:
         h = 1e-3; c0, cp, cm = centre_at(lane.points, [0., h, -h], lane.ref)
         return float(c0), float((cp-cm)/(2*h)), float((cp-2*c0+cm)/(h*h))
 
+    def _measured(self, lane):
+        return min(lane.measured_from, lane.single_from) if self.s.trust_single_line else lane.measured_from
+
+    def _offset(self, near):
+        """The car's offset from the centre (+: car left of it) at x = offset_at_m, from (y, slope, curvature) at x = 0."""
+        x = self.s.offset_at_m
+        return -(near[0]+near[1]*x+.5*near[2]*x*x)
+
     def update(self, t, pose, lanes, path=True, speed=None):
         """t (s), pose (x, y, yaw) in a world frame or None, lanes: Lane list of this frame.  Returns Output.
         path=False: the path only while the guidance is shown.  speed: the car's speed (m/s) from its own
@@ -251,11 +282,11 @@ class LaneGuidance:
             self.lateral_speed = 0.; self.moving = {'left': 0., 'right': 0.}
         # Unreliable surroundings (a junction: turning, or no measured lane near): the car's own lane,
         # taken afresh every frame, so the target does not stick to a misnamed lane on the way out.
-        if target.name != 'carried' and (turning or target.measured_from > s.near_m) and 'ego' in named:
+        if target.name != 'carried' and (turning or self._measured(target) > s.near_m) and 'ego' in named:
             if target is not named['ego'] or self.acquired is None or t-self.acquired >= s.settle_sec:
                 self._lose();target = named['ego']
             self.acquired = t;self.target_time = t;self.lateral_speed = 0.;self.moving = {'left': 0., 'right': 0.}
-        near = self._near(target, pose); offset = -near[0]
+        near = self._near(target, pose); offset = self._offset(near)
         limit = (1. if target.name == 'carried' else s.implausible)*target.width
         if abs(offset) > limit:
             self._lose(); self.state = 'none'; self.shown = False
@@ -277,13 +308,15 @@ class LaneGuidance:
             if self.moving[side] < s.change_sec or target.name == 'carried':continue
             yt = target.at(s.ref_m)
             near_lanes = [l for l in lanes if l is not target and .6*target.width <= sign*(l.at(s.ref_m)-yt) <= 1.5*target.width]
+            shared = target.left if side == 'left' else target.right
+            if not near_lanes and s.change_without_neighbour and crossable(shared):
+                near_lanes = [shifted(target, sign, shared)]  # a white dashed line has a same-direction lane beyond it
             if not near_lanes:continue
             n = min(near_lanes, key=lambda l: abs(sign*(l.at(s.ref_m)-yt)-target.width))
-            shared = target.left if side == 'left' else target.right
             close = sign*offset >= .5*target.width-s.change_line_m
             ok = crossable(shared) and n.lane_like and not n.opposite
             if close and ok:
-                target = n;self.memory = [];near = self._near(n, pose);offset = -near[0]
+                target = n;self.memory = [];near = self._near(n, pose);offset = self._offset(near)
                 self.offset = self.smooth = offset;self.changes += 1;changed = True
                 self.moving = {'left': 0., 'right': 0.};reason = 'moved over a dashed line to the '+side;break
             if close and not ok:reason = 'the line to the '+side+' may not be crossed'
@@ -296,7 +329,7 @@ class LaneGuidance:
         # State (on the filtered offset).
         e = self.smooth
         unsure = turning or (self.acquired is not None and t-self.acquired < s.settle_sec) or \
-            (target.name != 'carried' and target.measured_from > s.near_m) or \
+            (target.name != 'carried' and self._measured(target) > s.near_m) or \
             (target.name == 'carried' and self.state == 'none')  # carried on only what was reliable
         side = 'left' if e > 0 else 'right'
         shared = target.left if side == 'left' else target.right

@@ -60,3 +60,14 @@ def test_settings_and_replay_restart():
     assert t.state(10.04)[0] == 'red'
     t.update(1., [])                               # stamps went back: a replay restarted
     assert t.state(1.) == (None, None)
+
+
+def test_small_speed_signs_and_edge_lights_can_be_ignored():
+    from hero_coach.traffic_signs import SignTracker, SignSettings
+    small = [dict(class_name='traffic_sign_60', confidence=.9, xyxy=[900, 400, 930, 440])]   # 40 px high
+    edge = [dict(class_name='traffic_light_green', confidence=.9, xyxy=[100, 500, 108, 530])]  # x 104 of 1920
+    for settings, want in ((SignSettings(), (60., 'green')), (SignSettings(sign_min_height_px=50., light_max_offcentre=.3), (None, None))):
+        t = SignTracker(settings)
+        for i in range(4):t.update(i*.1, small+edge, 1920)
+        light, sign = t.state(.3)
+        assert (sign, light) == want

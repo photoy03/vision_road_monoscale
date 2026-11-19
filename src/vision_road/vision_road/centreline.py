@@ -63,10 +63,11 @@ def joined(left,right,width,step=.1):
     return out[np.argsort(out[:,0],kind='stable')],(lo,hi),w
 
 
-def at_reference(centre,ref,span):
+def at_reference(centre,ref,span,heading_span=0.):
     """Lateral offset (y, + left), heading (rad, + to the left) and curvature (1/m, + turning left) of
     the centreline at x = ref, or at its first point when it starts farther: a quadratic in (x - ref)
-    through the centre points within span past it (a straight line when they cover under 6 m).  Also the offset at x = 0 (the rear axle) along
+    through the centre points within span past it (a straight line when they cover under 6 m); with heading_span > 0
+    the offset and heading come from the points within heading_span only (curvature still over span).  Also the offset at x = 0 (the rear axle) along
     the heading, an extrapolation outside the view.  None when it covers less than 1 m there (a shown boundary is at least that long)."""
     x0=max(float(ref),float(centre[0,0]))
     part=centre[(centre[:,0]>=x0)&(centre[:,0]<=x0+span)]
@@ -76,5 +77,10 @@ def at_reference(centre,ref,span):
     if degree==1:coef=np.r_[0.,coef]
     q,b,y0=coef  # highest power first
     curvature=2*q/(1+b*b)**1.5
+    if 0<heading_span<span:
+        # The heading (and offset) from a shorter stretch: a curve starting or ending farther ahead does not bend it.
+        near=part[part[:,0]<=x0+heading_span]
+        if len(near)>=3 and near[-1,0]-near[0,0]>=1.:
+            v=near[:,0]-x0;c2=np.polyfit(v,near[:,1],2 if v[-1]>=4. else 1);b,y0=float(c2[-2]),float(c2[-1])
     return dict(ref_x_m=round(x0,3),offset_m=float(y0),heading_rad=float(math.atan(b)),curvature_1pm=float(curvature),
                 offset_at_axle_m=float(y0-x0*b))

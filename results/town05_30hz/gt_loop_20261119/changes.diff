@@ -1,0 +1,562 @@
+diff --git a/run_lane_hud.sh b/run_lane_hud.sh
+index 30c3d1e..453e22d 100755
+--- a/run_lane_hud.sh
++++ b/run_lane_hud.sh
+@@ -18,7 +18,8 @@
+ #   --signs         traffic lights and speed signs (YOLO, src/yolo_signs, GPU) on the HUD: the detector
+ #                   runs with the YOLO environment's Python (YOLO_PYTHON, default ~/yolo_env/bin/python)
+ #                   and lane_guidance puts what it confirms into the HUD scene.  SIGNS_FULL_FRAME=true|false
+-#                   (whole image or the original upper-centre tile), SIGNS_FPS (max inferences per second, 0 = all)
++#                   (whole image or the original upper-centre tile), SIGNS_FPS (max inferences per second, 0 = all),
++#                   SIGNS_IMGSZ (inference size, default 1920); the detector takes the images serialized (raw_cdr)
+ # The HUD is this workspace's copy (src/hero_hud), built into install/.
+ set -euo pipefail
+ ROAD="$(cd "$(dirname "$0")" && pwd)"
+@@ -27,6 +28,7 @@ DISK=/media/jaehun/38F7-677B
+ VIDEO=${1:-}; shift || true
+ HUD=1; LOOP=0; FRAMES=0; LEARNED=""; GUIDANCE=true; FAKE_VS=false; CROP=(); SIGNS=false
+ YOLO_PYTHON=${YOLO_PYTHON:-$HOME/yolo_env/bin/python}; SIGNS_FULL_FRAME=${SIGNS_FULL_FRAME:-true}; SIGNS_FPS=${SIGNS_FPS:-0.0}
++SIGNS_IMGSZ=${SIGNS_IMGSZ:-1920}  # plan 30: the full frame at 1920 finds far lights (s7 confirmed 14 -> 80 %)
+ while [ $# -gt 0 ]; do
+   case "$1" in
+     --no-hud) HUD=0;; --loop) LOOP=1;; --frames) FRAMES=$2; shift;;
+@@ -60,7 +62,7 @@ PIDS+=($!)
+ if [ "$SIGNS" = true ]; then
+   # The YOLO environment (ultralytics for YOLO26) with this ROS environment sourced: it imports rclpy.
+   ( exec "${SIGINT_EXEC[@]}" "$YOLO_PYTHON" "$ROAD/src/yolo_signs/town05_yolo26m_detector.py" --ros-args \
+-      -p full_frame:=$SIGNS_FULL_FRAME -p max_inference_fps:=$SIGNS_FPS ) &
++      -p full_frame:=$SIGNS_FULL_FRAME -p max_inference_fps:=$SIGNS_FPS -p imgsz:=$SIGNS_IMGSZ -p raw_cdr:=true ) &
+   PIDS+=($!)
+ fi
+ /usr/bin/python3 - <<'PY'
+diff --git a/src/hero_coach/hero_coach/lane_guidance.py b/src/hero_coach/hero_coach/lane_guidance.py
+index 84c2cc3..ada5d49 100644
+--- a/src/hero_coach/hero_coach/lane_guidance.py
++++ b/src/hero_coach/hero_coach/lane_guidance.py
+@@ -69,6 +69,12 @@ class GuidanceSettings:
+     step_m: float = 0.5
+     speed_tau_sec: float = 0.3  # low-pass of the speeds
+     offset_tau_sec: float = 0.1  # low-pass of the offset used for the state
++    trust_single_line: bool = False  # an estimated lane beside one measured line counts as measured (from where
++                                     # that line starts) for the near_m test: the car on or over a line sees one side
++    change_without_neighbour: bool = False  # moving over a white dashed line with no lane detected beyond it: the
++                                            # target moves to the own lane shifted one width across
++    offset_at_m: float = 0.0  # where along the car (base_link x) its offset from the target centre is taken:
++                              # 0 the rear axle; 1.41 the car origin (the centre the GT and the driver judge by)
+ 
+ 
+ def relative(previous, pose):
+@@ -146,6 +152,7 @@ class Lane:
+     left: dict = None
+     right: dict = None
+     measured_from: float = math.inf  # where the two boundaries start facing each other (both_m); inf: estimated
++    single_from: float = math.inf  # an estimated lane with one measured (not reprojected) boundary: where it starts
+ 
+     @classmethod
+     def from_message(cls, item):
+@@ -154,12 +161,28 @@ class Lane:
+                         curvature_1pm=item['curvature_1pm']),
+                    float(item['width_m']), bool(item.get('opposite_direction')), bool(item.get('lane_like', True)),
+                    item.get('left_boundary'), item.get('right_boundary'),
+-                   float(item['both_m'][0]) if item.get('both_m') else math.inf)
++                   float(item['both_m'][0]) if item.get('both_m') else math.inf, single_from(item))
+ 
+     def at(self, x):
+         return float(centre_at(self.points, [x], self.ref)[0])
+ 
+ 
++def single_from(item):
++    """Where an estimated centre (no both_m) with exactly one measured, not reprojected boundary starts; else inf."""
++    if item.get('both_m') or not len(item.get('points') or []):return math.inf
++    sides = [item.get('left_boundary'), item.get('right_boundary')]
++    seen = [b for b in sides if b and not b.get('reprojected')]
++    return float(item['points'][0][0]) if len(seen) == 1 and len([b for b in sides if b]) == 1 else math.inf
++
++
++def shifted(lane, sign, shared):
++    """The lane beyond one of the lane's lines (sign +1 left, -1 right): the lane moved one width across, that line
++    its near boundary, the far one unknown.  Named 'shifted'; the next frames match it to a detected lane by position."""
++    w = sign*lane.width;ref = None if lane.ref is None else dict(lane.ref, offset_m=lane.ref['offset_m']+w)
++    left, right = (None, shared) if sign > 0 else (shared, None)
++    return Lane('shifted', lane.points+np.array([0., w]), ref, lane.width, False, True, left, right, lane.measured_from, lane.single_from)
++
++
+ def crossable(boundary):
+     """White dashed: one may change lanes over it."""
+     return boundary is not None and boundary.get('style') == 'dashed' and not boundary.get('yellow')
+@@ -211,6 +234,14 @@ class LaneGuidance:
+         h = 1e-3; c0, cp, cm = centre_at(lane.points, [0., h, -h], lane.ref)
+         return float(c0), float((cp-cm)/(2*h)), float((cp-2*c0+cm)/(h*h))
+ 
++    def _measured(self, lane):
++        return min(lane.measured_from, lane.single_from) if self.s.trust_single_line else lane.measured_from
++
++    def _offset(self, near):
++        """The car's offset from the centre (+: car left of it) at x = offset_at_m, from (y, slope, curvature) at x = 0."""
++        x = self.s.offset_at_m
++        return -(near[0]+near[1]*x+.5*near[2]*x*x)
++
+     def update(self, t, pose, lanes, path=True, speed=None):
+         """t (s), pose (x, y, yaw) in a world frame or None, lanes: Lane list of this frame.  Returns Output.
+         path=False: the path only while the guidance is shown.  speed: the car's speed (m/s) from its own
+@@ -251,11 +282,11 @@ class LaneGuidance:
+             self.lateral_speed = 0.; self.moving = {'left': 0., 'right': 0.}
+         # Unreliable surroundings (a junction: turning, or no measured lane near): the car's own lane,
+         # taken afresh every frame, so the target does not stick to a misnamed lane on the way out.
+-        if target.name != 'carried' and (turning or target.measured_from > s.near_m) and 'ego' in named:
++        if target.name != 'carried' and (turning or self._measured(target) > s.near_m) and 'ego' in named:
+             if target is not named['ego'] or self.acquired is None or t-self.acquired >= s.settle_sec:
+                 self._lose();target = named['ego']
+             self.acquired = t;self.target_time = t;self.lateral_speed = 0.;self.moving = {'left': 0., 'right': 0.}
+-        near = self._near(target, pose); offset = -near[0]
++        near = self._near(target, pose); offset = self._offset(near)
+         limit = (1. if target.name == 'carried' else s.implausible)*target.width
+         if abs(offset) > limit:
+             self._lose(); self.state = 'none'; self.shown = False
+@@ -277,13 +308,15 @@ class LaneGuidance:
+             if self.moving[side] < s.change_sec or target.name == 'carried':continue
+             yt = target.at(s.ref_m)
+             near_lanes = [l for l in lanes if l is not target and .6*target.width <= sign*(l.at(s.ref_m)-yt) <= 1.5*target.width]
++            shared = target.left if side == 'left' else target.right
++            if not near_lanes and s.change_without_neighbour and crossable(shared):
++                near_lanes = [shifted(target, sign, shared)]  # a white dashed line has a same-direction lane beyond it
+             if not near_lanes:continue
+             n = min(near_lanes, key=lambda l: abs(sign*(l.at(s.ref_m)-yt)-target.width))
+-            shared = target.left if side == 'left' else target.right
+             close = sign*offset >= .5*target.width-s.change_line_m
+             ok = crossable(shared) and n.lane_like and not n.opposite
+             if close and ok:
+-                target = n;self.memory = [];near = self._near(n, pose);offset = -near[0]
++                target = n;self.memory = [];near = self._near(n, pose);offset = self._offset(near)
+                 self.offset = self.smooth = offset;self.changes += 1;changed = True
+                 self.moving = {'left': 0., 'right': 0.};reason = 'moved over a dashed line to the '+side;break
+             if close and not ok:reason = 'the line to the '+side+' may not be crossed'
+@@ -296,7 +329,7 @@ class LaneGuidance:
+         # State (on the filtered offset).
+         e = self.smooth
+         unsure = turning or (self.acquired is not None and t-self.acquired < s.settle_sec) or \
+-            (target.name != 'carried' and target.measured_from > s.near_m) or \
++            (target.name != 'carried' and self._measured(target) > s.near_m) or \
+             (target.name == 'carried' and self.state == 'none')  # carried on only what was reliable
+         side = 'left' if e > 0 else 'right'
+         shared = target.left if side == 'left' else target.right
+diff --git a/src/hero_coach/hero_coach/traffic_signs.py b/src/hero_coach/hero_coach/traffic_signs.py
+index b4c8dc2..784a329 100644
+--- a/src/hero_coach/hero_coach/traffic_signs.py
++++ b/src/hero_coach/hero_coach/traffic_signs.py
+@@ -34,6 +34,10 @@ class SignSettings:
+     min_confidence: float = 0.  # detections below this are ignored (the detector has its own threshold)
+     select_area_power: float = .5    # score: confidence x (area/1000 px^2)^this ...
+     select_centre_sigma: float = .25  # ... x exp(-((cx - W/2) / (this x W))^2 / 2); 0: no centre weighting
++    sign_min_height_px: float = 0.   # speed signs with a box lower than this are ignored (far signs are misread,
++                                     # 90 as 60); 0: all
++    light_max_offcentre: float = 0.  # lights whose box centre is further than this x the image width from its middle
++                                     # are ignored (side streets' lights at the edge); 0: all
+ 
+ 
+ def area(box):
+@@ -72,7 +76,11 @@ class SignTracker:
+             if conf < self.s.min_confidence:continue
+             kind = 'light' if name in LIGHTS else 'sign' if name in SIGNS else None
+             if kind is None:continue
+-            box = d.get('xyxy', [0, 0, 0, 0]);key = (self.score(conf, box, image_width), area(box))
++            box = d.get('xyxy', [0, 0, 0, 0])
++            if kind == 'sign' and box[3]-box[1] < self.s.sign_min_height_px:continue
++            if kind == 'light' and self.s.light_max_offcentre > 0 and image_width and \
++                    abs((box[0]+box[2])/2.-image_width/2.) > self.s.light_max_offcentre*image_width:continue
++            key = (self.score(conf, box, image_width), area(box))
+             if kind not in best or key > best[kind][0]:best[kind] = (key, name, conf)
+         light = LIGHTS[best['light'][1]] if 'light' in best else None
+         if light is not None and light == self.light:self.light_confidence = best['light'][2]
+diff --git a/src/hero_coach/test/test_lane_guidance.py b/src/hero_coach/test/test_lane_guidance.py
+index 70a3acc..4c69c2b 100644
+--- a/src/hero_coach/test/test_lane_guidance.py
++++ b/src/hero_coach/test/test_lane_guidance.py
+@@ -109,3 +109,64 @@ def test_wobble_inside_the_lane_returns_without_moving_the_target():
+     outs = drive(lambda t: .45*math.sin(2*math.pi*t/4.), 12.)
+     assert outs[-1][2].changes == 0
+     assert any(o.state == 'return' for _, _, o, _ in outs) and not any(o.state in ('forbidden', 'change') for _, _, o, _ in outs)
++
++
++# ---- plan 30 settings (all off by default) ----
++
++def drive_with(settings, lanes_of, profile, seconds, rate=30., speed=10.):
++    """drive() with GuidanceSettings and a lanes_of(delta) road."""
++    g = LaneGuidance(settings); outs = []
++    for i in range(int(seconds*rate)):
++        t = i/rate; d = profile(t); lanes = lanes_of(d)
++        outs.append((t, d, g.update(t, (speed*t, d, 0.), lanes)))
++    return outs
++
++
++def test_offset_at_m_takes_the_offset_further_along_the_car():
++    # The centre runs at 0.1 rad to the car: 1.4 m further forward it is 0.14 m further left.
++    x = np.arange(5.5, 30., .5);pts = np.column_stack([x, -.5+.1*x])
++    l = Lane('ego', pts, dict(ref_x_m=5.5, offset_m=float(pts[0, 1]), heading_rad=math.atan(.1), curvature_1pm=0.), WIDTH,
++             left=dict(style='dashed'), right=dict(style='dashed'), measured_from=5.5)
++    for at, want in ((0., .5), (1.4, .5-.14)):
++        o = LaneGuidance(GuidanceSettings(offset_at_m=at)).update(0., (0., 0., 0.), [l])
++        assert abs(o.offset_m-want) < 1e-6
++
++
++def only_home(delta, left_style='solid', left_yellow=True):
++    """Only the home lane detected (no neighbour beyond either line), the car delta (m, + left) from its centre."""
++    l = lane('ego', -delta, left_style, left_yellow, 'dashed', False);l.kind = 'home';return [l]
++
++
++def test_change_without_neighbour_moves_over_a_white_dashed_line_only():
++    move = lambda t: ramp(t, 1., 5., 0., -WIDTH)
++    # The detector renames the lanes as it crosses: past the line the car is in "ego" again, centred on the new lane.
++    def renamed(d):
++        return only_home(d if d > -WIDTH/2 else d+WIDTH)
++    off = drive_with(GuidanceSettings(), renamed, move, 10.)
++    on = drive_with(GuidanceSettings(change_without_neighbour=True), renamed, move, 10.)
++    assert off[-1][2].changes == 0
++    assert on[-1][2].changes == 1 and on[-1][2].state == 'keep'
++    # Over the yellow line (left) it never moves.
++    left = drive_with(GuidanceSettings(change_without_neighbour=True), lambda d: only_home(d if d < WIDTH/2 else d-WIDTH),
++                      lambda t: ramp(t, 1., 5., 0., WIDTH), 10.)
++    assert left[-1][2].changes == 0
++
++
++def test_trust_single_line_keeps_guidance_beside_one_measured_line():
++    # An estimated own lane (no both_m) beside one measured white line on its right: the car 0.6 m right of the centre.
++    def one_line(d):
++        x = np.arange(6., 30., .5);c = -d
++        return [Lane('ego', np.column_stack([x, np.full_like(x, c)]), dict(ref_x_m=6., offset_m=c, heading_rad=0., curvature_1pm=0.),
++                     WIDTH, left=None, right=dict(style='solid', reprojected=False), measured_from=math.inf, single_from=6.)]
++    plain = drive_with(GuidanceSettings(), one_line, lambda t: -.6, 3.)
++    trusted = drive_with(GuidanceSettings(trust_single_line=True), one_line, lambda t: -.6, 3.)
++    assert not any(o.shown for _, _, o in plain)
++    assert trusted[-1][2].shown and trusted[-1][2].state == 'return'
++
++
++def test_on_off_settings_move_the_hysteresis():
++    s = GuidanceSettings(on_m=.25, off_m=.20)
++    outs = drive_with(s, road, lambda t: .27 if t > 1 else 0., 3.)
++    assert outs[-1][2].shown  # 0.27 m: shown from 0.25 m
++    outs = drive_with(s, road, lambda t: ramp(t, 1., 1.5, 0., .4) if t < 3. else ramp(t, 3., 3.5, .4, .18), 5.)
++    assert not outs[-1][2].shown  # 0.18 m: hidden below 0.20 m
+diff --git a/src/hero_coach/test/test_traffic_signs.py b/src/hero_coach/test/test_traffic_signs.py
+index baa24bf..54232de 100644
+--- a/src/hero_coach/test/test_traffic_signs.py
++++ b/src/hero_coach/test/test_traffic_signs.py
+@@ -60,3 +60,14 @@ def test_settings_and_replay_restart():
+     assert t.state(10.04)[0] == 'red'
+     t.update(1., [])                               # stamps went back: a replay restarted
+     assert t.state(1.) == (None, None)
++
++
++def test_small_speed_signs_and_edge_lights_can_be_ignored():
++    from hero_coach.traffic_signs import SignTracker, SignSettings
++    small = [dict(class_name='traffic_sign_60', confidence=.9, xyxy=[900, 400, 930, 440])]   # 40 px high
++    edge = [dict(class_name='traffic_light_green', confidence=.9, xyxy=[100, 500, 108, 530])]  # x 104 of 1920
++    for settings, want in ((SignSettings(), (60., 'green')), (SignSettings(sign_min_height_px=50., light_max_offcentre=.3), (None, None))):
++        t = SignTracker(settings)
++        for i in range(4):t.update(i*.1, small+edge, 1920)
++        light, sign = t.state(.3)
++        assert (sign, light) == want
+diff --git a/src/vision_road/config/carla.yaml b/src/vision_road/config/carla.yaml
+index 196c7de..5b7c222 100644
+--- a/src/vision_road/config/carla.yaml
++++ b/src/vision_road/config/carla.yaml
+@@ -33,6 +33,9 @@ vision_road:
+     style_history_sec: 0.8
+     style_history_frames: 8
+     style_hold_sec: 1.0
++    # Plan 30: a confirmed style is also held until the car has gone 2 m (standing at a red light the line beside
++    # the car can be too short to judge).
++    style_hold_m: 2.0
+     # Curve: a dashed side seen one dash at a time is judged from 12 m of paint gathered along the road.
+     style_accumulate_m: 12.0
+ 
+@@ -81,6 +84,9 @@ vision_road:
+     # Lane centrelines (own lane; the neighbouring lanes beside their outer lines), across the lane, with
+     # offset, heading and curvature 5 m ahead.  /road/lane_centres, /road/lane_centre_markers.
+     carla_centre_enabled: true
++    # Plan 30: the offset and heading at the reference from 8 m of centreline only (the curvature still from 15 m):
++    # a curve starting or ending farther ahead no longer bends the heading (s1 heading p95 2.6 -> 1.8 deg).
++    carla_centre_heading_m: 8.0
+     # Real time: only the newest image waits (a slow frame drops the older one, latency does not pile up),
+     # and the image is read in place from its serialized form.
+     image_job_depth: 1
+diff --git a/src/vision_road/launch/maploop.launch.py b/src/vision_road/launch/maploop.launch.py
+index 7fc0f8e..63a75c9 100644
+--- a/src/vision_road/launch/maploop.launch.py
++++ b/src/vision_road/launch/maploop.launch.py
+@@ -69,10 +69,18 @@ def generate_launch_description():
+              parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time'),
+                           'signs.enabled':ParameterValue(LaunchConfiguration('signs'),value_type=bool),
+                           'traffic.enabled':ParameterValue(LaunchConfiguration('signs'),value_type=bool),
+-                          'stop_line.enabled':ParameterValue(LaunchConfiguration('road_markings'),value_type=bool)}]),
++                          'stop_line.enabled':ParameterValue(LaunchConfiguration('road_markings'),value_type=bool),
++                          # Plan 30 (GT loop): the offset at the car origin, a lane change over a white dashed line
++                          # with no lane detected beyond it, and an estimated lane beside one measured line trusted.
++                          'guidance.offset_at_m':1.4096,'guidance.change_without_neighbour':True,'guidance.trust_single_line':True,
++                          # ... and shown from 0.25 m, hidden below 0.20 m (inside the 0.30 / 0.15 m judged by the GT
++                          # loop, so the offset's few centimetres of noise neither delay nor prolong it).
++                          'guidance.on_m':.25,'guidance.off_m':.20}]),
+         # YOLO detections -> /hero/traffic_light and /hero/sign (the coach's topics), with signs:=true (plan 29).
+         Node(package='hero_coach',executable='traffic_sign_bridge',name='traffic_sign_bridge',output='screen',
+-             condition=IfCondition(LaunchConfiguration('signs')),parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
++             condition=IfCondition(LaunchConfiguration('signs')),parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time'),
++                          # Plan 30: far speed signs are misread (90 as 60), side streets' lights sit at the image edge.
++                          'sign.sign_min_height_px':50.,'sign.light_max_offcentre':.3}]),
+         Node(package='vision_road',executable='reference_pose',condition=IfCondition(LaunchConfiguration('reference_pose')),
+              parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
+         Node(package='tf2_ros',executable='static_transform_publisher',arguments=[
+diff --git a/src/vision_road/vision_road/centreline.py b/src/vision_road/vision_road/centreline.py
+index 7638c37..0b0e0af 100644
+--- a/src/vision_road/vision_road/centreline.py
++++ b/src/vision_road/vision_road/centreline.py
+@@ -63,10 +63,11 @@ def joined(left,right,width,step=.1):
+     return out[np.argsort(out[:,0],kind='stable')],(lo,hi),w
+ 
+ 
+-def at_reference(centre,ref,span):
++def at_reference(centre,ref,span,heading_span=0.):
+     """Lateral offset (y, + left), heading (rad, + to the left) and curvature (1/m, + turning left) of
+     the centreline at x = ref, or at its first point when it starts farther: a quadratic in (x - ref)
+-    through the centre points within span past it (a straight line when they cover under 6 m).  Also the offset at x = 0 (the rear axle) along
++    through the centre points within span past it (a straight line when they cover under 6 m); with heading_span > 0
++    the offset and heading come from the points within heading_span only (curvature still over span).  Also the offset at x = 0 (the rear axle) along
+     the heading, an extrapolation outside the view.  None when it covers less than 1 m there (a shown boundary is at least that long)."""
+     x0=max(float(ref),float(centre[0,0]))
+     part=centre[(centre[:,0]>=x0)&(centre[:,0]<=x0+span)]
+@@ -76,5 +77,10 @@ def at_reference(centre,ref,span):
+     if degree==1:coef=np.r_[0.,coef]
+     q,b,y0=coef  # highest power first
+     curvature=2*q/(1+b*b)**1.5
++    if 0<heading_span<span:
++        # The heading (and offset) from a shorter stretch: a curve starting or ending farther ahead does not bend it.
++        near=part[part[:,0]<=x0+heading_span]
++        if len(near)>=3 and near[-1,0]-near[0,0]>=1.:
++            v=near[:,0]-x0;c2=np.polyfit(v,near[:,1],2 if v[-1]>=4. else 1);b,y0=float(c2[-2]),float(c2[-1])
+     return dict(ref_x_m=round(x0,3),offset_m=float(y0),heading_rad=float(math.atan(b)),curvature_1pm=float(curvature),
+                 offset_at_axle_m=float(y0-x0*b))
+diff --git a/src/vision_road/vision_road/core.py b/src/vision_road/vision_road/core.py
+index 9e10ca5..14da00b 100644
+--- a/src/vision_road/vision_road/core.py
++++ b/src/vision_road/vision_road/core.py
+@@ -43,6 +43,7 @@ class Settings:
+     style_history_sec: float = 0.8
+     style_history_frames: int = 8
+     style_hold_sec: float = 0.0
++    style_hold_m: float = 0.0  # >0: a confirmed line style is also held while the car has gone at most this far since
+     style_accumulate_m: float = 0.0  # >0: also judge dashed from paint accumulated along the road over the last 20 m travelled
+     candidate_mask_enabled: bool = True
+     candidate_max_width_m: float = 0.45
+@@ -112,6 +113,7 @@ class Settings:
+     carla_centre_enabled: bool = False  # lane centrelines: own lane (left-right) and, with carla_outer_enabled, the neighbouring lanes
+     carla_centre_ref_m: float = 5.0  # lateral offset, heading and curvature are given at this distance ahead (inside the view)
+     carla_centre_curvature_m: float = 15.0  # ... from a quadratic through this much centreline past it
++    carla_centre_heading_m: float = 0.0  # >0: the offset and heading from only this much past it (curve onsets)
+     carla_centre_width_alpha: float = 0.2  # running lane width (for a lane with one boundary): weight of a measured width
+ 
+ 
+diff --git a/src/vision_road/vision_road/temporal.py b/src/vision_road/vision_road/temporal.py
+index 65727f3..65a90e1 100644
+--- a/src/vision_road/vision_road/temporal.py
++++ b/src/vision_road/vision_road/temporal.py
+@@ -81,7 +81,7 @@ class TemporalDetector:
+                     lane.style='dashed';lane.style_confidence=.7;lane.style_source_time=float(t)
+ 
+     def reset(self):
+-        self.odometer=0.;self.odom_pose=None;self.style_cells={}
++        self.odometer=0.;self.odom_pose=None;self.style_cells={};self.style_odo={};self.centre_styles={}
+         self.tracks={}; self.last_pose=None; self.last_time=None; self.gray=None; self.valid=None
+         self.registration='none'; self.measured_count=0; self.predicted_count=0
+         self.paint_history=[];self.style_binary=None
+@@ -262,6 +262,11 @@ class TemporalDetector:
+             info=getattr(lane,'outer',None)
+             if info is not None:style=lane.style;yellow=bool(info.get('yellow'))
+             else:style=styles[side].style if side in styles else 'unknown';yellow=bool(self.own_yellow.get(side,False))
++            # style_hold_m: the last known style of the side while the car has gone at most that far since (standing at a
++            # red light the line beside the car can be too short to judge, or drop out of the style tracks).
++            if c.style_hold_m>0:
++                if style!='unknown':self.centre_styles[side]=(style,self.odometer)
++                elif side in self.centre_styles and self.odometer-self.centre_styles[side][1]<=c.style_hold_m:style=self.centre_styles[side][0]
+             return dict(line=side,style=style,yellow=yellow,reprojected=bool(lane.reprojected))
+         lanes=[]
+         for name,index,lo,hi in (('ego',0,'left','right'),('left',-1,'left_outer','left'),('right',1,'right','right_outer')):
+@@ -280,7 +285,7 @@ class TemporalDetector:
+             else:
+                 estimated=True;one,side=(a,'left') if a is not None else (b,'right')
+                 points=centreline.shifted(one.points,width,side);width_now=width
+-            ref=centreline.at_reference(points,c.carla_centre_ref_m,c.carla_centre_curvature_m)
++            ref=centreline.at_reference(points,c.carla_centre_ref_m,c.carla_centre_curvature_m,c.carla_centre_heading_m)
+             if ref is None:continue
+             left,right=describe(lo),describe(hi)
+             lane=dict(name=name,index=index,points=points,both_m=both,width_m=round(width_now,3),tracked_width_m=round(float(width),3),
+@@ -481,10 +486,14 @@ class TemporalDetector:
+             lane.style=evidence.kind if streak>=required else 'unknown'
+             lane.style_confidence=evidence.confidence if lane.style!='unknown' else 0.
+             style_time=float(t) if lane.style!='unknown' else 0.
++            if lane.style!='unknown':self.style_odo[lane.side]=self.odometer
++            # Held style_hold_sec, and (style_hold_m > 0) as long as the car has gone at most style_hold_m since the
++            # style was last confirmed: a car standing at a red light sees the same lines.
++            still=c.style_hold_m>0 and self.odometer-self.style_odo.get(lane.side,-math.inf)<=c.style_hold_m
+             if (lane.style=='unknown' and matched and old.lane.style!='unknown'
+-                    and 0<t-old.style_time<=c.style_hold_sec):
++                    and (0<t-old.style_time<=c.style_hold_sec or (still and t>old.style_time))):
+                 lane.style=old.lane.style
+-                lane.style_confidence=old.lane.style_confidence*math.exp(-(t-self.last_time)/max(c.style_hold_sec,.01))
++                lane.style_confidence=old.lane.style_confidence*(1. if still else math.exp(-(t-self.last_time)/max(c.style_hold_sec,.01)))
+                 style_time=old.style_time
+             lane.style_source_time=style_time
+             lane.style_span_m=evidence.span_m; lane.paint_fraction=evidence.paint_fraction; lane.dash_count=evidence.dash_count
+diff --git a/src/yolo_signs/town05_yolo26m_detector.py b/src/yolo_signs/town05_yolo26m_detector.py
+index 5d3180d..112d4a0 100644
+--- a/src/yolo_signs/town05_yolo26m_detector.py
++++ b/src/yolo_signs/town05_yolo26m_detector.py
+@@ -13,15 +13,20 @@ behind parameters whose defaults keep the original behaviour:
+   - full_frame (default false = the original upper-centre 640 x 640 tile): the whole image instead.
+   - stats_path: per processed frame (image stamp, receive / start / end times, ultralytics speed, detection
+     count) written as JSON when the node stops; for measurements.
++  - raw_cdr (default false; plan 30): take the images serialized and decode only the frame that is processed (the
++    detector runs at about 11 Hz on 30 Hz images: building a 6 MB Python Image for every message costs the lane
++    detector CPU time).  Packed bgr8 / rgb8 only (the first message is checked).
+ Run with the YOLO environment's Python and ROS sourced (run_lane_hud.sh --signs does this).
+ """
+ 
+ from __future__ import annotations
+ 
+ import json
++import struct
+ import threading
+ import time
+ from pathlib import Path
++from types import SimpleNamespace
+ 
+ import numpy as np
+ import rclpy
+@@ -108,6 +113,7 @@ class Town05Yolo26mDetector(Node):
+         self.declare_parameter("max_inference_fps", 0.0, ParameterDescriptor(dynamic_typing=True))
+         self.declare_parameter("full_frame", self.USE_FULL_FRAME)
+         self.declare_parameter("stats_path", "")
++        self.declare_parameter("raw_cdr", False)
+ 
+         model_path = self.get_parameter("model_path").value
+         image_topic = self.get_parameter("image_topic").value
+@@ -121,6 +127,8 @@ class Town05Yolo26mDetector(Node):
+         )
+         self.full_frame = bool(self.get_parameter("full_frame").value)
+         self.stats_path = str(self.get_parameter("stats_path").value)
++        self.raw_cdr = bool(self.get_parameter("raw_cdr").value)
++        self.raw_shape = None  # (height, width, encoding, frame_id) from the first raw message
+         self.stats: list[dict] = []
+         self.use_half = False  # set when predict(quantize=...) is rejected
+ 
+@@ -139,7 +147,7 @@ class Town05Yolo26mDetector(Node):
+             durability=DurabilityPolicy.VOLATILE,
+         )
+         self.image_subscription = self.create_subscription(
+-            Image, image_topic, self.on_image, sensor_qos
++            Image, image_topic, self.on_image, sensor_qos, raw=self.raw_cdr
+         )
+         self.detections_publisher = self.create_publisher(String, detections_topic, 10)
+ 
+@@ -192,7 +200,11 @@ class Town05Yolo26mDetector(Node):
+ 
+             try:
+                 self.last_inference_started = time.perf_counter()
+-                count = self.process_message(message)
++                if self.raw_cdr:
++                    message, frame = self.from_cdr(message)
++                    count = self.process_message(message, frame)
++                else:
++                    count = self.process_message(message)
+                 if self.stats_path:
+                     end = time.perf_counter()
+                     self.stats.append(dict(
+@@ -205,12 +217,30 @@ class Town05Yolo26mDetector(Node):
+                     f"inference failed: {error}", throttle_duration_sec=5.0
+                 )
+ 
+-    def process_message(self, message: Image) -> None:
+-        try:
+-            frame = image_to_bgr(message)
+-        except ValueError as error:
+-            self.get_logger().error(str(error), throttle_duration_sec=5.0)
+-            return
++    def from_cdr(self, raw: bytes):
++        """(header-like message, BGR frame) from a serialized packed bgr8 / rgb8 Image, the pixels viewed in place."""
++        if self.raw_shape is None:
++            from rclpy.serialization import deserialize_message
++            first = deserialize_message(raw, Image)
++            if first.encoding not in ("bgr8", "rgb8") or first.step != first.width * 3 or first.is_bigendian:
++                raise ValueError("raw_cdr needs packed bgr8 / rgb8 images")
++            self.raw_shape = (first.height, first.width, first.encoding, first.header.frame_id)
++        h, w, encoding, frame_id = self.raw_shape
++        # CDR: 4-byte encapsulation, then the header stamp; the pixel array is the last field.
++        sec, nanosec = struct.unpack_from("<iI", raw, 4)
++        frame = np.frombuffer(raw, np.uint8, h * w * 3, len(raw) - h * w * 3).reshape(h, w, 3)
++        if encoding == "rgb8":
++            frame = np.ascontiguousarray(frame[:, :, ::-1])
++        header = SimpleNamespace(stamp=SimpleNamespace(sec=sec, nanosec=nanosec), frame_id=frame_id)
++        return SimpleNamespace(header=header, width=w, height=h), frame
++
++    def process_message(self, message: Image, frame: np.ndarray | None = None) -> None:
++        if frame is None:
++            try:
++                frame = image_to_bgr(message)
++            except ValueError as error:
++                self.get_logger().error(str(error), throttle_duration_sec=5.0)
++                return
+ 
+         if self.full_frame:
+             sources = [frame]
+diff --git a/tests/test_centrelines.py b/tests/test_centrelines.py
+index 48320a6..6ce5569 100644
+--- a/tests/test_centrelines.py
++++ b/tests/test_centrelines.py
+@@ -117,3 +117,14 @@ def test_side_topics_send_every_frame_and_markers_at_the_debug_rate():
+     right=next(l for l in centres if l['name']=='right');assert right['crossable'] and right['edge_unknown'] and right['lane_like']
+     outer=json.loads(node.pubs['/road/lane_outer'].sent[-1].data)['lanes']
+     assert {l['side'] for l in outer}=={'left_outer','right_outer'}
++
++
++def test_heading_span_keeps_a_curve_ahead_out_of_the_heading():
++    # Straight to 12 m, then a 40 m radius turn: at 5 m the centre runs straight ahead.
++    x=np.arange(5.,30.,.25);y=np.where(x<12.,0.,(x-12.)**2/80.)
++    pts=np.column_stack([x,y])
++    whole=C.at_reference(pts,5.,15.);near=C.at_reference(pts,5.,15.,8.)
++    assert abs(whole['heading_rad'])>.03  # the quadratic over 15 m bends it
++    assert abs(near['heading_rad'])<.005 and abs(near['offset_m'])<.01
++    assert near['curvature_1pm']==whole['curvature_1pm']  # the curvature is still from the 15 m
++    assert C.at_reference(pts,5.,15.,0.)==whole  # 0: as before
+diff --git a/tools/realtime_eval.py b/tools/realtime_eval.py
+index bda92f1..411dce2 100644
+--- a/tools/realtime_eval.py
++++ b/tools/realtime_eval.py
+@@ -29,6 +29,10 @@ VIDEOS=dict(maploop=(DISK/'rosbag/maploop_30hz',ROOT/'data/maploop30hz_native.cd
+             town04=(DISK/'rosbag/town04_30hz',DISK/'vision-road-cache/town04_30hz_native.cdrz'),
+             town05=(DISK/'rosbag/town05_30hz',DISK/'vision-road-cache/town05_30hz_native.cdrz'),
+             town05_signs=(DISK/'rosbag/town05_signs',DISK/'vision-road-cache/town05_signs_native.cdrz'))
++# Plan 30: the GT recordings of 2026-11-19 (town05_<scene>_20261119), by their scene name.
++for _scene in ('s1_lanefollow','s2_wobble','s3a_zigzag_cross','s3b_zigzag_inlane','s4_straddle','s5_lanechange','s6_yellow','s7_lights',
++               's8a_lanefollow_20kmh','s8b_lanefollow_50kmh','s8c_lanechange_20kmh','s8d_lanechange_50kmh'):
++    VIDEOS['town05_'+_scene]=(DISK/'rosbag'/f'town05_{_scene}_20261119',DISK/'vision-road-cache'/f'town05_{_scene}_20261119_native.cdrz')
+ 
+ 
+ def key(stamp):return stamp.sec*1000000000+stamp.nanosec
+@@ -70,6 +74,7 @@ def main():
+     ap.add_argument('--signs',action='store_true',help='also the YOLO traffic light / speed sign detector (src/yolo_signs, '
+                     'YOLO_PYTHON or ~/yolo_env/bin/python) and lane_guidance signs:=true; its per-frame times go to OUTPUT/signs_stats.json')
+     ap.add_argument('--signs-arg',nargs='*',default=[],help='detector parameters name:=value, e.g. full_frame:=true max_inference_fps:=10')
++    ap.add_argument('--signs-nice',type=int,default=0,help='run the sign detector with this niceness (nice -n), as run_lane_hud.sh SIGNS_NICE')
+     ap.add_argument('--crop-rows',default='',help="replay sends only these image rows (LO:HI, replay_maploop.py --crop-rows); default: full images")
+     a=ap.parse_args();a.output.mkdir(parents=True,exist_ok=True);bag,cache=VIDEOS[a.video]
+     rclpy.init();node=Node('road_realtime_eval');arrivals={'boundary':{},'display':{},'paint':{}};content={'boundary':{},'display':{}}
+@@ -104,8 +109,9 @@ def main():
+         if a.signs:
+             yolo=os.environ.get('YOLO_PYTHON',str(Path.home()/'yolo_env/bin/python'));params=[]
+             for kv in a.signs_arg+['stats_path:='+str(a.output/'signs_stats.json')]:params+=['-p',kv]
+-            signs=subprocess.Popen(['bash','-c','source /opt/ros/humble/setup.bash && source "$0/install/setup.bash" && exec "$@"',str(ROOT),
+-                                    yolo,str(ROOT/'src/yolo_signs/town05_yolo26m_detector.py'),'--ros-args']+params,
++            nice=['nice','-n',str(a.signs_nice)] if a.signs_nice else []  # a lower CPU priority than the lane detector
++            signs=subprocess.Popen(['bash','-c','source /opt/ros/humble/setup.bash && source "$0/install/setup.bash" && exec "$@"',str(ROOT)]+nice+
++                                   [yolo,str(ROOT/'src/yolo_signs/town05_yolo26m_detector.py'),'--ros-args']+params,
+                                    stdout=(a.output/'signs.log').open('w'),stderr=subprocess.STDOUT,start_new_session=True);procs.append(signs)
+             deadline=time.monotonic()+90  # the model loads in a few seconds; its publisher appears after that
+             while node.count_publishers('/yolo/detections')<1 and time.monotonic()<deadline:

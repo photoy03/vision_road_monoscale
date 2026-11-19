@@ -1,0 +1,234 @@
+{
+ "scene": "s8a_lanefollow_20kmh",
+ "frames": 2493,
+ "used_frames": 1824,
+ "A1_switched_frames": 8,
+ "A1_on_line_frames": 10,
+ "A1_gt_excluded": {
+  "left": {
+   "frames": 5,
+   "first": 43.7,
+   "last": 80.2
+  },
+  "right": {
+   "frames": 11,
+   "first": 80.3,
+   "last": 80.67
+  }
+ },
+ "A1_lateral_error_m": {
+  "left_5m": {
+   "n": 0,
+   "median": null,
+   "p95": null,
+   "max": null
+  },
+  "left_10m": {
+   "n": 1649,
+   "median": 0.0083,
+   "p95": 0.0213,
+   "max": 4.4703
+  },
+  "left_15m": {
+   "n": 1523,
+   "median": 0.0083,
+   "p95": 0.0236,
+   "max": 0.1223
+  },
+  "right_5m": {
+   "n": 0,
+   "median": null,
+   "p95": null,
+   "max": null
+  },
+  "right_10m": {
+   "n": 1610,
+   "median": 0.0122,
+   "p95": 0.026,
+   "max": 0.1072
+  },
+  "right_15m": {
+   "n": 1496,
+   "median": 0.0124,
+   "p95": 0.0236,
+   "max": 0.733
+  }
+ },
+ "A1_all": {
+  "n": 6278,
+  "median": 0.0102,
+  "p95": 0.0236,
+  "max": 4.4703
+ },
+ "A1_nearest_line_10m": {
+  "n": 3259,
+  "median": 0.0097,
+  "p95": 0.0234,
+  "max": 0.681
+ },
+ "A1_identity": 0.9939,
+ "A2_observed": {
+  "left": 0.9768,
+  "right": 0.9678
+ },
+ "A2_frames": {
+  "left": 1809,
+  "right": 1803
+ },
+ "A3_style": {
+  "left": {
+   "accuracy": 0.9293,
+   "known": 0.9293,
+   "n": 1767
+  },
+  "right": {
+   "accuracy": 0.9473,
+   "known": 0.9473,
+   "n": 1745
+  }
+ },
+ "A3_colour": {
+  "left": {
+   "accuracy": 1.0,
+   "n": 1767
+  },
+  "right": {
+   "accuracy": 0.9994,
+   "n": 1745
+  }
+ },
+ "A4_offset_m": {
+  "n": 1696,
+  "median": 0.0111,
+  "p95": 0.0693,
+  "max": 0.3264
+ },
+ "A4_heading_deg": {
+  "n": 1696,
+  "median": 0.3939,
+  "p95": 3.0377,
+  "max": 15.4011
+ },
+ "A4_coverage": 0.96,
+ "A4_offset_estimated_m": {
+  "n": 55,
+  "median": 0.0242,
+  "p95": 3.6409,
+  "max": 3.7253
+ },
+ "A4_at_origin_m": {
+  "n": 1791,
+  "median": 0.1448,
+  "p95": 0.5785,
+  "max": 3.158
+ },
+ "A5": {
+  "left": {
+   "precision": 1.0,
+   "recall": 0.4041,
+   "opposite_accuracy": 1.0,
+   "crossable_accuracy": 0.9634,
+   "recall_visible": 0.9085,
+   "visible_n": 743,
+   "tp": 737,
+   "fp": 0,
+   "fn": 1087,
+   "tn": 0
+  },
+  "right": {
+   "precision": 0.9756,
+   "recall": 0.9351,
+   "opposite_accuracy": 1.0,
+   "crossable_accuracy": 0.9647,
+   "recall_visible": 0.9627,
+   "visible_n": 885,
+   "tp": 879,
+   "fp": 22,
+   "fn": 61,
+   "tn": 862
+  }
+ },
+ "B_lane_changes": {
+  "ground_truth": 1,
+  "target_moves": 0,
+  "on_time": 0,
+  "gt_times": [
+   43.9
+  ],
+  "move_times": []
+ },
+ "B5_return_shown": {
+  "far": 0.1322,
+  "far_n": 121,
+  "centre": 0.0318,
+  "centre_n": 1665,
+  "painted_frames": 12
+ },
+ "B5_return_shown_gt": {
+  "far": 0.126,
+  "centre": 0.0319
+ },
+ "B3": {
+  "over_line_frames": 0,
+  "return_shown": null,
+  "opposite_target_frames": 0
+ },
+ "C": {
+  "C4_stop_waypoint": {
+   "error_m": {
+    "n": 219,
+    "median": 6.9204,
+    "p95": 9.9545,
+    "max": 10.0433
+   },
+   "detected": 0.5277,
+   "n": 415,
+   "false": 0.0244,
+   "false_n": 1802,
+   "note": "against CARLA stop waypoints (stop_line_ahead_m), about 7.6 m before the painted line: not the scored C4"
+  },
+  "C4_stop_line": {
+   "error_m": {
+    "n": 234,
+    "median": 0.0224,
+    "p95": 0.0843,
+    "max": 2.6595
+   },
+   "detected": 0.6964,
+   "n": 336,
+   "false": 0.0066,
+   "false_n": 1356,
+   "paint_minus_waypoint_m": {
+    "n": 377,
+    "median": 6.9554,
+    "p95": 7.5268,
+    "max": 10.2054
+   },
+   "truth": "semantic camera RoadLine bars across the own lane"
+  },
+  "C1_light": {
+   "frames": 1067,
+   "confirmed": 0.2643,
+   "wrong_colour": 0.0394,
+   "state_changes": 21
+  },
+  "C2_no_light_shown": {
+   "frames": 227,
+   "shown": 0.0,
+   "raw_frames": 641,
+   "raw_shown": 0.2683
+  },
+  "C3_speed_signs": {
+   "signs": 2,
+   "confirmed_before": 0.5,
+   "wrong_frames": 0,
+   "not_in_model": [],
+   "not_in_model_n": 0
+  },
+  "C5_advice": {
+   "over_line_frames": 0,
+   "hold": null,
+   "hold_n": 0
+  }
+ }
+}

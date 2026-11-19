@@ -117,3 +117,14 @@ def test_side_topics_send_every_frame_and_markers_at_the_debug_rate():
     right=next(l for l in centres if l['name']=='right');assert right['crossable'] and right['edge_unknown'] and right['lane_like']
     outer=json.loads(node.pubs['/road/lane_outer'].sent[-1].data)['lanes']
     assert {l['side'] for l in outer}=={'left_outer','right_outer'}
+
+
+def test_heading_span_keeps_a_curve_ahead_out_of_the_heading():
+    # Straight to 12 m, then a 40 m radius turn: at 5 m the centre runs straight ahead.
+    x=np.arange(5.,30.,.25);y=np.where(x<12.,0.,(x-12.)**2/80.)
+    pts=np.column_stack([x,y])
+    whole=C.at_reference(pts,5.,15.);near=C.at_reference(pts,5.,15.,8.)
+    assert abs(whole['heading_rad'])>.03  # the quadratic over 15 m bends it
+    assert abs(near['heading_rad'])<.005 and abs(near['offset_m'])<.01
+    assert near['curvature_1pm']==whole['curvature_1pm']  # the curvature is still from the 15 m
+    assert C.at_reference(pts,5.,15.,0.)==whole  # 0: as before

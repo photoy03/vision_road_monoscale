@@ -1,0 +1,8 @@
+s7_lights 0
+s7_lights 500
+s7_lights 1000
+s7_lights 1500
+s7_lights 2000
+s7_lights 2500
+s7_lights 3000
+s7_lights yolo full mean 37.6 p95 38.7 ms

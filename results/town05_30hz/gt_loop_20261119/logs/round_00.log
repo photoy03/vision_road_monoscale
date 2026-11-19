@@ -1,0 +1,14 @@
+s1_lanefollow shown": 0.1973}, "C3_speed_signs": {"signs": 2, "confirmed_before": 1.0, "wrong_
+s2_wobble "shown": 0.0068}, "C3_speed_signs": {"signs": 1, "confirmed_before": 0.0, "wrong
+s3a_zigzag_cross eed_signs": {"signs": 2, "confirmed_before": 0.0, "wrong_frames": 0, "not_in_mod
+s3b_zigzag_inlane shown": 0.0068}, "C3_speed_signs": {"signs": 0, "confirmed_before": null, "wrong
+s4_straddle , "shown": 0.0}, "C3_speed_signs": {"signs": 0, "confirmed_before": null, "wrong
+s5_lanechange , "shown": 0.0}, "C3_speed_signs": {"signs": 0, "confirmed_before": null, "wrong
+s6_yellow , "shown": 0.0}, "C3_speed_signs": {"signs": 0, "confirmed_before": null, "wrong
+s7_lights shown": 0.0739}, "C3_speed_signs": {"signs": 1, "confirmed_before": 0.0, "wrong_
+s8a_lanefollow_20kmh shown": 0.4165}, "C3_speed_signs": {"signs": 2, "confirmed_before": 0.5, "wrong_
+s8b_lanefollow_50kmh shown": 0.4286}, "C3_speed_signs": {"signs": 2, "confirmed_before": 1.0, "wrong_
+s8c_lanechange_20kmh , "shown": 0.0}, "C3_speed_signs": {"signs": 0, "confirmed_before": null, "wrong
+s8d_lanechange_50kmh eed_signs": {"signs": 1, "confirmed_before": 0.0, "wrong_frames": 0, "not_in_mod
+results/town05_30hz/gt_loop_20261119/scripts/eval_round.sh: 줄 13: 예기치 않은 토큰 `done' 근처에서 문법 오류
+results/town05_30hz/gt_loop_20261119/scripts/eval_round.sh: 줄 13: ` ] && ln -sf $(realpath $f) $OUT/$s/;done;fi'

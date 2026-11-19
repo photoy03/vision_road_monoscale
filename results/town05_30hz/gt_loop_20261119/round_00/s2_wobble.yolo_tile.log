@@ -1,0 +1,6 @@
+s2_wobble 0
+s2_wobble 500
+s2_wobble 1000
+s2_wobble 1500
+s2_wobble 2000
+s2_wobble yolo tile mean 25.9 p95 45.5 ms

@@ -1,0 +1,4 @@
+s6_yellow 0
+s6_yellow 500
+s6_yellow 1000
+s6_yellow yolo tile mean 34.4 p95 46.6 ms

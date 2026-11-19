@@ -34,6 +34,10 @@ class SignSettings:
     min_confidence: float = 0.  # detections below this are ignored (the detector has its own threshold)
     select_area_power: float = .5    # score: confidence x (area/1000 px^2)^this ...
     select_centre_sigma: float = .25  # ... x exp(-((cx - W/2) / (this x W))^2 / 2); 0: no centre weighting
+    sign_min_height_px: float = 0.   # speed signs with a box lower than this are ignored (far signs are misread,
+                                     # 90 as 60); 0: all
+    light_max_offcentre: float = 0.  # lights whose box centre is further than this x the image width from its middle
+                                     # are ignored (side streets' lights at the edge); 0: all
 
 
 def area(box):
@@ -72,7 +76,11 @@ class SignTracker:
             if conf < self.s.min_confidence:continue
             kind = 'light' if name in LIGHTS else 'sign' if name in SIGNS else None
             if kind is None:continue
-            box = d.get('xyxy', [0, 0, 0, 0]);key = (self.score(conf, box, image_width), area(box))
+            box = d.get('xyxy', [0, 0, 0, 0])
+            if kind == 'sign' and box[3]-box[1] < self.s.sign_min_height_px:continue
+            if kind == 'light' and self.s.light_max_offcentre > 0 and image_width and \
+                    abs((box[0]+box[2])/2.-image_width/2.) > self.s.light_max_offcentre*image_width:continue
+            key = (self.score(conf, box, image_width), area(box))
             if kind not in best or key > best[kind][0]:best[kind] = (key, name, conf)
         light = LIGHTS[best['light'][1]] if 'light' in best else None
         if light is not None and light == self.light:self.light_confidence = best['light'][2]

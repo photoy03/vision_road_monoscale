@@ -1,0 +1,6 @@
+s1_lanefollow 0
+s1_lanefollow 500
+s1_lanefollow 1000
+s1_lanefollow 1500
+s1_lanefollow 2000
+s1_lanefollow yolo tile mean 16.8 p95 17.8 ms

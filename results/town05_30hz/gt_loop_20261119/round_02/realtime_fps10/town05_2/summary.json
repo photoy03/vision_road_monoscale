@@ -1,0 +1,163 @@
+{
+ "video": "town05",
+ "frames": 1808,
+ "input_hz": 30.0,
+ "processed": 1808,
+ "processed_ratio": 1.0,
+ "boundary_received": 1808,
+ "display_received": 1808,
+ "unprocessed_received": 0,
+ "hud": true,
+ "hud_recording": false,
+ "hud_alive_at_end": true,
+ "latency_ms": {
+  "publish_to_display": {
+   "n": 1808,
+   "mean": 22.97,
+   "median": 23.69,
+   "p95": 27.17,
+   "p99": 29.63,
+   "max": 52.6
+  },
+  "publish_to_receive": {
+   "n": 1808,
+   "mean": 7.99,
+   "median": 7.91,
+   "p95": 9.29,
+   "p99": 11.01,
+   "max": 31.75
+  },
+  "receive_to_start": {
+   "n": 1808,
+   "mean": 0.02,
+   "median": 0.02,
+   "p95": 0.02,
+   "p99": 0.03,
+   "max": 4.95
+  },
+  "start_to_finish": {
+   "n": 1808,
+   "mean": 20.7,
+   "median": 21.54,
+   "p95": 28.03,
+   "p99": 33.25,
+   "max": 51.28
+  },
+  "start_to_computed": {
+   "n": 1808,
+   "mean": 15.67,
+   "median": 16.62,
+   "p95": 19.15,
+   "p99": 20.72,
+   "max": 34.15
+  },
+  "computed_to_output_start": {
+   "n": 1808,
+   "mean": 0.98,
+   "median": 0.84,
+   "p95": 2.38,
+   "p99": 2.91,
+   "max": 5.38
+  },
+  "finish_to_boundary": {
+   "n": 1808,
+   "mean": 2.29,
+   "median": 2.03,
+   "p95": 5.07,
+   "p99": 7.16,
+   "max": 30.76
+  },
+  "boundary_to_display": {
+   "n": 1808,
+   "mean": -8.03,
+   "median": -7.54,
+   "p95": -2.39,
+   "p99": -2.03,
+   "max": -1.8
+  }
+ },
+ "latency_drift_ms_last_vs_first_tenth": -0.98,
+ "display_lines": 3032,
+ "display_lines_from_car": 0.9291,
+ "display_interval_ms": {
+  "n": 1807,
+  "mean": 33.32,
+  "median": 33.31,
+  "p95": 35.84,
+  "p99": 37.53,
+  "max": 58.4
+ },
+ "display_gaps_over_100ms": 0,
+ "phases_ms": {
+  "worker.warp": {
+   "n": 1808,
+   "mean": 0.91,
+   "median": 0.84,
+   "p95": 1.38,
+   "p99": 1.57,
+   "max": 2.07
+  },
+  "worker.detect": {
+   "n": 1808,
+   "mean": 10.15,
+   "median": 10.76,
+   "p95": 12.78,
+   "p99": 14.14,
+   "max": 24.77
+  },
+  "worker.display": {
+   "n": 1808,
+   "mean": 2.67,
+   "median": 3.05,
+   "p95": 3.48,
+   "p99": 3.75,
+   "max": 4.7
+  },
+  "worker.markings": {
+   "n": 1808,
+   "mean": 1.46,
+   "median": 1.38,
+   "p95": 1.87,
+   "p99": 2.2,
+   "max": 2.92
+  },
+  "worker.extra": {
+   "n": 1808,
+   "mean": 3.35,
+   "median": 3.37,
+   "p95": 5.38,
+   "p99": 6.7,
+   "max": 8.87
+  },
+  "out.markers": {
+   "n": 1808,
+   "mean": 2.67,
+   "median": 2.58,
+   "p95": 4.63,
+   "p99": 7.77,
+   "max": 30.46
+  },
+  "out.segments_markings": {
+   "n": 1808,
+   "mean": 1.34,
+   "median": 1.22,
+   "p95": 3.21,
+   "p99": 4.22,
+   "max": 7.64
+  },
+  "out.bev_debug": {
+   "n": 1808,
+   "mean": 0.01,
+   "median": 0.0,
+   "p95": 0.03,
+   "p99": 0.05,
+   "max": 0.69
+  }
+ },
+ "launch_args": [
+  "display_filter_inline:=true",
+  "lane_guidance:=true",
+  "fake_vehicle_state:=true"
+ ],
+ "note": "Header-paced replay of the recorded bag (lossless CDR cache); CARLA reference pose as odometry. Display arrival is taken by this evaluation process, which subscribes /road/lane_display_markers like the HUD does."
+}

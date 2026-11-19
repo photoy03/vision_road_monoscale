@@ -1,0 +1,28 @@
+[INFO] [launch]: All log files can be found below /home/jaehun/.ros/log/2026-11-20-00-11-37-800458-ros-35159
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [road_node-1]: process started with pid [35213]
+[INFO] [lane_display_filter-2]: process started with pid [35215]
+[INFO] [traffic_sign_bridge-3]: process started with pid [35217]
+[INFO] [reference_pose-4]: process started with pid [35219]
+[INFO] [static_transform_publisher-5]: process started with pid [35221]
+[static_transform_publisher-5] [INFO] [1795101097.879426596] [static_transform_publisher_lclrEpezFyM24LMZ]: Spinning until stopped - publishing transform
+[static_transform_publisher-5] translation: ('2.200000', '0.000000', '1.400000')
+[static_transform_publisher-5] rotation: ('-0.500000', '0.500000', '-0.500000', '0.500000')
+[static_transform_publisher-5] from 'base_link' to 'dashcam_optical_link'
+[reference_pose-4] [WARN] [1795101098.177822392] [maploop_reference_pose]: Evaluation reference from CARLA truth; this is not estimated odometry
+[traffic_sign_bridge-3] [INFO] [1795101098.179148462] [traffic_sign_bridge]: Traffic sign bridge: SignSettings(light_window=3, light_votes=2, light_hold_s=0.5, sign_window=3, sign_votes=2, sign_hold_s=3.0, min_confidence=0.0, select_area_power=0.5, select_centre_sigma=0.25, sign_min_height_px=50.0, light_max_offcentre=0.3)
+[road_node-1] [INFO] [1795101098.356194342] [vision_road]: Learned lane mask: off
+[road_node-1] [INFO] [1795101098.828143330] [vision_road_perception]: Perception worker: the BEV reads image rows 580-981 of 1920x1080; a row-cropped image (CameraInfo roi) must hold them
+[road_node-1] [INFO] [1795101098.830682405] [vision_road]: Road detector ready: carla; image processing only, no learned model
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[INFO] [static_transform_publisher-5]: sending signal 'SIGINT' to process[static_transform_publisher-5]
+[INFO] [reference_pose-4]: sending signal 'SIGINT' to process[reference_pose-4]
+[INFO] [traffic_sign_bridge-3]: sending signal 'SIGINT' to process[traffic_sign_bridge-3]
+[INFO] [lane_display_filter-2]: sending signal 'SIGINT' to process[lane_display_filter-2]
+[INFO] [road_node-1]: sending signal 'SIGINT' to process[road_node-1]
+[static_transform_publisher-5] [INFO] [1795101171.842533520] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[INFO] [static_transform_publisher-5]: process has finished cleanly [pid 35221]
+[INFO] [traffic_sign_bridge-3]: process has finished cleanly [pid 35217]
+[INFO] [reference_pose-4]: process has finished cleanly [pid 35219]
+[INFO] [lane_display_filter-2]: process has finished cleanly [pid 35215]
+[INFO] [road_node-1]: process has finished cleanly [pid 35213]

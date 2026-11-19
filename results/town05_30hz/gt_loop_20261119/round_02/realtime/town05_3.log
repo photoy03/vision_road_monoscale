@@ -1,0 +1,71 @@
+[WARN] [1795101555.341539601] [rcl]: Found remap rule 'full_frame:=true'. This syntax is deprecated. Use '--ros-args --remap full_frame:=true' instead.
+[WARN] [1795101555.341576267] [rcl]: Found remap rule 'display_filter_inline:=true'. This syntax is deprecated. Use '--ros-args --remap display_filter_inline:=true' instead.
+[WARN] [1795101555.341581994] [rcl]: Found remap rule 'lane_guidance:=true'. This syntax is deprecated. Use '--ros-args --remap lane_guidance:=true' instead.
+[WARN] [1795101555.341586743] [rcl]: Found remap rule 'fake_vehicle_state:=true'. This syntax is deprecated. Use '--ros-args --remap fake_vehicle_state:=true' instead.
+{"video": "town05", "frames": 1808, "processed_ratio": 1.0, "display_received": 1808, "latency_drift_ms_last_vs_first_tenth": -0.72, "display_gaps_over_100ms": 0}
+{
+ "publish_to_display": {
+  "n": 1808,
+  "mean": 23.52,
+  "median": 24.23,
+  "p95": 27.71,
+  "p99": 30.15,
+  "max": 53.04
+ },
+ "publish_to_receive": {
+  "n": 1808,
+  "mean": 8.61,
+  "median": 8.55,
+  "p95": 10.22,
+  "p99": 13.91,
+  "max": 33.17
+ },
+ "receive_to_start": {
+  "n": 1808,
+  "mean": 0.02,
+  "median": 0.02,
+  "p95": 0.03,
+  "p99": 0.04,
+  "max": 5.04
+ },
+ "start_to_finish": {
+  "n": 1808,
+  "mean": 20.77,
+  "median": 21.71,
+  "p95": 28.35,
+  "p99": 32.53,
+  "max": 49.8
+ },
+ "start_to_computed": {
+  "n": 1808,
+  "mean": 15.63,
+  "median": 16.54,
+  "p95": 19.17,
+  "p99": 20.3,
+  "max": 36.97
+ },
+ "computed_to_output_start": {
+  "n": 1808,
+  "mean": 1.01,
+  "median": 0.87,
+  "p95": 2.31,
+  "p99": 2.98,
+  "max": 4.19
+ },
+ "finish_to_boundary": {
+  "n": 1808,
+  "mean": 2.25,
+  "median": 1.96,
+  "p95": 4.85,
+  "p99": 6.45,
+  "max": 25.07
+ },
+ "boundary_to_display": {
+  "n": 1808,
+  "mean": -8.12,
+  "median": -7.82,
+  "p95": -2.41,
+  "p99": -2.0,
+  "max": -1.62
+ }
+}

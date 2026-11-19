@@ -18,7 +18,8 @@
 #   --signs         traffic lights and speed signs (YOLO, src/yolo_signs, GPU) on the HUD: the detector
 #                   runs with the YOLO environment's Python (YOLO_PYTHON, default ~/yolo_env/bin/python)
 #                   and lane_guidance puts what it confirms into the HUD scene.  SIGNS_FULL_FRAME=true|false
-#                   (whole image or the original upper-centre tile), SIGNS_FPS (max inferences per second, 0 = all)
+#                   (whole image or the original upper-centre tile), SIGNS_FPS (max inferences per second, 0 = all),
+#                   SIGNS_IMGSZ (inference size, default 1920); the detector takes the images serialized (raw_cdr)
 # The HUD is this workspace's copy (src/hero_hud), built into install/.
 set -euo pipefail
 ROAD="$(cd "$(dirname "$0")" && pwd)"
@@ -27,6 +28,7 @@ DISK=/media/jaehun/38F7-677B
 VIDEO=${1:-}; shift || true
 HUD=1; LOOP=0; FRAMES=0; LEARNED=""; GUIDANCE=true; FAKE_VS=false; CROP=(); SIGNS=false
 YOLO_PYTHON=${YOLO_PYTHON:-$HOME/yolo_env/bin/python}; SIGNS_FULL_FRAME=${SIGNS_FULL_FRAME:-true}; SIGNS_FPS=${SIGNS_FPS:-0.0}
+SIGNS_IMGSZ=${SIGNS_IMGSZ:-1920}  # plan 30: the full frame at 1920 finds far lights (s7 confirmed 14 -> 80 %)
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-hud) HUD=0;; --loop) LOOP=1;; --frames) FRAMES=$2; shift;;
@@ -60,7 +62,7 @@ PIDS+=($!)
 if [ "$SIGNS" = true ]; then
   # The YOLO environment (ultralytics for YOLO26) with this ROS environment sourced: it imports rclpy.
   ( exec "${SIGINT_EXEC[@]}" "$YOLO_PYTHON" "$ROAD/src/yolo_signs/town05_yolo26m_detector.py" --ros-args \
-      -p full_frame:=$SIGNS_FULL_FRAME -p max_inference_fps:=$SIGNS_FPS ) &
+      -p full_frame:=$SIGNS_FULL_FRAME -p max_inference_fps:=$SIGNS_FPS -p imgsz:=$SIGNS_IMGSZ -p raw_cdr:=true ) &
   PIDS+=($!)
 fi
 /usr/bin/python3 - <<'PY'

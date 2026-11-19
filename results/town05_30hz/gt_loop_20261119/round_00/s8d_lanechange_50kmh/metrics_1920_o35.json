@@ -1,0 +1,242 @@
+{
+ "scene": "s8d_lanechange_50kmh",
+ "frames": 1564,
+ "used_frames": 1564,
+ "A1_switched_frames": 13,
+ "A1_on_line_frames": 46,
+ "A1_gt_excluded": {
+  "left": {
+   "frames": 162,
+   "first": 3.23,
+   "last": 54.6
+  },
+  "right": {
+   "frames": 160,
+   "first": 2.87,
+   "last": 54.6
+  }
+ },
+ "A1_lateral_error_m": {
+  "left_5m": {
+   "n": 0,
+   "median": null,
+   "p95": null,
+   "max": null
+  },
+  "left_10m": {
+   "n": 1101,
+   "median": 0.0148,
+   "p95": 0.0614,
+   "max": 3.5841
+  },
+  "left_15m": {
+   "n": 1278,
+   "median": 0.0173,
+   "p95": 0.0641,
+   "max": 3.5785
+  },
+  "right_5m": {
+   "n": 0,
+   "median": null,
+   "p95": null,
+   "max": null
+  },
+  "right_10m": {
+   "n": 1105,
+   "median": 0.0085,
+   "p95": 0.0664,
+   "max": 3.5414
+  },
+  "right_15m": {
+   "n": 1257,
+   "median": 0.0071,
+   "p95": 0.052,
+   "max": 0.6007
+  }
+ },
+ "A1_all": {
+  "n": 4741,
+  "median": 0.0121,
+  "p95": 0.0613,
+  "max": 3.5841
+ },
+ "A1_nearest_line_10m": {
+  "n": 2206,
+  "median": 0.0119,
+  "p95": 0.0517,
+  "max": 0.4049
+ },
+ "A1_identity": 0.9864,
+ "A2_observed": {
+  "left": 0.9617,
+  "right": 0.9632
+ },
+ "A2_frames": {
+  "left": 1356,
+  "right": 1358
+ },
+ "A3_style": {
+  "left": {
+   "accuracy": 0.9747,
+   "known": 0.9747,
+   "n": 1304
+  },
+  "right": {
+   "accuracy": 0.9618,
+   "known": 0.9778,
+   "n": 1308
+  }
+ },
+ "A3_colour": {
+  "left": {
+   "accuracy": 1.0,
+   "n": 1304
+  },
+  "right": {
+   "accuracy": 1.0,
+   "n": 1308
+  }
+ },
+ "A4_offset_m": {
+  "n": 1366,
+  "median": 0.0089,
+  "p95": 0.0867,
+  "max": 0.3514
+ },
+ "A4_heading_deg": {
+  "n": 1366,
+  "median": 0.1662,
+  "p95": 1.6712,
+  "max": 6.3602
+ },
+ "A4_coverage": 0.9437,
+ "A4_offset_estimated_m": {
+  "n": 110,
+  "median": 0.1563,
+  "p95": 3.7348,
+  "max": 3.7946
+ },
+ "A4_at_origin_m": {
+  "n": 1476,
+  "median": 0.0971,
+  "p95": 0.6727,
+  "max": 3.8083
+ },
+ "A5": {
+  "left": {
+   "precision": 1.0,
+   "recall": 0.837,
+   "opposite_accuracy": 1.0,
+   "crossable_accuracy": 0.9702,
+   "recall_visible": 0.946,
+   "visible_n": 1315,
+   "tp": 1309,
+   "fp": 0,
+   "fn": 255,
+   "tn": 0
+  },
+  "right": {
+   "precision": 1.0,
+   "recall": 0.4885,
+   "opposite_accuracy": 1.0,
+   "crossable_accuracy": 0.9857,
+   "recall_visible": 0.8467,
+   "visible_n": 535,
+   "tp": 490,
+   "fp": 0,
+   "fn": 513,
+   "tn": 561
+  }
+ },
+ "B_lane_changes": {
+  "ground_truth": 4,
+  "target_moves": 2,
+  "on_time": 1,
+  "gt_times": [
+   11.23,
+   22.0,
+   31.8,
+   39.74
+  ],
+  "move_times": [
+   12.4,
+   21.6
+  ]
+ },
+ "B5_return_shown": {
+  "far": 0.4223,
+  "far_n": 386,
+  "centre": 0.0457,
+  "centre_n": 722,
+  "painted_frames": 213
+ },
+ "B5_return_shown_gt": {
+  "far": 0.4234,
+  "centre": 0.0448
+ },
+ "B3": {
+  "over_line_frames": 0,
+  "return_shown": null,
+  "opposite_target_frames": 0
+ },
+ "C": {
+  "C4_stop_waypoint": {
+   "error_m": {
+    "n": 0,
+    "median": null,
+    "p95": null,
+    "max": null
+   },
+   "detected": null,
+   "n": 0,
+   "false": 0.0,
+   "false_n": 1564,
+   "note": "against CARLA stop waypoints (stop_line_ahead_m), about 7.6 m before the painted line: not the scored C4"
+  },
+  "C4_stop_line": {
+   "error_m": {
+    "n": 0,
+    "median": null,
+    "p95": null,
+    "max": null
+   },
+   "detected": null,
+   "n": 0,
+   "false": 0.0,
+   "false_n": 1562,
+   "paint_minus_waypoint_m": {
+    "n": 0,
+    "median": null,
+    "p95": null,
+    "max": null
+   },
+   "truth": "semantic camera RoadLine bars across the own lane"
+  },
+  "C1_light": {
+   "frames": 0,
+   "confirmed": null,
+   "wrong_colour": null,
+   "state_changes": 2
+  },
+  "C2_no_light_shown": {
+   "frames": 1564,
+   "shown": 0.0096,
+   "raw_frames": 1564,
+   "raw_shown": 0.0096
+  },
+  "C3_speed_signs": {
+   "signs": 1,
+   "confirmed_before": 0.0,
+   "wrong_frames": 0,
+   "not_in_model": [
+    "traffic.speed_limit.40"
+   ],
+   "not_in_model_n": 1
+  },
+  "C5_advice": {
+   "over_line_frames": 0,
+   "hold": null,
+   "hold_n": 0
+  }
+ }
+}
