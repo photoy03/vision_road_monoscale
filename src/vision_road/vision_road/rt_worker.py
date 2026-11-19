@@ -202,6 +202,20 @@ def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
             from .side_topics import SideTopics
             from builtin_interfaces.msg import Time
             topics=SideTopics(node,ros['base_frame'],ros['debug_hz'],error,outer,centre)
+        # Plan 33 (lane_display_filter two_lane_hold_s): the neighbouring lane's outer line while the lane guidance changes
+        # lanes, on /road/lane_display_outer, after the outer lines (off the display line's path).
+        two=None
+        if topics is not None and perceive.core is not None and perceive.core.filter.s.two_lane_hold_s>0:
+            import json
+            from std_msgs.msg import String
+            from visualization_msgs.msg import MarkerArray
+            from .display_filter import TwoLane,DisplayStage,simplify
+            two=TwoLane(perceive.core.filter.s);two_stage=DisplayStage(perceive.core.filter.s,ros['base_frame'])
+            two_pub=node.create_publisher(MarkerArray,'/road/lane_display_outer',10)
+            def on_guidance(msg):
+                try:d=json.loads(msg.data);two.guidance(float(d['stamp']),d.get('state'))
+                except (ValueError,KeyError,TypeError):pass
+            node.create_subscription(String,ros.get('guidance_topic','/hero/lane_guidance'),on_guidance,10)
         learned=LearnedMask(projector,every=ros.get('learned_every',1),client=ros['learned']) if ros.get('learned') is not None else None
         share=None
         if ros.get('image_shm_name'):
@@ -238,6 +252,7 @@ def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
             h,w,encoding,frame_id=state['shape'];sec,nanosec=struct.unpack_from('<iI',raw,4);t=sec+nanosec*1e-9
             if state['reset']:
                 perceive.reset();state['last']=None;state['reset']=False
+                if two is not None:two.reset()
                 if learned is not None:learned.reset()
             if state['last'] is not None and t<=state['last']:return
             top=crop_top(h,w)
@@ -267,6 +282,10 @@ def ros_loop(connection,projector,cfg,backend,roi,threads,extras,display,ros):
             if topics is not None:
                 # Outer lines and centrelines after road_node has the main result: its own outputs go first.
                 begin=time.perf_counter();side=perceive.side_outputs(Time(sec=sec,nanosec=nanosec),t,topics)
+                if two is not None:
+                    third=two.step(t,[(l.side,simplify(l.points,error),l.reprojected) for l in side['outer'] if len(l.points)>=2],pose,
+                                   perceive.core.filter.output())
+                    two_pub.publish(two_stage.messages(Time(sec=sec,nanosec=nanosec),third)[0])
                 connection.send(dict(side=side,extra_ms=(time.perf_counter()-begin)*1e3))
             # image_shm_name (plan 30): this image for the sign detector, after the lane outputs (image_share.py).
             if share is not None and not cropped:share.write(memoryview(raw)[len(raw)-h*w*3:],w,h,encoding,sec,nanosec)

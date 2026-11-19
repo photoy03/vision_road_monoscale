@@ -1,0 +1,5 @@
+s8d_lanechange_50kmh 0 1564
+s8d_lanechange_50kmh 500 1564
+s8d_lanechange_50kmh 1000 1564
+s8d_lanechange_50kmh 1500 1564
+s8d_lanechange_50kmh process mean 8.91 p95 10.26 ms

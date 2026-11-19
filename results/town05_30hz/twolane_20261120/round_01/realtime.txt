@@ -1,0 +1,6 @@
+results/town05_30hz/twolane_20261120/round_01/realtime_signs/town05_1 p2d med/p95 21.76 25.47 p2r p95 8.21 s2f p95 25.92 proc 1.0 gaps>100 0 yolo fps 11.43 infer p95 82.6 recv->det p95 82.6
+results/town05_30hz/twolane_20261120/round_01/realtime_signs/town05_2 p2d med/p95 21.91 26.43 p2r p95 8.52 s2f p95 27.42 proc 1.0 gaps>100 0 yolo fps 11.43 infer p95 82.5 recv->det p95 82.5
+results/town05_30hz/twolane_20261120/round_01/realtime_signs/town05_3 p2d med/p95 21.56 25.08 p2r p95 7.74 s2f p95 25.95 proc 1.0 gaps>100 0 yolo fps 11.38 infer p95 82.3 recv->det p95 82.3
+results/town05_30hz/twolane_20261120/round_01/realtime_nosigns/town05_1 p2d med/p95 21.2 24.0 p2r p95 6.85 s2f p95 25.43 proc 1.0 gaps>100 0
+results/town05_30hz/twolane_20261120/round_01/realtime_nosigns/town05_2 p2d med/p95 21.13 23.92 p2r p95 6.53 s2f p95 25.33 proc 1.0 gaps>100 0
+results/town05_30hz/twolane_20261120/round_01/realtime_nosigns/town05_3 p2d med/p95 20.87 23.24 p2r p95 6.29 s2f p95 24.88 proc 0.9994 gaps>100 0

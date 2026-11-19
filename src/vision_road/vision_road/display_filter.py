@@ -75,6 +75,9 @@ class FilterSettings:
     max_step_m:float=0.         # >0: the kept line moves at most this much per frame at each station (plan 32)
     max_accel_m:float=0.        # >0: the drawn line's per-frame move changes by at most this from frame to frame (plan 32)
     max_accel_leash_m:float=.3  # ... but it stays within this of the kept line at each station
+    two_lane_hold_s:float=0.    # >0: TwoLane (plan 33): the neighbouring lane's outer line is shown while the lane guidance
+                                # changes lanes ('change') and this long after; 0: off
+    two_lane_accel:bool=False   # ... the outer line drawn with max_accel_m too (off: it moves quickly across while changing)
     max_accel_same_m:float=0.   # >0: a sustained change within this of the kept line at 10 m (the same line, its far
                                 # end re-shaped) is drawn with the limit too instead of at once
     near_quadratic_m:float=0.   # >0: below this x the line continues its slope and curvature there (the cubic
@@ -370,11 +373,11 @@ class SideTrack:
 
 
 class DisplayFilter:
-    def __init__(self,settings=None):
-        self.s=settings or FilterSettings();self.reset()
+    def __init__(self,settings=None,names=('left','right')):
+        self.s=settings or FilterSettings();self.names=names;self.reset()
 
     def reset(self):
-        self.sides={side:SideTrack(self.s) for side in ('left','right')};self.last_t=None;self.last_motion_t=None;self.travel=0.
+        self.sides={side:SideTrack(self.s) for side in self.names};self.last_t=None;self.last_motion_t=None;self.travel=0.
 
     def update(self,t,lines,motion=None,paint=None):
         """lines: iterable of (side, points Nx2, predicted); the longest observed line per side is used,
@@ -444,8 +447,8 @@ class DisplayCore:
     """The display filter's per-frame step without ROS: vehicle motion from consecutive poses and the
     filter update.  road_node's perception worker runs it next to the detector (display_filter_in_worker)."""
 
-    def __init__(self,settings):
-        self.filter=DisplayFilter(settings);self.last_pose=None
+    def __init__(self,settings,names=('left','right')):
+        self.filter=DisplayFilter(settings,names);self.last_pose=None
 
     def styles(self,t,styles):
         for side,style,confidence in styles:self.filter.update_style(t,side,style,confidence)
@@ -459,6 +462,54 @@ class DisplayCore:
             self.last_pose=(t,pose)
         self.filter.update(t,lines,motion,paint)
         return self.filter.output()
+
+
+class TwoLane:
+    """Plan 33: two lanes on the HUD while changing lanes.  The neighbouring lanes' outer lines (the detector's
+    left_outer / right_outer) go through the same display filter every frame, so they are steady and held through
+    short gaps; one is shown while the lane guidance is changing lanes ('change') and two_lane_hold_s after.  Which
+    one by position: the side of the own display line nearer to the car (before the crossing the line being
+    crossed lies on the side moved to; after it, the lane just left lies on the other side), so the two lanes
+    stay the same two through the crossing, when the own lane's name changes.  No line is made up: when the
+    outer line is not seen, nothing is drawn."""
+    NAMES=('left_outer','right_outer')
+
+    def __init__(self,settings):
+        from dataclasses import replace
+        if not settings.two_lane_accel:settings=replace(settings,max_accel_m=0.)
+        self.core=DisplayCore(settings,self.NAMES);self.hold=settings.two_lane_hold_s;self.last_change=-math.inf
+
+    def guidance(self,t,state):
+        """The lane guidance state at stamp t (its /hero/lane_guidance JSON 'state')."""
+        if state=='change':self.last_change=max(self.last_change,t)
+        # Going back to the lane ('return') or held off a line ('forbidden'): not a lane change, no hold.
+        elif state in ('return','forbidden') and t>self.last_change:self.last_change=-math.inf
+
+    def reset(self):
+        self.core=DisplayCore(self.core.filter.s,self.NAMES);self.last_change=-math.inf
+
+    def active(self,t):
+        return t-self.last_change<=self.hold
+
+    def step(self,t,outer,pose,own):
+        """outer: [(side, points, predicted)] outer lines of this frame; own: the own display output
+        [(side, points, predicted, style)].  Returns [(side, points, predicted, style)]: the line to draw, or []."""
+        if self.core.filter.restarted(t):self.last_change=-math.inf
+        shown=self.core.step(t,outer,pose,None)
+        if not self.active(t):return []
+        near={side:abs(float(np.interp(max(1.4,p[0,0]),p[:,0],p[:,1]))) for side,p,_,_ in own if side in ('left','right') and len(p)>=2}
+        if len(near)<2:return []
+        side=min(near,key=near.get);ownp=next(p for sd,p,_,_ in own if sd==side);sign=1. if side=='left' else -1.
+        out=[]
+        for o in shown:
+            if o[0]!=side+'_outer':continue
+            # One lane beyond the own line on that side, where both are drawn: a held outer line that is now the own line
+            # (the own lane's name changed while crossing) or one off by a lane is not drawn.
+            x0=max(ownp[0,0],o[1][0,0]);x1=min(ownp[-1,0],o[1][-1,0])
+            if x1-x0<2.:continue
+            x=np.linspace(x0,x1,5);gap=sign*(np.interp(x,o[1][:,0],o[1][:,1])-np.interp(x,ownp[:,0],ownp[:,1]))
+            if np.all((gap>=2.5)&(gap<=4.5)):out.append(o)
+        return out
 
 
 class DisplayStage:

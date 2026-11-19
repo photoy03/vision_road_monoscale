@@ -149,3 +149,7 @@ lane_display_filter:
     # the limit too, and the leash is 0.45 m (s4 / s5 frames over 5 cm at 18 m 6 -> 2 / 5; 0.6 m lagged in s8b curves).
     max_accel_leash_m: 0.45
     max_accel_same_m: 0.3
+    # Plan 33: while the lane guidance changes lanes ('change', and 1 s after unless it turns to 'return'), the
+    # neighbouring lane's outer line beside the line being crossed, filtered here too, on /road/lane_display_outer
+    # (published by the perception worker after the outer lines; the HUD copy draws it as a third line).
+    two_lane_hold_s: 1.0

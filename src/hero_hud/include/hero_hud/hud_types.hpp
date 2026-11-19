@@ -102,6 +102,9 @@ struct RoadMarking {
 struct RoadPaint {
   std::vector<RoadLine> lines;       // measured paint, kept as fragments
   std::vector<RoadLine> boundaries;  // fitted display curves
+  // 계획 33: 차로를 옮기는 동안만 오는 옆 차로 바깥 선(/road/lane_display_outer). 없으면 비어 있다.
+  std::vector<RoadLine> outer_lines;
+  double outer_stamp{0.0};
   std::vector<RoadMarking> markings;
   double marking_stamp{0.0};
   bool dashed_left{false};

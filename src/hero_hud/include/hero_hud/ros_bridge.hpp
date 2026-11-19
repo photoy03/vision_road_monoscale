@@ -42,6 +42,7 @@ class RosBridge {
   void onScene(const msg::SceneOverlay::SharedPtr in);
   void onRoadPaint(const visualization_msgs::msg::MarkerArray::SharedPtr in);
   void onRoadBoundary(const visualization_msgs::msg::MarkerArray::SharedPtr in);
+  void onRoadOuter(const visualization_msgs::msg::MarkerArray::SharedPtr in);
   void onRoadStyle(const vision_lane_interfaces::msg::LaneStyleArray::SharedPtr in);
   void onRoadMarking(const visualization_msgs::msg::MarkerArray::SharedPtr in);
   void publishRoadPaint();
@@ -54,6 +55,7 @@ class RosBridge {
   rclcpp::Subscription<msg::SceneOverlay>::SharedPtr sub_scene_;
   rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr sub_road_paint_;
   rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr sub_road_boundary_;
+  rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr sub_road_outer_;
   rclcpp::Subscription<vision_lane_interfaces::msg::LaneStyleArray>::SharedPtr sub_road_style_;
   rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr sub_road_marking_;
   RoadPaint latest_road_;

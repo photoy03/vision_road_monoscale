@@ -97,6 +97,11 @@ def predict(a):
     for kv in a.display:
         name, v = kv.split('=', 1);section[name] = eval(v)
     display = DisplayCore(settings_from(section))
+    # Plan 33 (two_lane_hold_s): the neighbouring lane's outer line while changing lanes, as the perception worker runs
+    # it: after the outer lines, with the guidance state of the previous frame (the guidance node answers this frame's
+    # centres after the worker has moved on).
+    from vision_road.display_filter import TwoLane
+    two = TwoLane(display.filter.s) if display.filter.s.two_lane_hold_s > 0 else None;prev_guide = None
     tl = Timeline(.25);k = 0;gs = GuidanceSettings()
     for kv in a.guide:
         name, v = kv.split('=', 1);setattr(gs, name, type(getattr(gs, name))(eval(v)))
@@ -115,13 +120,18 @@ def predict(a):
             display.styles(t, lane_styles(lanes))
             shown = display.step(t, shown_bounds, pose, paint)
             marks = extras.after(det, bev, valid, pose);det.finish()
+            third = []
+            if two is not None:
+                if prev_guide is not None:two.guidance(*prev_guide)
+                third = two.step(t, [(l.side, simplify(np.asarray(l.points, float), err), l.reprojected) for l in det.outer_lanes if len(l.points) >= 2], pose, shown)
             centres = [dict(c, points=np.round(simplify(np.asarray(c['points'], float), err), 3).tolist()) for c in det.centre_lanes]
             g = gt.get(round(t, 4));speed = g['speed_mps'] if g else None
             gpose = None if pose is None else tuple(float(np.interp(t, poses[:, 0], poses[:, j])) for j in (1, 2, 3))
-            out = guide.update(t, gpose, [Lane.from_message(c) for c in centres], path=False, speed=speed)
+            out = guide.update(t, gpose, [Lane.from_message(c) for c in centres], path=False, speed=speed);prev_guide = (t, out.state)
             stops = [min(q[0] for q in m['points']) for m in marks if m['kind'] == 'stop_line']
             fo.write(json.dumps(dict(frame=i, stamp=t, bounds=[L(l) for l in det.boundary_lanes],
-                                     display=[dict(side=sd, points=np.round(np.asarray(pt, float), 3).tolist(), predicted=bool(pr), style=st) for sd, pt, pr, st in shown], outer=[L(l) for l in det.outer_lanes], centres=centres,
+                                     display=[dict(side=sd, points=np.round(np.asarray(pt, float), 3).tolist(), predicted=bool(pr), style=st) for sd, pt, pr, st in shown],
+                                     third=[dict(side=sd, points=np.round(np.asarray(pt, float), 3).tolist(), predicted=bool(pr)) for sd, pt, pr, st in third], outer=[L(l) for l in det.outer_lanes], centres=centres,
                                      markings=[dict(kind=m['kind'], points=np.round(np.asarray(m['points']), 3).tolist(), predicted=bool(m['predicted'])) for m in marks],
                                      stop_line_m=min([x for x in stops if x > 0], default=None),
                                      guidance=dict(state=out.state, target=out.target, shown=bool(out.shown), changes=out.changes, offset_m=round(out.offset_m, 3),

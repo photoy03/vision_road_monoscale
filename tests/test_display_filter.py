@@ -1,6 +1,6 @@
 """HUD display filter: confirmation, smoothing, outlier gate, hold, motion, restart, fixed sampling and styles."""
 import numpy as np
-from vision_road.display_filter import DisplayFilter, FilterSettings, fit, evaluate, shift, relative
+from vision_road.display_filter import DisplayFilter, FilterSettings, TwoLane, fit, evaluate, shift, relative
 
 DT=1/30
 
@@ -380,3 +380,27 @@ def test_trim_keep_leaves_an_observation_whole_when_the_cut_would_starve_the_lin
     assert not take(3.,early).predicted  # left whole and taken
     hooked=np.array([[4.,1.75],[9.,1.75],[14.,1.76],[20.,2.3],[26.,2.9]])
     t=take(3.,hooked);assert not t.predicted and t.seen[-1][1]==14.  # 10 m left: still cut
+
+
+def test_two_lane_shows_the_outer_line_beside_the_line_being_crossed_only_while_changing():
+    # Plan 33 (two_lane_hold_s): the outer lines are filtered every frame; one is shown from the guidance's 'change' to
+    # two_lane_hold_s after, on the side of the own line nearer to the car (here the left line, 0.3 m away).
+    two=TwoLane(FilterSettings(two_lane_hold_s=1.))
+    own=[('left',line(.3),False,None),('right',line(-3.2),False,None)]
+    outer=[('left_outer',line(3.8),False),('right_outer',line(-6.7),False)]
+    shown=[]
+    for i in range(60):
+        t=i*DT
+        if i==20:two.guidance(t,'change')
+        shown.append([o[0] for o in two.step(t,outer,(0.,0.,0.),own)])
+    assert all(s==[] for s in shown[:20])  # straight on: one lane
+    assert shown[20]==['left_outer'] and shown[50]==['left_outer']  # changing, and up to 1 s after
+    assert shown[52]==[]  # past the hold
+    # The right line nearer: the right outer line, one lane (3.7 m) beyond it.
+    two.guidance(60*DT,'change');own=[('left',line(3.2),False,None),('right',line(-3.),False,None)]
+    assert [o[0] for o in two.step(60*DT,outer,(0.,0.,0.),own)]==['right_outer']
+    # An outer line on top of the own line (a held line that became the own line while crossing): not drawn.
+    own=[('left',line(3.2),False,None),('right',line(-6.5),False,None)]
+    assert two.step(61*DT,outer,(0.,0.,0.),own)==[]
+    # Off (0): nothing.
+    assert FilterSettings().two_lane_hold_s==0.

@@ -1,0 +1,6 @@
+s2_wobble 0 2350
+s2_wobble 500 2350
+s2_wobble 1000 2350
+s2_wobble 1500 2350
+s2_wobble 2000 2350
+s2_wobble process mean 8.75 p95 9.95 ms

@@ -85,7 +85,7 @@ source install/setup.bash
 ```
 
 - C++ 빠른 경로(`_native*.so`)는 빌드가 만든다. 없으면 조용히 파이썬으로 돌아 느려진다.
-- 시험 (2026-11-20 계획 30 3회차 기준 통과 수): `hero_coach` 102, `vision_road` 162(계획 32 4회차; 다른 세션의 path_tracking 시험 3 개 포함), `hero_hud` 33(계획 29 기준, HUD 는 그 뒤 안 바뀜). 실제로 쓰는 명령(ROS 와 `install/setup.bash` 를 source 한 뒤; source 하지 않으면 hero_coach 시험이 모으는 단계에서 오류가 난다):
+- 시험 (2026-11-20 계획 30 3회차 기준 통과 수): `hero_coach` 102, `vision_road` 163(계획 33; 다른 세션의 path_tracking 시험 3 개 포함), `hero_hud` 33(계획 29 기준, HUD 는 그 뒤 안 바뀜). 실제로 쓰는 명령(ROS 와 `install/setup.bash` 를 source 한 뒤; source 하지 않으면 hero_coach 시험이 모으는 단계에서 오류가 난다):
 
 ```bash
 python3 -m pytest -q tests                      # vision_road
@@ -124,6 +124,7 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
   - 정답 경계 대비: `python3 results/town05_30hz/jitter_20261120/jaccuracy.py 폴더1 폴더2`
   - 맞는 선 표시 비율(15 m): `python3 results/town05_30hz/jitter_20261120/jcoverage.py 폴더1 폴더2`
   - 전후 비교 그림: `python3 results/town05_30hz/jitter_20261120/compare_sheet.py 전_녹화 후_녹화 시작초 끝초 출력.png`
+- 차로 두 칸(계획 33): `python3 results/town05_30hz/twolane_20261120/twolane_eval.py 예측폴더`(예측은 `jtry.sh 폴더 "" "two_lane_hold_s=1.0"`; yaml 에 켜져 있으면 설정 없이도 됨)
 
 ## 5. 자료 흐름과 토픽
 
@@ -159,6 +160,20 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 - 신호등·표지판 HUD 결합 (계획 27, 커밋 99aaef9, ddf6414)
 - 정지선·횡단보도·초록 신호 HUD 표시, `stop_line_m` (계획 28, f111f20)
 - 코치에 맞춘 신호 전달·경로 전달·정지 권고 (계획 29, e64c42e)
+
+### 끝남: 계획 33 (2026-11-20, 사용자 요청 "차로 옮길 때 두 칸")
+
+- 결과 폴더: `results/town05_30hz/twolane_20261120/`(`SUMMARY_KO.md`, `round_01/REPORT_KO.md`, `twolane.md`).
+- `lane_display_filter` 의 `two_lane_hold_s: 1.0`(코드 기본 꺼짐, carla.yaml 에서 켬).
+  - 안내가 `change` 인 동안과 1 초 뒤까지(`return` 이면 끝) 넘는 선 쪽 옆 차로 바깥 선을 세 번째 선으로 낸다.
+  - 같은 표시 필터로 따라가고, 위치로 고르며, 차로 폭만큼 떨어진 것만 낸다.
+- 실시간: 인식 작업 프로세스(`rt_worker.py`)가 바깥 선 뒤에 `/road/lane_display_outer` 로 낸다. 안내 `/hero/lane_guidance` 를 구독한다.
+- HUD 사본: `road.outer_topic` 구독, `world_item.cpp` 에서 옅게 그림. hero_hud 다시 빌드 필요: `colcon build --base-paths src --symlink-install --packages-select hero_hud`.
+- 결과:
+  - 직진·비틀거림에서 잘못 켜짐 0 %, 보인 선의 30 cm 안 86.6–100 %.
+  - 변경 구간 세 줄 비율은 8–35 % 로 낮다(`change` 가 늦게 켜짐, 바깥 선 검출 부족).
+  - 지연 가운데 켬 25.47, 끔 23.92 ms.
+- 버린 것: 일찍 켜기(s2·s3b 잘못 켜짐), 차로 폭만큼 옮겨 그리기(틀린 선 많음). 방향지시등은 차량 상태 메시지에 없다.
 
 ### 끝남: 계획 32 (2026-11-20, 사용자 지적 "직진인데 차선이 흔들림")
 
@@ -330,6 +345,8 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 
 ## 7. 다음에 할 일 (순서대로)
 
+- (끝) **계획 33**(2026-11-20, 사용자 요청): 차로 옮길 때만 두 칸. 6절 "끝남: 계획 33" 과 `twolane_20261120/SUMMARY_KO.md` 참고.
+  - 다음 후보: 차로 변경 중 옆 차로 바깥 선 검출 늘리기(검출기), 의도 신호(방향지시등)가 생기면 일찍 켜기.
 - (끝) **계획 32**(2026-11-20, 사용자 지적): 6절 "끝남: 계획 32" 와 `jitter_20261120/SUMMARY_KO.md` 참고.
 - (진행 중) **계획 33**(2026-11-20, 사용자 요청 "차로를 옮길 때 옮겨 갈 차로까지 두 칸 보이게, 직진·비틀거림은 빼고"): 개선 세션에 전달함. 내용과 지표는 `docs/lane_improvement_research.md` "계획 33" 참고. 결과 폴더 예정 `results/town05_30hz/twolane_20261120/`.
   - 흔들림 목표 충족 2 → 8/14. 18 m p99 는 모두 ≤ 2 cm, 시내 0.6 cm 유지.

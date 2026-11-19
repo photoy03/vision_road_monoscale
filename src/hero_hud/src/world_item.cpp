@@ -925,6 +925,16 @@ void WorldItem::drawRoadPaint(VertexBuffer& out, const RoadPaint& paint,
       if (boundary.left) fitted_left = true; else fitted_right = true;
     }
   }
+  // 계획 33: 차로를 옮기는 동안 옆 차로 바깥 선(세 번째 선)을 내 차로 선과 같은 굵기, 조금 옅게 그린다.
+  const bool outer_fresh = now - paint.outer_stamp >= 0.0 && now - paint.outer_stamp < 0.35;
+  if (outer_fresh) {
+    for (const auto& line : paint.outer_lines) {
+      if (line.points.size() < 2) continue;
+      const Rgba outer_color = dim(kWhite, adapt(line.predicted ? 0.32f : 0.5f));
+      addWorldRibbon(out, line.points, 0.045f,
+                     std::vector<Rgba>(line.points.size(), outer_color));
+    }
+  }
   // 차선 전용 모드는 필터된 경계(/road/lane_display_markers)만 그린다. 원본 도색
   // 조각을 겹쳐 그리면 한 차선이 2~3가닥으로 갈라져 보이고 프레임마다 바뀐다.
   if (lane_only) return;

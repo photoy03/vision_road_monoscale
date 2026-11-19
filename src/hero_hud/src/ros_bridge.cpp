@@ -76,6 +76,14 @@ RosBridge::RosBridge(HudState* state) : state_(state) {
       [this](const visualization_msgs::msg::MarkerArray::SharedPtr in) {
         onRoadBoundary(in);
       });
+  // 계획 33: 차로 변경 중의 세 번째 선. 보내는 쪽이 없으면 아무것도 오지 않는다.
+  const auto outer_topic = node_->declare_parameter<std::string>(
+      "road.outer_topic", "/road/lane_display_outer");
+  sub_road_outer_ = node_->create_subscription<visualization_msgs::msg::MarkerArray>(
+      outer_topic, qos,
+      [this](const visualization_msgs::msg::MarkerArray::SharedPtr in) {
+        onRoadOuter(in);
+      });
   const auto style_topic = node_->declare_parameter<std::string>(
       "road.style_topic", "/road/lane_styles");
   sub_road_style_ = node_->create_subscription<vision_lane_interfaces::msg::LaneStyleArray>(
@@ -307,6 +315,7 @@ void RosBridge::onRoadBoundary(
         marker.type != visualization_msgs::msg::Marker::LINE_STRIP ||
         marker.header.frame_id != "base_link" || marker.points.size() < 2 ||
         latest_road_.boundaries.size() >= 2) continue;
+    if (marker.ns.find("_outer") != std::string::npos) continue;  // 옆 차로 선은 onRoadOuter
     const bool left = marker.ns.find("/left") != std::string::npos;
     const bool right = marker.ns.find("/right") != std::string::npos;
     if (!left && !right) continue;
@@ -318,6 +327,30 @@ void RosBridge::onRoadBoundary(
         line.points.push_back(Vec2{static_cast<float>(point.x),
                                    static_cast<float>(point.y)});
     if (line.points.size() >= 2) latest_road_.boundaries.push_back(std::move(line));
+  }
+  publishRoadPaint();
+}
+
+void RosBridge::onRoadOuter(
+    const visualization_msgs::msg::MarkerArray::SharedPtr in) {
+  latest_road_.outer_lines.clear();
+  latest_road_.outer_stamp = monotonicSeconds();
+  for (const auto& marker : in->markers) {
+    if (marker.action != visualization_msgs::msg::Marker::ADD ||
+        marker.type != visualization_msgs::msg::Marker::LINE_STRIP ||
+        marker.header.frame_id != "base_link" || marker.points.size() < 2 ||
+        latest_road_.outer_lines.size() >= 1) continue;
+    const bool left = marker.ns.find("/left_outer") != std::string::npos;
+    const bool right = marker.ns.find("/right_outer") != std::string::npos;
+    if (!left && !right) continue;
+    RoadLine line;
+    line.left = left;
+    line.predicted = marker.color.r > 0.5f;
+    for (const auto& point : marker.points)
+      if (std::isfinite(point.x) && std::isfinite(point.y))
+        line.points.push_back(Vec2{static_cast<float>(point.x),
+                                   static_cast<float>(point.y)});
+    if (line.points.size() >= 2) latest_road_.outer_lines.push_back(std::move(line));
   }
   publishRoadPaint();
 }
