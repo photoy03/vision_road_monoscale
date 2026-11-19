@@ -257,7 +257,7 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 1. (끝) 계획 30 기준선, 1–3회차. 표는 `results/town05_30hz/gt_loop_20261119/SUMMARY_KO.md` 에 있다.
 2. (끝) 마지막 HUD 영상 s3a, s5, s6, s7(`final_hud/`). 다시 만들 때 쓰는 명령:
    - `tools/realtime_eval.py --video town05_<장면> --output <폴더> --record --signs --signs-arg full_frame:=true imgsz:=1920 image_shm:=vision_road_dashcam --launch-arg display_filter_inline:=true lane_guidance:=true fake_vehicle_state:=true image_shm:=vision_road_dashcam`
-3. 남은 미달(검출기 쪽, 다음 계획 후보):
+3. 남은 미달(검출기 쪽) → **계획 31 로 진행 중**(2026-11-20 연구 세션이 개선 세션에 전달, 결과 폴더 `results/town05_30hz/gt_loop2_20261120/`, 규칙은 계획 30 과 같고 지연은 신호 끔 24.1 ms·켬 25.6 ms 를 넘기면 되돌림):
    - A5 오른쪽 옆 차로 재현율: s3a 73, s8c 78 %. 바깥 선이 짧게 보이거나 차가 비스듬할 때 놓친다.
    - B2 빠른 차로 변경(s8c 2/4, s3a 19/24): 선을 넘는 동안 검출이 끊긴다.
    - A1 p95 s3a 23 cm, A2 s3a 91 %.
@@ -268,7 +268,9 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 
 ## 8. 알려진 한계와 미해결
 
-- YOLO 모델은 신호등 3색과 속도 표지판 30/60/90 만 안다. 다시 학습하지 않는다. 실제 영상 정확도는 아직 모른다.
+- YOLO 모델은 신호등 3색과 속도 표지판 30/60/90 만 안다. 다시 학습하지 않는다. 실제 영상에서 신호등 표시율은 s7 80 %, s1·s8a·s8b 37–49 %, s8b 는 빨간불을 초록으로 약 33 % 읽는다. 미국식 사각형 SPEED LIMIT 표지판과 40 표지판은 못 본다(계획 30 에서 모델 한계로 닫음).
+- 신호를 켠 채의 차선 지연 p95 는 이 노트북에서 24.8–25.6 ms(공유 메모리 전달), 끄면 23–24 ms. 본체에서 다시 재야 한다.
+- 계획 30 의 평가는 정답 자료의 문제 구간을 뺐다. s4, s6, 그리고 s1·s8a·s8b 의 신호 오표시는 뺀 비율이 30 % 를 넘는다(`gt_loop_20261119/round_03/exclusions.md`).
 - 횡단보도는 정답 자료가 없다. 눈으로 본 캡처로만 판단한다.
 - HUD 는 안내 경로를 14 m 까지만 그려서, 더 먼 정지선에서 경로를 끊은 것은 화면에 안 보인다.
 - 정지 권고는 화면에 표시되지 않고 토픽으로만 나간다.
