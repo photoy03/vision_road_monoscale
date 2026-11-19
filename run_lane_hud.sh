@@ -15,13 +15,18 @@
 #                   draws the current path and the guidance takes its speed
 #   --crop-rows LO:HI   the replay sends only image rows LO..HI-1 (e.g. 578:984, the rows the lane
 #                   BEV reads; CameraInfo roi says which), a third of the image bytes
+#   --signs         traffic lights and speed signs (YOLO, src/yolo_signs, GPU) on the HUD: the detector
+#                   runs with the YOLO environment's Python (YOLO_PYTHON, default ~/yolo_env/bin/python)
+#                   and lane_guidance puts what it confirms into the HUD scene.  SIGNS_FULL_FRAME=true|false
+#                   (whole image or the original upper-centre tile), SIGNS_FPS (max inferences per second, 0 = all)
 # The HUD is this workspace's copy (src/hero_hud), built into install/.
 set -euo pipefail
 ROAD="$(cd "$(dirname "$0")" && pwd)"
 HUD_CONFIG=$ROAD/src/hero_hud/config/hud.yaml
 DISK=/media/jaehun/38F7-677B
 VIDEO=${1:-}; shift || true
-HUD=1; LOOP=0; FRAMES=0; LEARNED=""; GUIDANCE=true; FAKE_VS=false; CROP=()
+HUD=1; LOOP=0; FRAMES=0; LEARNED=""; GUIDANCE=true; FAKE_VS=false; CROP=(); SIGNS=false
+YOLO_PYTHON=${YOLO_PYTHON:-$HOME/yolo_env/bin/python}; SIGNS_FULL_FRAME=${SIGNS_FULL_FRAME:-true}; SIGNS_FPS=${SIGNS_FPS:-0}
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-hud) HUD=0;; --loop) LOOP=1;; --frames) FRAMES=$2; shift;;
@@ -29,6 +34,7 @@ while [ $# -gt 0 ]; do
     --no-guidance) GUIDANCE=false;;
     --fake-vehicle-state) FAKE_VS=true;;
     --crop-rows) CROP=(--crop-rows "$2"); shift;;
+    --signs) SIGNS=true;;
     *) echo "unknown option $1"; exit 2;;
   esac; shift
 done
@@ -36,8 +42,9 @@ case "$VIDEO" in
   maploop) BAG=$DISK/rosbag/maploop_30hz; CACHE=$ROAD/data/maploop30hz_native.cdrz;;
   town04)  BAG=$DISK/rosbag/town04_30hz;  CACHE=$DISK/vision-road-cache/town04_30hz_native.cdrz;;
   town05)  BAG=$DISK/rosbag/town05_30hz;  CACHE=$DISK/vision-road-cache/town05_30hz_native.cdrz;;
+  town05_signs) BAG=$DISK/rosbag/town05_signs; CACHE=$DISK/vision-road-cache/town05_signs_native.cdrz;;
   live)    BAG=;;
-  *) sed -n '2,18p' "$0"; exit 2;;
+  *) sed -n '2,22p' "$0"; exit 2;;
 esac
 set +u; source /opt/ros/humble/setup.bash; source "$ROAD/install/setup.bash"; set -u
 PIDS=()
@@ -48,8 +55,14 @@ cleanup() { for p in "${PIDS[@]}"; do kill -INT "$p" 2>/dev/null || true; done; 
 trap cleanup EXIT INT TERM
 
 # Detector with the display filter inside it (carla.yaml settings), reference pose adapter, TF.
-( exec "${SIGINT_EXEC[@]}" ros2 launch vision_road maploop.launch.py display_filter_inline:=true lane_guidance:=$GUIDANCE fake_vehicle_state:=$FAKE_VS $LEARNED ) &
+( exec "${SIGINT_EXEC[@]}" ros2 launch vision_road maploop.launch.py display_filter_inline:=true lane_guidance:=$GUIDANCE fake_vehicle_state:=$FAKE_VS signs:=$SIGNS $LEARNED ) &
 PIDS+=($!)
+if [ "$SIGNS" = true ]; then
+  # The YOLO environment (ultralytics for YOLO26) with this ROS environment sourced: it imports rclpy.
+  ( exec "${SIGINT_EXEC[@]}" "$YOLO_PYTHON" "$ROAD/src/yolo_signs/town05_yolo26m_detector.py" --ros-args \
+      -p full_frame:=$SIGNS_FULL_FRAME -p max_inference_fps:=$SIGNS_FPS ) &
+  PIDS+=($!)
+fi
 /usr/bin/python3 - <<'PY'
 import time,rclpy
 rclpy.init();n=rclpy.create_node('lane_hud_wait');end=time.monotonic()+40

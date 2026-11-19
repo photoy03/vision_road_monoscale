@@ -24,3 +24,6 @@ frames/
 *.o
 src/*/build/
 *.egg-info/
+
+# YOLO sign detector weights (plan 27): the model stays in ~/Desktop/town05_yolo26m_detector
+src/yolo_signs/*.pt

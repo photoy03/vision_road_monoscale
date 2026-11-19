@@ -10,7 +10,9 @@ Out: /hero/scene_overlay (hero_hud/SceneOverlay): has_ideal + ideal = the path (
      /hero/lane_guidance (std_msgs/String JSON): stamp, state (none/keep/return/change/forbidden),
      target (the target lane's current name), offset_m (car from the target centre, + left),
      lateral_speed_mps, speed_mps, shown, merge_m, changes (target moves so far), reason,
-     compute_ms, path [[x, y], ...].
+     compute_ms, light / speed_sign (what the scene shows, with signs.enabled), path [[x, y], ...].
+     With signs.enabled: /yolo/detections (std_msgs/String JSON, the YOLO detector) -> the scene's has_signal /
+     signal and has_sign / sign (traffic_signs.py).
 A process of its own, apart from the lane detector: it only reads the detector's output topics.
 NumPy's BLAS is held to one thread: its pool of spinning threads would take CPU from the detector for
 matrices this small."""
@@ -50,7 +52,22 @@ class LaneGuidanceNode(Node):
         from hero_hud.msg import VehicleState
         self.vehicle = None;self.vehicle_timeout = float(p('vehicle_state_timeout_sec', .3))  # (speed, receipt time)
         self.create_subscription(VehicleState, p('vehicle_state_topic', '/hero/vehicle_state'), self.on_vehicle, 10)
+        # signs.enabled: the traffic light state and speed sign from the YOLO detector (/yolo/detections, std_msgs/String
+        # JSON) go into the same scene (one publisher of /hero/scene_overlay).  Off: no subscription, nothing changes.
+        self.signs = None
+        if p('signs.enabled', False):
+            from .traffic_signs import SignTracker, SignSettings
+            sign_settings = SignSettings()
+            for name in sign_settings.__dataclass_fields__:
+                setattr(sign_settings, name, type(getattr(sign_settings, name))(p('signs.'+name, getattr(sign_settings, name))))
+            self.signs = SignTracker(sign_settings)
+            self.create_subscription(String, p('signs.topic', '/yolo/detections'), self.on_detections, 10)
+            self.get_logger().info('Traffic lights and speed signs from '+self.get_parameter('signs.topic').value+': '+str(sign_settings))
         self.get_logger().info('Lane guidance: '+str(settings))
+
+    def on_detections(self, msg):
+        data = json.loads(msg.data);stamp = data.get('stamp', {})
+        self.signs.update(float(stamp.get('sec', 0))+float(stamp.get('nanosec', 0))*1e-9, data.get('detections', []))
 
     def on_vehicle(self, msg):
         self.vehicle = (float(msg.speed_mps), time.monotonic())
@@ -91,12 +108,20 @@ class LaneGuidanceNode(Node):
             scene.ideal.points = [Point32(x=float(x), y=float(y), z=0.) for x, y in out.path]
             text, severity = TEXT[out.state]
             scene.has_coach = True;scene.coach.text = text;scene.coach.severity = severity;scene.coach.ttl_sec = .5
+        light = sign = None
+        if self.signs is not None:
+            light, sign = self.signs.state(t)
+            if light is not None:
+                scene.has_signal = True;scene.signal.state = {'red': scene.signal.STATE_RED, 'yellow': scene.signal.STATE_YELLOW, 'green': scene.signal.STATE_GREEN}[light]
+            if sign is not None:
+                scene.has_sign = True;scene.sign.kind = scene.sign.KIND_SPEED;scene.sign.value = float(sign);scene.sign.confidence = 1.
         self.scene_pub.publish(scene)
         compute = (time.perf_counter()-begin)*1e3
+        extra = dict(light=light, speed_sign=sign) if self.signs is not None else {}  # only with signs.enabled
         self.info_pub.publish(String(data=json.dumps(dict(
             stamp=t, state=out.state, target=out.target, offset_m=round(out.offset_m, 3), lateral_speed_mps=round(out.lateral_speed_mps, 3),
             speed_mps=round(out.speed_mps, 2), speed_source='vehicle_state' if speed is not None else 'pose', shown=out.shown, merge_m=round(out.merge_m, 1), changes=out.changes, reason=out.reason,
-            compute_ms=round(compute, 3), path=[] if out.path is None else [[round(float(x), 2), round(float(y), 3)] for x, y in out.path]),
+            compute_ms=round(compute, 3), **extra, path=[] if out.path is None else [[round(float(x), 2), round(float(y), 3)] for x, y in out.path]),
             separators=(',', ':'))))
 
 

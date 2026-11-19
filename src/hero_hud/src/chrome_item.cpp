@@ -185,7 +185,7 @@ QString ChromeItem::contentKey(HudMode mode, const VehicleState& v,
                      .arg(scene->signal.arrow_right ? 1 : 0)
                : QString();
     key += '|';
-    key += scene->has_sign ? QString::number(scene->sign.kind) : QString();
+    key += scene->has_sign ? QStringLiteral("%1:%2").arg(scene->sign.kind).arg(static_cast<int>(scene->sign.value)) : QString();
   }
   return key;
 }
@@ -240,6 +240,9 @@ QImage ChromeItem::render(int w, int h, HudMode mode, const VehicleState& v,
   // 판단이므로 코칭 심각도를 그대로 쓴다.
   const bool urgent = (scene != nullptr && scene->has_coach &&
                        scene->coach.severity >= Severity::Warn);
+  // 차선 전용 모드의 신호·표지판(road.lane_only_signals): 차량 상태가 없어 mode 가 Normal 이 아니어도
+  // 신호와 표지판만 그린다. 코칭 심각도(차선 안내)로 표지판을 지우지 않는다 — 여기의 코칭은 차선 안내다.
+  const bool lane_signs = config_.road_lane_only && config_.road_lane_only_signals;
 
   // --- 상단: 신호 ---
   //
@@ -262,8 +265,9 @@ QImage ChromeItem::render(int w, int h, HudMode mode, const VehicleState& v,
   const bool signal_acts =
       scene != nullptr && scene->has_signal &&
       (scene->signal.state == SignalState::Red ||
-       scene->signal.state == SignalState::Yellow);
-  if (mode == HudMode::Normal && signal_acts) {
+       scene->signal.state == SignalState::Yellow ||
+       (lane_signs && config_.road_lane_only_green && scene->signal.state == SignalState::Green));
+  if ((mode == HudMode::Normal || lane_signs) && signal_acts) {
     // 코리도의 먼 끝 바로 위. "저 앞의 신호"라는 뜻이 자리로 붙는다.
     //
     // **크기는 각도 예산이 정한다.** 이전에는 상단 띠 높이(zone_top 0.13)에서
@@ -280,7 +284,8 @@ QImage ChromeItem::render(int w, int h, HudMode mode, const VehicleState& v,
     const double cy = std::max(top_h * 0.52, r + 6.0);
 
     const QColor c =
-        (scene->signal.state == SignalState::Red) ? kRed : kAmber;
+        (scene->signal.state == SignalState::Red) ? kRed
+        : (scene->signal.state == SignalState::Green) ? kGreen : kAmber;
     const bool visible =
         (scene->signal.state != SignalState::Yellow) || blink_on_;
     if (visible) {
@@ -300,6 +305,10 @@ QImage ChromeItem::render(int w, int h, HudMode mode, const VehicleState& v,
         tri << QPointF(cx, cy - r) << QPointF(cx + r * 0.92, cy + r * 0.62)
             << QPointF(cx - r * 0.92, cy + r * 0.62);
         p.drawPolygon(tri);
+      } else if (scene->signal.state == SignalState::Green) {
+        // road.lane_only_green 에서만 온다: 녹색 원(적 팔각형·황 삼각형과 형태로도 구별).
+        p.setBrush(A(kGreen));
+        p.drawEllipse(QPointF(cx, cy), r * 0.9, r * 0.9);
       }
     }
 
@@ -327,7 +336,7 @@ QImage ChromeItem::render(int w, int h, HudMode mode, const VehicleState& v,
   //
   // SVG 자산을 고대비 잉크로 바꿔 크게 띄운다. 자산을 파일로 둔 덕에 나중에
   // 공식 표지판 SVG 를 같은 디렉터리에 넣으면 코드를 안 고치고 바뀐다.
-  if (mode == HudMode::Normal && !urgent && scene != nullptr && scene->has_sign) {
+  if ((lane_signs || (mode == HudMode::Normal && !urgent)) && scene != nullptr && scene->has_sign) {
     // 우측 컬럼. 코리도가 절대 안 쓰는 자리이고, 배경 모형에서 위쪽(하늘)보다
     // 어두워 같은 출력으로 대비가 더 난다.
     const double side = std::min(right_w * 0.72, h * 0.21);
@@ -355,6 +364,19 @@ QImage ChromeItem::render(int w, int h, HudMode mode, const VehicleState& v,
                    Qt::AlignCenter,
                    QString::number(static_cast<int>(scene->sign.value)));
       }
+    } else if (lane_signs && scene->sign.kind == 2) {
+      // SVG 자산 없이(Qt5Svg 없는 빌드) 차선 전용 모드: 제한속도 표지의 붉은 테두리와 숫자.
+      // 흰 바탕은 가산광에서 빛 덩어리라 그리지 않는다(검정 = 투명).
+      p.setPen(QPen(A(kRed), std::max<double>(budget.stroke_px, side * 0.10)));
+      p.setBrush(Qt::NoBrush);
+      p.drawEllipse(QPointF(cx, cy), side * 0.44, side * 0.44);
+      QFont f;
+      f.setPixelSize(static_cast<int>(side * 0.42));
+      f.setBold(true);
+      p.setFont(f);
+      p.setPen(A(kContext));
+      p.drawText(QRectF(cx - side * 0.5, cy - side * 0.5, side, side), Qt::AlignCenter,
+                 QString::number(static_cast<int>(scene->sign.value)));
     }
   }
 
@@ -378,7 +400,7 @@ QImage ChromeItem::render(int w, int h, HudMode mode, const VehicleState& v,
   const Gear advised = (mode == HudMode::Normal && scene != nullptr)
                            ? scene->advised_gear
                            : Gear::Unknown;
-  if (mode != HudMode::Waiting &&
+  if (!lane_signs && mode != HudMode::Waiting &&
       (v.gear != Gear::Unknown || advised != Gear::Unknown)) {
     const bool pending = (advised != Gear::Unknown && advised != v.gear);
     // 좌측 컬럼 **아래쪽**. 기어는 "지금 여기"의 정보이므로 자차(화면 바닥)
@@ -398,7 +420,7 @@ QImage ChromeItem::render(int w, int h, HudMode mode, const VehicleState& v,
   }
 
   // --- 대기 안내 ---
-  if (mode == HudMode::Waiting) {
+  if (mode == HudMode::Waiting && !lane_signs) {
     const double r = std::min(w, h) * 0.06;
     p.setPen(QPen(QColor(110, 110, 110), std::max<double>(4.0, budget.stroke_px)));
     p.setBrush(Qt::NoBrush);
@@ -425,6 +447,11 @@ QSGNode* ChromeItem::updatePaintNode(QSGNode* old_node, UpdatePaintNodeData*) {
   const VehicleState vehicle = state_->vehicle();
   const auto scene = state_->scene();
   const SceneModel* scene_ptr = (mode == HudMode::Normal) ? scene.get() : nullptr;
+  if (config_.road_lane_only && config_.road_lane_only_signals) {
+    // 차선 전용 모드의 신호·표지판: 장면이 신선하면 mode 와 상관없이 쓴다.
+    scene_ptr = (scene && now - scene->stamp >= 0.0 && now - scene->stamp < config_.scene_timeout_sec)
+                    ? scene.get() : nullptr;
+  }
 
   // 점멸은 시간 채널이므로 내용 지문에 위상을 넣어야 텍스처가 갱신된다.
   blink_on_ = std::fmod(now, 0.85) < 0.55;

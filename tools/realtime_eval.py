@@ -27,7 +27,8 @@ HUD_CONFIG=ROOT/'src/hero_hud/config/hud.yaml'
 DISK=Path(os.environ.get('VISION_ROAD_DISK','/media/jaehun/38F7-677B'))
 VIDEOS=dict(maploop=(DISK/'rosbag/maploop_30hz',ROOT/'data/maploop30hz_native.cdrz'),
             town04=(DISK/'rosbag/town04_30hz',DISK/'vision-road-cache/town04_30hz_native.cdrz'),
-            town05=(DISK/'rosbag/town05_30hz',DISK/'vision-road-cache/town05_30hz_native.cdrz'))
+            town05=(DISK/'rosbag/town05_30hz',DISK/'vision-road-cache/town05_30hz_native.cdrz'),
+            town05_signs=(DISK/'rosbag/town05_signs',DISK/'vision-road-cache/town05_signs_native.cdrz'))
 
 
 def key(stamp):return stamp.sec*1000000000+stamp.nanosec
@@ -66,6 +67,9 @@ def main():
     ap.add_argument('--no-hud',action='store_true');ap.add_argument('--record',action='store_true',help='HUD screen recording (frames to OUTPUT/hud_frames)')
     ap.add_argument('--launch-arg',nargs='*',default=[],help='extra maploop.launch.py arguments, name:=value')
     ap.add_argument('--replay-cpus',default='',help="CPUs for the replay tool, e.g. '0-13' (taskset); default: any")
+    ap.add_argument('--signs',action='store_true',help='also the YOLO traffic light / speed sign detector (src/yolo_signs, '
+                    'YOLO_PYTHON or ~/yolo_env/bin/python) and lane_guidance signs:=true; its per-frame times go to OUTPUT/signs_stats.json')
+    ap.add_argument('--signs-arg',nargs='*',default=[],help='detector parameters name:=value, e.g. full_frame:=true max_inference_fps:=10')
     ap.add_argument('--crop-rows',default='',help="replay sends only these image rows (LO:HI, replay_maploop.py --crop-rows); default: full images")
     a=ap.parse_args();a.output.mkdir(parents=True,exist_ok=True);bag,cache=VIDEOS[a.video]
     rclpy.init();node=Node('road_realtime_eval');arrivals={'boundary':{},'display':{},'paint':{}};content={'boundary':{},'display':{}}
@@ -95,7 +99,18 @@ def main():
     try:
         cmd=['bash','-c','source /opt/ros/humble/setup.bash && source "$0/install/setup.bash" && exec ros2 launch vision_road maploop.launch.py "$@"',
              str(ROOT),'performance_report:='+str(node_timing)]+a.launch_arg
+        if a.signs:cmd.append('signs:=true')
         road=subprocess.Popen(cmd,stdout=logs['road'],stderr=subprocess.STDOUT,start_new_session=True);procs.append(road)
+        if a.signs:
+            yolo=os.environ.get('YOLO_PYTHON',str(Path.home()/'yolo_env/bin/python'));params=[]
+            for kv in a.signs_arg+['stats_path:='+str(a.output/'signs_stats.json')]:params+=['-p',kv]
+            signs=subprocess.Popen(['bash','-c','source /opt/ros/humble/setup.bash && source "$0/install/setup.bash" && exec "$@"',str(ROOT),
+                                    yolo,str(ROOT/'src/yolo_signs/town05_yolo26m_detector.py'),'--ros-args']+params,
+                                   stdout=(a.output/'signs.log').open('w'),stderr=subprocess.STDOUT,start_new_session=True);procs.append(signs)
+            deadline=time.monotonic()+90  # the model loads in a few seconds; its publisher appears after that
+            while node.count_publishers('/yolo/detections')<1 and time.monotonic()<deadline:
+                if signs.poll() is not None:raise RuntimeError('sign detector exited; see signs.log')
+                rclpy.spin_once(node,timeout_sec=.1)
         deadline=time.monotonic()+30
         while node.count_publishers('/road/lane_display_markers')<1 and time.monotonic()<deadline:
             if road.poll() is not None:raise RuntimeError('road launch exited; see road.log')

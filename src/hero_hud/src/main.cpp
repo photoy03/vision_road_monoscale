@@ -74,7 +74,8 @@ int main(int argc, char** argv) {
 
   auto* chrome = new hero_hud::ChromeItem(window.contentItem());
   chrome->configure(&state, config);
-  if (config.road_lane_only) chrome->setVisible(false);
+  // 차선 전용 모드는 고정 자리를 숨긴다. road.lane_only_signals 이면 신호·표지판만 남긴다(chrome_item.cpp).
+  if (config.road_lane_only && !config.road_lane_only_signals) chrome->setVisible(false);
 
   const auto fit = [&window, world, chrome, &config]() {
     const double w = window.width();

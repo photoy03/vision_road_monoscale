@@ -36,6 +36,10 @@ def generate_launch_description():
         # Until the driving node (src/hero_calib --ros-output) runs: /hero/vehicle_state and /hero/steering_wheel
         # made up from /road/reference_odom (tools/fake_vehicle_state.py). Off by default.
         DeclareLaunchArgument('fake_vehicle_state',default_value='false'),
+        # Traffic lights and speed signs (plan 27): the YOLO detector (src/yolo_signs, the YOLO environment's
+        # Python, started by run_lane_hud.sh --signs) publishes /yolo/detections; signs:=true makes lane_guidance
+        # put the confirmed light and speed sign into its /hero/scene_overlay.  Off by default.
+        DeclareLaunchArgument('signs',default_value='false'),
         ExecuteProcess(cmd=['python3',os.path.join(os.path.dirname(os.path.realpath(__file__)),'..','..','..','tools','fake_vehicle_state.py')],
                        name='fake_vehicle_state',output='screen',condition=IfCondition(LaunchConfiguration('fake_vehicle_state'))),
         Node(package='vision_road',executable='road_node',name='vision_road',output='screen',parameters=[share+'/config/carla.yaml',{
@@ -60,7 +64,8 @@ def generate_launch_description():
              parameters=[share+'/config/carla.yaml',{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
         Node(package='hero_coach',executable='lane_guidance',name='lane_guidance',output='screen',
              condition=IfCondition(LaunchConfiguration('lane_guidance')),
-             parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
+             parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time'),
+                          'signs.enabled':ParameterValue(LaunchConfiguration('signs'),value_type=bool)}]),
         Node(package='vision_road',executable='reference_pose',condition=IfCondition(LaunchConfiguration('reference_pose')),
              parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time')}]),
         Node(package='tf2_ros',executable='static_transform_publisher',arguments=[

@@ -77,6 +77,12 @@ struct HudConfig {
   //   dots   가운데 점선(0.5 m 점, 1.5 m 주기; 차선 점선 3 m/3 m 와 다른 무늬)
   //   none   그리지 않는다 ("off" 는 YAML 에서 불로 읽혀 쓰지 않는다)
   // 코드 기본값은 fill(계획 23 그대로). 고른 모양은 config/hud.yaml 에서 켠다.
+  // 차선 전용 모드에서도 신호 인디케이터와 표지판(우측 고정 자리)만 그린다. 기어·대기 표시 등 다른
+  // 고정 자리 요소는 계속 숨긴다. 신호·표지판은 장면(/hero/scene_overlay)이 신선할 때만, 차량 상태가
+  // 없어도 그린다. SVG 자산이 없으면(Qt5Svg 없이 빌드) 속도 표지판은 붉은 테두리와 숫자로 그린다.
+  bool road_lane_only_signals{false};
+  // 위와 함께: 녹색 신호도 그린다(일반 모드는 행동을 요구하는 적·황만 그린다, HUD_전략.md).
+  bool road_lane_only_green{false};
   std::string road_current_path_style{"fill"};
   // 얇은 선(edges/centre/dots)의 길이(m, 후륜축부터 호를 따라). 0 이면 화면 범위 끝까지.
   float road_current_path_m{0.0f};

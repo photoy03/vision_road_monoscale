@@ -89,6 +89,12 @@ hero_hud:
       # 8 m 까지만 그린다(계획 24): 점 무늬는 차선(실선, 3 m/3 m 점선)과 다르고, 한 줄이라 안내 경로의
       # 차폭 두 줄과 겹치지 않는다. 8 m 를 넘으면 일정 조향의 호가 실제 진행과 크게 어긋난다
       # (원본 녹화 RMS 8 m 31 cm, 10 m 62 cm). 다른 값: fill, edges, centre, none. length_m 0 은 화면 끝까지.
+      # 차선 전용 모드에서도 신호(상단)와 속도 표지판(우측)만 그린다. 신호·표지판은 lane_guidance 가
+      # /yolo/detections 에서 확정해 /hero/scene_overlay 에 싣는다(run_lane_hud.sh --signs, 계획 27).
+      # 그 토픽이 없으면 장면에 신호·표지판이 없어 아무것도 그리지 않는다. lane_only_green: 녹색도 그린다
+      # (일반 모드는 행동을 요구하는 적·황만 그린다, HUD_전략.md).
+      lane_only_signals: true
+      lane_only_green: false
       current_path:
         style: dots
         length_m: 8.0
