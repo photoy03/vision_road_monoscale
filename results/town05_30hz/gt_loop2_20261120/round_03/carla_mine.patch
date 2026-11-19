@@ -1,0 +1,41 @@
+--- a/src/vision_road/vision_road/carla.py
++++ b/src/vision_road/vision_road/carla.py
+@@ -275,7 +275,7 @@
+             if lane.points[0,0]>12.:continue
+             anchor=float(interp(np.clip(8.,lane.points[0,0],lane.points[-1,0]),lane.points[:,0],lane.points[:,1]))
+             side='left' if anchor>0 else 'right'
+-            if not .65<=abs(anchor)<=4.8:continue
++            if not c.carla_own_min_m<=abs(anchor)<=4.8:continue
+             if lane.side!=side:continue
+             span=float(np.ptp(lane.points[:,0]))
+             quality=.45*lane.confidence+.45*min(span/15.,1.)-.08*abs(anchor)
+@@ -756,7 +756,7 @@
+         # extrapolate to the other side, so off-corridor ones join by chain
+         # only. Beyond 15 m a straight extrapolation is trusted only for a
+         # root nearly parallel to the heading.
+-        rootable=(anchor>=.65)&(anchor<=4.2)&((first<=15.)|(np.abs(slope)<=.08))
++        rootable=(anchor>=self.c.carla_own_min_m)&(anchor<=4.2)&((first<=15.)|(np.abs(slope)<=.08))
+         def best_path(side,excluded):
+             if native:
+                 # The same DP in _native: the same additions in the same order (carla_native_chain).
+@@ -926,9 +926,9 @@
+         outer=c.carla_outer_enabled;extra=[]
+         if outer:self.outer_paint=mask.copy()
+         def far_out(anchor,hi):
+-            return c.forward_max-hi*c.mpp<=8. and not .65<=abs(anchor)<=4.2
++            return c.forward_max-hi*c.mpp<=8. and not c.carla_own_min_m<=abs(anchor)<=4.2
+         if c.carla_native_enabled and _native is not None:
+-            fragments=_native.extract_fragments(mask,self.yellow,c.mpp,c.forward_max,c.lateral_min,c.carla_outer_reach_m if outer else 4.2)
++            fragments=_native.extract_fragments(mask,self.yellow,c.mpp,c.forward_max,c.lateral_min,c.carla_outer_reach_m if outer else 4.2,c.carla_own_min_m)
+             edges=None
+             if c.carla_native_fast:
+                 # The curb test for all white fragments in one call (the same sums as edge_like).
+@@ -960,7 +960,7 @@
+                     if axis_y2<.35**2 or normal_width>.10 or vy<=0:continue
+                     slope=cov/vy;line=(slope,mx-slope*my)
+                     anchor=c.lateral_min+(line[0]*((c.forward_max-3.)/c.mpp)+line[1])*c.mpp
+-                    beyond=c.forward_max-y.max()*c.mpp<=8. and not .65<=abs(anchor)<=4.2
++                    beyond=c.forward_max-y.max()*c.mpp<=8. and not c.carla_own_min_m<=abs(anchor)<=4.2
+                     if beyond and not (outer and abs(anchor)<=c.carla_outer_reach_m):continue
+                     rows=np.unique(y);cols=np.bincount(y,weights=x)[rows]/np.bincount(y)[rows]
+                     residual=np.sort(np.abs(cols-(line[0]*rows+line[1])))

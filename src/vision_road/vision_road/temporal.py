@@ -81,7 +81,7 @@ class TemporalDetector:
                     lane.style='dashed';lane.style_confidence=.7;lane.style_source_time=float(t)
 
     def reset(self):
-        self.odometer=0.;self.odom_pose=None;self.style_cells={};self.style_odo={};self.centre_styles={}
+        self.odometer=0.;self.odom_pose=None;self.style_cells={};self.style_odo={};self.centre_styles={};self.centre_heading={}
         self.tracks={}; self.last_pose=None; self.last_time=None; self.gray=None; self.valid=None
         self.registration='none'; self.measured_count=0; self.predicted_count=0
         self.paint_history=[];self.style_binary=None
@@ -287,6 +287,21 @@ class TemporalDetector:
                 points=centreline.shifted(one.points,width,side);width_now=width
             ref=centreline.at_reference(points,c.carla_centre_ref_m,c.carla_centre_curvature_m,c.carla_centre_heading_m)
             if ref is None:continue
+            # carla_centre_heading_alpha (plan 31): the heading at the reference smoothed in the world frame (the car's
+            # yaw added, last frame's value moved on by the curvature over the distance travelled), so the
+            # frame-to-frame noise of the fit averages out while the car's own turning does not lag.
+            pose=self.detector.pose
+            if c.carla_centre_heading_alpha>0 and pose is not None and not estimated:
+                world=ref['heading_rad']+pose[3];prev=self.centre_heading.get(name)
+                # Only while the car hardly turns (a lane change or a swerve: the fresh value, no lag for the guidance).
+                now=self.last_time if self.last_time is not None else 0.;rate=0.
+                if prev is not None and now>prev[3]:rate=abs(math.atan2(math.sin(pose[3]-prev[2]),math.cos(pose[3]-prev[2])))/(now-prev[3])
+                if prev is not None and 0<=self.odometer-prev[1]<=2. and rate<=c.carla_centre_heading_turn:
+                    predicted=prev[0]+ref['curvature_1pm']*(self.odometer-prev[1])
+                    world=predicted+c.carla_centre_heading_alpha*math.atan2(math.sin(world-predicted),math.cos(world-predicted))
+                self.centre_heading[name]=(world,self.odometer,pose[3],now)
+                ref['heading_rad']=world-pose[3];ref['offset_at_axle_m']=ref['offset_m']-ref['ref_x_m']*math.tan(ref['heading_rad'])
+            elif name in self.centre_heading:del self.centre_heading[name]
             left,right=describe(lo),describe(hi)
             lane=dict(name=name,index=index,points=points,both_m=both,width_m=round(width_now,3),tracked_width_m=round(float(width),3),
                       estimated=estimated,left_boundary=left,right_boundary=right,**{k:(round(v,4) if isinstance(v,float) else v) for k,v in ref.items()})

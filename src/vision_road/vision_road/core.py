@@ -103,6 +103,7 @@ class Settings:
     carla_yellow_relative_min: float = 0.0  # >0: paint whose yellowness (r+g)/2-b is this much above the local road level (and itself) is yellow
     carla_yellow_relative_window_m: float = 1.5  # square window of the local road level (median)
     carla_outer_enabled: bool = False  # also pick each side's neighbouring lane outer line from the paint left over (own lines unchanged)
+    carla_own_min_m: float = 0.65  # the own lines start at least this far to the side (lateral at their anchor)
     carla_outer_reach_m: float = 6.0  # near fragments are kept this far out (lateral at 3 m) for it; the own lines still see only 0.65-4.2 m
     carla_outer_gap_min_m: float = 2.3  # distance from the own line, along its normal
     carla_outer_gap_max_m: float = 4.7
@@ -116,6 +117,8 @@ class Settings:
     carla_centre_enabled: bool = False  # lane centrelines: own lane (left-right) and, with carla_outer_enabled, the neighbouring lanes
     carla_centre_ref_m: float = 5.0  # lateral offset, heading and curvature are given at this distance ahead (inside the view)
     carla_centre_curvature_m: float = 15.0  # ... from a quadratic through this much centreline past it
+    carla_centre_heading_alpha: float = 0.0  # >0: the reference heading smoothed in the world frame with this weight for the new value
+    carla_centre_heading_turn: float = 0.05  # ... only while the car turns slower than this (rad/s)
     carla_centre_heading_m: float = 0.0  # >0: the offset and heading from only this much past it (curve onsets)
     carla_centre_width_alpha: float = 0.2  # running lane width (for a lane with one boundary): weight of a measured width
 

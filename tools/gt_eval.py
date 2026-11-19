@@ -309,7 +309,7 @@ def lane_at(r, x):
 def metrics(a):
     gt = ground_truth(a.scene);pred = {round(r['stamp'], 4): r for r in (json.loads(l) for l in gzip.open(a.out/'predictions.jsonl.gz', 'rt'))}
     res = dict(scene=a.scene, frames=len(gt));A1 = {f'{s}_{int(x)}m': [] for s in ('left', 'right') for x in XS};A2 = dict(left=[0, 0], right=[0, 0])
-    A3s = dict(left=[0, 0, 0], right=[0, 0, 0]);A3c = dict(left=[0, 0, 0], right=[0, 0, 0]);A4o = [];A4h = [];A4e = [];A4z = [];A1m = [];A1i = [0, 0]
+    A3s = dict(left=[0, 0, 0], right=[0, 0, 0]);A3c = dict(left=[0, 0, 0], right=[0, 0, 0]);A4o = [];A4h = [];A4e = [];A4z = [];A4oc = [];A4hc = [];A1m = [];A1i = [0, 0]
     A5 = {s: dict(tp=0, fp=0, fn=0, tn=0, opp=[0, 0], cross=[0, 0], vis=[0, 0]) for s in ('left', 'right')};used = 0;bad_gt = []
     shown_far = [0, 0];shown_centre = [0, 0];guidance_frames = [];shown_far_gt = [0, 0];shown_centre_gt = [0, 0];painted = 0
     # GT errors: frames where the GT own-lane boundary is not on the paint (semantic camera, paint_stops) by more than
@@ -383,6 +383,13 @@ def metrics(a):
                 hg = math.atan2(y2-y1, 2*d) if y1 is not None and y2 is not None else None
                 (A4e if c.get('estimated') else A4o).append(abs(c['offset_m']-yg))
                 if hg is not None and not c.get('estimated'):A4h.append(abs(math.degrees(c['heading_rad']-hg)))
+                # For reference (plan 31): the GT centreline has a point every 2 m, so the chord above is one segment's
+                # slope; a quadratic through the GT points within x0 +- 4 m instead (A4_*_fit).  It scored slightly worse
+                # (s1 heading p95 1.81 -> 2.01 deg): the tails are real errors at curve starts and ends, not GT steps.
+                near = gc[np.abs(gc[:, 0]-x0) <= 4.]
+                if len(near) >= 3 and not c.get('estimated'):
+                    q = np.polyfit(near[:, 0]-x0, near[:, 1], 2)
+                    A4oc.append(abs(c['offset_m']-float(q[2])));A4hc.append(abs(math.degrees(c['heading_rad']-math.atan(float(q[1])))))
             y = c['offset_m']+(BASE_FROM_ORIGIN-c['ref_x_m'])*math.tan(c['heading_rad'])
             A4z.append(abs(-y-r['lateral_offset_m']))
         for side in ('left', 'right'):
@@ -419,6 +426,7 @@ def metrics(a):
     res['A3_style'] = {s: dict(accuracy=round(v[0]/v[2], 4) if v[2] else None, known=round(v[1]/v[2], 4) if v[2] else None, n=v[2]) for s, v in A3s.items()}
     res['A3_colour'] = {s: dict(accuracy=round(v[0]/v[2], 4) if v[2] else None, n=v[2]) for s, v in A3c.items()}
     res['A4_offset_m'] = stats(A4o);res['A4_heading_deg'] = stats(A4h);res['A4_coverage'] = round((len(A4o)+len(A4e))/max(used, 1), 4)
+    res['A4_offset_fit_m'] = stats(A4oc);res['A4_heading_fit_deg'] = stats(A4hc)
     res['A4_offset_estimated_m'] = stats(A4e);res['A4_at_origin_m'] = stats(A4z)
     res['A5'] = {s: dict(precision=round(q['tp']/max(q['tp']+q['fp'], 1), 4), recall=round(q['tp']/max(q['tp']+q['fn'], 1), 4),
                          opposite_accuracy=round(q['opp'][0]/q['opp'][1], 4) if q['opp'][1] else None,

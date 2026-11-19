@@ -1,0 +1,5 @@
+s8c_lanechange_20kmh 0 1564
+s8c_lanechange_20kmh 500 1564
+s8c_lanechange_20kmh 1000 1564
+s8c_lanechange_20kmh 1500 1564
+s8c_lanechange_20kmh process mean 19.35 p95 36.98 ms

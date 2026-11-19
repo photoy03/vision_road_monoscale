@@ -1,0 +1,30 @@
+[INFO] [launch]: All log files can be found below /home/jaehun/.ros/log/2026-11-20-03-24-57-616038-ros-111176
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [fake_vehicle_state-1]: process started with pid [111192]
+[INFO] [road_node-2]: process started with pid [111194]
+[INFO] [lane_guidance-3]: process started with pid [111196]
+[INFO] [reference_pose-4]: process started with pid [111198]
+[INFO] [static_transform_publisher-5]: process started with pid [111200]
+[static_transform_publisher-5] [INFO] [1795112697.687666599] [static_transform_publisher_phzSSk8Q3RExcM2c]: Spinning until stopped - publishing transform
+[static_transform_publisher-5] translation: ('2.200000', '0.000000', '1.400000')
+[static_transform_publisher-5] rotation: ('-0.500000', '0.500000', '-0.500000', '0.500000')
+[static_transform_publisher-5] from 'base_link' to 'dashcam_optical_link'
+[road_node-2] [INFO] [1795112698.176056674] [vision_road]: Learned lane mask: off
+[road_node-2] [INFO] [1795112698.277999480] [vision_road]: Display filter in the perception worker, published there: FilterSettings(confirm_window=8, confirm_hits=5, start_span_m=6.0, update_span_m=3.0, max_start_m=12.0, min_cutoff_hz=0.3, beta=0.5, d_cutoff_hz=1.0, gate_m=0.3, gate_frames=3, near_m=0.0, far_m=20.0, step_m=0.5, extend_m=3.0, hold_s=1.0, odom_timeout_s=0.2, odom_lost_hold_s=0.2, style_stable_s=0.5, restart_s=0.5, style_memory_s=10.0, dashed_min_confidence=0.6, memory_m=10.0, memory_store_m=4.0, memory_gate_m=0.25, fit_near_m=0.0, cubic_m=0.05, cubic_ridge=0.001, gate_span=True, gate_per_10m=1.0, seen_frames=3, end_from_seen=True, start_from_seen=True, outside_quadratic=True, outside_fade_m=6.0, near_quadratic_m=6.0)
+[reference_pose-4] [WARN] [1795112698.296922821] [maploop_reference_pose]: Evaluation reference from CARLA truth; this is not estimated odometry
+[fake_vehicle_state-1] [INFO] [1795112698.326694969] [fake_vehicle_state]: Fake vehicle state from /road/reference_odom (wheelbase 2.7 m, ratio 14.27)
+[lane_guidance-3] [INFO] [1795112698.354980454] [lane_guidance]: Lane guidance: GuidanceSettings(ref_m=5.0, on_m=0.25, off_m=0.2, change_speed_mps=0.25, change_sec=0.6, change_gap_sec=0.15, change_line_m=0.5, half_width_m=0.91, match_m=0.5, carry_sec=1.5, settle_sec=0.5, near_m=15.0, turn_angle=0.9, turn_window_sec=3.0, implausible=1.3, memory_sec=1.5, near_window_m=3.0, merge_sec=3.0, merge_min_m=10.0, merge_max_m=30.0, merge_per_m=8.0, tail_m=6.0, step_m=0.5, speed_tau_sec=0.3, offset_tau_sec=0.1, trust_single_line=True, change_without_neighbour=True, keep_target_far=True, offset_at_m=1.4096)
+[road_node-2] [INFO] [1795112698.770207272] [vision_road_perception]: Perception worker: the BEV reads image rows 580-981 of 1920x1080; a row-cropped image (CameraInfo roi) must hold them
+[road_node-2] [INFO] [1795112698.812409805] [vision_road]: Road detector ready: carla; image processing only, no learned model
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[INFO] [static_transform_publisher-5]: sending signal 'SIGINT' to process[static_transform_publisher-5]
+[INFO] [reference_pose-4]: sending signal 'SIGINT' to process[reference_pose-4]
+[INFO] [lane_guidance-3]: sending signal 'SIGINT' to process[lane_guidance-3]
+[INFO] [road_node-2]: sending signal 'SIGINT' to process[road_node-2]
+[INFO] [fake_vehicle_state-1]: sending signal 'SIGINT' to process[fake_vehicle_state-1]
+[static_transform_publisher-5] [INFO] [1795112771.243858793] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[INFO] [static_transform_publisher-5]: process has finished cleanly [pid 111200]
+[INFO] [reference_pose-4]: process has finished cleanly [pid 111198]
+[INFO] [fake_vehicle_state-1]: process has finished cleanly [pid 111192]
+[INFO] [lane_guidance-3]: process has finished cleanly [pid 111196]
+[INFO] [road_node-2]: process has finished cleanly [pid 111194]

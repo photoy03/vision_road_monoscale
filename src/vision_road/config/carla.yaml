@@ -84,6 +84,9 @@ vision_road:
     # Plan 31: an outer line at last frame's distance stays with 1.2 m of paint (a new one still needs 2 m): a
     # short view of it (2-4 m, or the car at an angle) keeps the neighbouring lane (s8c recall 78 -> 86 %).
     carla_outer_min_paint_kept_m: 1.2
+    # Plan 31: an own line may start right under the car (was 0.65 m to the side at least): while the car centre
+    # is on a line the lines stay detected (s5 lane changes 3 -> 4/4, return guidance s3a 65 -> 86 %).
+    carla_own_min_m: 0.0
     # Lane centrelines (own lane; the neighbouring lanes beside their outer lines), across the lane, with
     # offset, heading and curvature 5 m ahead.  /road/lane_centres, /road/lane_centre_markers.
     carla_centre_enabled: true

@@ -111,6 +111,18 @@
   "max": 3.6065
  },
  "A4_coverage": 0.3423,
+ "A4_offset_fit_m": {
+  "n": 354,
+  "median": 0.0614,
+  "p95": 0.0984,
+  "max": 0.1944
+ },
+ "A4_heading_fit_deg": {
+  "n": 354,
+  "median": 0.0818,
+  "p95": 2.8719,
+  "max": 3.6049
+ },
  "A4_offset_estimated_m": {
   "n": 2,
   "median": 0.215,

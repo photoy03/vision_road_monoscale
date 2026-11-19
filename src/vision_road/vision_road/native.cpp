@@ -9,7 +9,7 @@ namespace py=pybind11;
 using Bytes=py::array_t<unsigned char,py::array::c_style|py::array::forcecast>;
 using Points=py::array_t<double,py::array::c_style|py::array::forcecast>;
 struct Fragment {std::vector<int>x,y;std::vector<double>points;double m,b,lo,hi,width;bool yellow;};
-py::list extract(Bytes mask,Bytes yellow,double mpp,double forward,double lateral,double reach){
+py::list extract(Bytes mask,Bytes yellow,double mpp,double forward,double lateral,double reach,double own_min){
  auto mb=mask.request(),yb=yellow.request();
  if(mb.ndim!=2||yb.ndim!=2||mb.shape!=yb.shape||mpp<=0)throw std::invalid_argument("Invalid fragment images");
  int h=mb.shape[0],w=mb.shape[1],tile=std::max(8,int(std::nearbyint(2./mpp)));
@@ -34,7 +34,7 @@ py::list extract(Bytes mask,Bytes yellow,double mpp,double forward,double latera
    // fragments get their side from the chain they join.  reach > 4.2 also keeps
    // near fragments up to that far out (a neighbouring lane's outer line).
    bool near=forward-y.back()*mpp<=8.;
-   if(near&&(std::abs(anchor)<.65||std::abs(anchor)>std::max(4.2,reach)))continue;
+   if(near&&(std::abs(anchor)<own_min||std::abs(anchor)>std::max(4.2,reach)))continue;
    int lo=y.front(),hi=y.back();std::vector<double>sums(hi-lo+1,0.);std::vector<int>nums(hi-lo+1,0);
    for(int k=0;k<n;++k){sums[y[k]-lo]+=x[k];nums[y[k]-lo]++;}
    std::vector<double> residual,pts;
@@ -328,4 +328,4 @@ py::list recall_labels(Points world,double px,double py_,double co,double si,int
   if(std::abs(std::abs(v)-half)<=half*.6)out.append(py::make_tuple(i,v>0?-1.:1.));}
  return out;
 }
-PYBIND11_MODULE(_native,m){m.def("extract_fragments",&extract,py::arg("mask"),py::arg("yellow"),py::arg("mpp"),py::arg("forward"),py::arg("lateral"),py::arg("reach")=4.2);m.def("visible",&visible);m.def("match_fragments",&match);m.def("color_planes",&color_planes);m.def("ridges",&ridges);m.def("edge_like",&edge_like);m.def("track_match",&track_match);m.def("corridor_error",&corridor_error);m.def("reproject",&reproject);m.def("chain_dp",&chain_dp);m.def("pair_tests",&pair_tests);m.def("lane_profile",&lane_profile);m.def("forward_profile",&forward_profile);m.def("spine_fit",&spine_fit);m.def("pair_fit",&pair_fit);m.def("width_gap",&width_gap);m.def("recall_labels",&recall_labels);}
+PYBIND11_MODULE(_native,m){m.def("extract_fragments",&extract,py::arg("mask"),py::arg("yellow"),py::arg("mpp"),py::arg("forward"),py::arg("lateral"),py::arg("reach")=4.2,py::arg("own_min")=.65);m.def("visible",&visible);m.def("match_fragments",&match);m.def("color_planes",&color_planes);m.def("ridges",&ridges);m.def("edge_like",&edge_like);m.def("track_match",&track_match);m.def("corridor_error",&corridor_error);m.def("reproject",&reproject);m.def("chain_dp",&chain_dp);m.def("pair_tests",&pair_tests);m.def("lane_profile",&lane_profile);m.def("forward_profile",&forward_profile);m.def("spine_fit",&spine_fit);m.def("pair_fit",&pair_fit);m.def("width_gap",&width_gap);m.def("recall_labels",&recall_labels);}

@@ -2,7 +2,7 @@
 
 이 파일만 읽고 바로 이어서 작업할 수 있게 쓴다. **작업 하나가 끝날 때마다 "지금 상태"와 "다음에 할 일"을 고치고, `docs/WORKLOG_KO.md` 에 한 줄을 더한다.**
 
-마지막 갱신: 2026-11-20 03:40 (계획 31 2회차 끝, 개선 세션)
+마지막 갱신: 2026-11-20 05:00 (계획 31 3회차 끝, 개선 세션)
 
 ---
 
@@ -167,7 +167,11 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
   - `gt_loop2_20261120/try.sh 출력폴더 "검출 설정"`: 12 개 예측 + 지표를 세 갈래로 돌린다.
   - `gt_loop2_20261120/cmp.py 시도폴더 [기준폴더]`: 10 % 넘게 나빠지거나 목표 밖으로 떨어진 곳에 '!' 를 붙인다.
   - 나머지는 계획 30 의 `scripts/` 를 쓴다.
-- 진행 (2026-11-20 03:40): 2회차 끝.
+- 진행 (2026-11-20 05:00): 3회차 끝.
+  - 3회차: `carla_own_min_m: 0.0` 을 켰다(`carla.yaml`). 파이썬과 `native.cpp` 를 모두 바꿨으므로, 커밋본에서는 `cd src/vision_road && python3 setup.py build_ext --inplace` 가 필요하다.
+  - A4 방향은 세 번 실패로 닫았다(`carla_centre_heading_alpha`·`carla_centre_heading_turn`, 코드 기본 꺼짐).
+  - 지연 판정은 세 번의 p95 중 가운데 값으로 한다(연구 세션 결정). 3회차는 같은 시간대 옛 설정과 대조해 기계 흔들림으로 보고 통과시켰다.
+- 2회차까지:
   - 1회차(9581fdd): `guidance.keep_target_far` 를 켰다(launch).
   - 2회차: `carla_outer_min_paint_kept_m: 1.2` 를 켰다(`carla.yaml`). A5 재현율 90 % 이상이 9/12 다.
   - `carla.py` 에는 다른 세션의 커밋 안 된 3 줄이 함께 있다. 제 변경은 `round_02/carla_mine.patch` 로 따로 커밋한다.
@@ -175,7 +179,7 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 - 1회차 메모:
   - `guidance.keep_target_far` 를 켰다(launch).
   - 선 이어 가기(`carla_carry_sec`, `carla_outer_carry_sec`, 코드 기본 0)는 세 번 실패로 닫았다.
-- 다음(3회차): A4 커브 방향 → A2 선 위 끊김(s3a·s5·s8c) → A1 비스듬할 때.
+- 다음(4회차): A1 비스듬할 때(s3a 22, s4 17, s8c 17 cm). 그다음 최종 SUMMARY, s3a·s8c HUD 영상, 최종 보고.
 - 백업: `backups/before-gt-loop2-20261120/`.
 
 ### 끝남: 계획 30 (2026-11-19–20)
