@@ -1,0 +1,6 @@
+results/town05_30hz/gt_loop2_20261120/round_01/realtime_signs/town05_1 p2d med/p95 21.19 24.73 p2r p95 7.37 s2f p95 26.19 proc 1.0 gaps>100 0 yolo fps 11.49 infer p95 82.0 recv->det p95 82.0
+results/town05_30hz/gt_loop2_20261120/round_01/realtime_signs/town05_2 p2d med/p95 21.73 25.49 p2r p95 8.21 s2f p95 26.13 proc 1.0 gaps>100 0 yolo fps 11.46 infer p95 82.4 recv->det p95 82.4
+results/town05_30hz/gt_loop2_20261120/round_01/realtime_signs/town05_3 p2d med/p95 21.66 25.62 p2r p95 8.26 s2f p95 26.57 proc 1.0 gaps>100 0 yolo fps 11.43 infer p95 82.3 recv->det p95 82.3
+results/town05_30hz/gt_loop2_20261120/round_01/realtime_nosigns/town05_1 p2d med/p95 21.81 24.67 p2r p95 7.87 s2f p95 25.29 proc 0.9967 gaps>100 2
+results/town05_30hz/gt_loop2_20261120/round_01/realtime_nosigns/town05_2 p2d med/p95 21.29 24.09 p2r p95 7.25 s2f p95 25.16 proc 1.0 gaps>100 0
+results/town05_30hz/gt_loop2_20261120/round_01/realtime_nosigns/town05_3 p2d med/p95 20.97 23.65 p2r p95 6.82 s2f p95 25.16 proc 1.0 gaps>100 0

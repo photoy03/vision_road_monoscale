@@ -220,7 +220,7 @@ class TemporalDetector:
             if hits>=self.c.carla_chain_confirm_frames:
                 self.boundary_lanes.append(replace(candidate,points=points,hits=hits,source_time=float(t)))
         for side,(prior,hits,observed_time) in previous.items():
-            if side in current or t-observed_time>min(.15,self.c.temporal_max_age_sec):continue
+            if side in current or t-observed_time>(self.c.carla_carry_sec or min(.15,self.c.temporal_max_age_sec)):continue
             if matrix is None:
                 # A missed candidate keeps confirmation memory briefly, but
                 # cannot produce a display line or paint without registration.
@@ -335,7 +335,7 @@ class TemporalDetector:
                                 observed=[round(float(v),2) for v in candidate.observed],paint_m=round(float(candidate.paint_m),2))
                 lanes.append(lane)
         for side,(prior,hits,observed_time,candidate) in previous.items():
-            if side in current or t-observed_time>min(.15,c.temporal_max_age_sec):continue
+            if side in current or t-observed_time>(c.carla_outer_carry_sec or min(.15,c.temporal_max_age_sec)):continue
             if matrix is None:
                 current[side]=(prior,hits,observed_time,candidate);continue
             points=self._visible(self.metric(self.pixel(prior)@matrix[:,:2].T+matrix[:,2]),valid)

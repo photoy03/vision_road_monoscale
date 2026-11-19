@@ -73,6 +73,7 @@ class GuidanceSettings:
                                      # that line starts) for the near_m test: the car on or over a line sees one side
     change_without_neighbour: bool = False  # moving over a white dashed line with no lane detected beyond it: the
                                             # target moves to the own lane shifted one width across
+    keep_target_far: bool = False  # see update(): no re-taking of the named own lane while a matched target is kept
     offset_at_m: float = 0.0  # where along the car (base_link x) its offset from the target centre is taken:
                               # 0 the rear axle; 1.41 the car origin (the centre the GT and the driver judge by)
 
@@ -282,7 +283,11 @@ class LaneGuidance:
             self.lateral_speed = 0.; self.moving = {'left': 0., 'right': 0.}
         # Unreliable surroundings (a junction: turning, or no measured lane near): the car's own lane,
         # taken afresh every frame, so the target does not stick to a misnamed lane on the way out.
-        if target.name != 'carried' and (turning or self._measured(target) > s.near_m) and 'ego' in named:
+        # keep_target_far: a target found by position stays the target while nothing is measured near (a line being
+        # crossed, a dropout); only turning takes the named own lane then.
+        kept = s.keep_target_far and not turning and target is not None and target.name not in ('carried',) and \
+            self.target is not None and target is not named.get('ego') and not target.opposite  # never an oncoming lane
+        if target.name != 'carried' and (turning or self._measured(target) > s.near_m) and 'ego' in named and not kept:
             if target is not named['ego'] or self.acquired is None or t-self.acquired >= s.settle_sec:
                 self._lose();target = named['ego']
             self.acquired = t;self.target_time = t;self.lateral_speed = 0.;self.moving = {'left': 0., 'right': 0.}

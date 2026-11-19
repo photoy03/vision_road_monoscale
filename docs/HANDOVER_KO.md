@@ -2,7 +2,7 @@
 
 이 파일만 읽고 바로 이어서 작업할 수 있게 쓴다. **작업 하나가 끝날 때마다 "지금 상태"와 "다음에 할 일"을 고치고, `docs/WORKLOG_KO.md` 에 한 줄을 더한다.**
 
-마지막 갱신: 2026-11-20 02:00 (계획 30 끝, 개선 세션)
+마지막 갱신: 2026-11-20 03:00 (계획 31 1회차 끝, 개선 세션)
 
 ---
 
@@ -150,7 +150,30 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 - 정지선·횡단보도·초록 신호 HUD 표시, `stop_line_m` (계획 28, f111f20)
 - 코치에 맞춘 신호 전달·경로 전달·정지 권고 (계획 29, e64c42e)
 
-### 진행 중: 계획 30 (2026-11-19 시작)
+### 진행 중: 계획 31 (2026-11-20 시작, 연구 세션 지시)
+
+- 목표: 계획 30 에서 "검출기 쪽"으로 남은 항목을 같은 반복으로 고친다.
+  - 선을 넘는 동안 끊김(B2, A2)
+  - A5 오른쪽 옆 차로
+  - A4 커브 방향
+  - A1 비스듬할 때
+- 규칙은 계획 30 과 같다. 차선 지연 한도: 신호 끔 ≤ 24.1, 신호 켬(공유 메모리) ≤ 25.6 ms(town05 × 3, 회차마다).
+- 결과 폴더: `results/town05_30hz/gt_loop2_20261120/`
+  - `round_00` 은 기준선이다. 계획 30 3회차를 B2 일대일 정의로 다시 계산한 지표만 있다.
+  - 회차 폴더는 `round_NN` 이다.
+  - 시험해 보고 버린 것은 `try_*` 에 있다.
+  - `summary_table.md` 가 회차 비교 표다.
+- 도구:
+  - `gt_loop2_20261120/try.sh 출력폴더 "검출 설정"`: 12 개 예측 + 지표를 세 갈래로 돌린다.
+  - `gt_loop2_20261120/cmp.py 시도폴더 [기준폴더]`: 10 % 넘게 나빠지거나 목표 밖으로 떨어진 곳에 '!' 를 붙인다.
+  - 나머지는 계획 30 의 `scripts/` 를 쓴다.
+- 진행 (2026-11-20 03:00): 1회차 끝.
+  - `guidance.keep_target_far` 를 켰다(launch).
+  - 선 이어 가기(`carla_carry_sec`, `carla_outer_carry_sec`, 코드 기본 0)는 세 번 실패로 닫았다.
+- 다음(2회차): A5 오른쪽 바깥 선. 놓치는 경우는 바깥 선이 2–4 m 만 보일 때와 차가 3° 넘게 비스듬할 때다.
+- 백업: `backups/before-gt-loop2-20261120/`.
+
+### 끝남: 계획 30 (2026-11-19–20)
 
 - 전문: `docs/lane_improvement_research.md` 의 "본체에서 온 새 로스백 12개와 정답 기반 반복 계획" 절 (목표표 포함).
 - 결과 폴더: `results/town05_30hz/gt_loop_20261119/`
@@ -254,6 +277,7 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 
 ## 7. 다음에 할 일 (순서대로)
 
+0. (진행 중) 계획 31: 6절 "진행 중: 계획 31" 참고.
 1. (끝) 계획 30 기준선, 1–3회차. 표는 `results/town05_30hz/gt_loop_20261119/SUMMARY_KO.md` 에 있다.
 2. (끝) 마지막 HUD 영상 s3a, s5, s6, s7(`final_hud/`). 다시 만들 때 쓰는 명령:
    - `tools/realtime_eval.py --video town05_<장면> --output <폴더> --record --signs --signs-arg full_frame:=true imgsz:=1920 image_shm:=vision_road_dashcam --launch-arg display_filter_inline:=true lane_guidance:=true fake_vehicle_state:=true image_shm:=vision_road_dashcam`

@@ -1,0 +1,256 @@
+{
+ "scene": "s2_wobble",
+ "frames": 2350,
+ "used_frames": 2350,
+ "A1_switched_frames": 0,
+ "A1_on_line_frames": 0,
+ "A4_gt_excluded": 0,
+ "A1_gt_excluded": {
+  "left": {
+   "frames": 170,
+   "first": 3.77,
+   "last": 15.7
+  },
+  "right": {
+   "frames": 202,
+   "first": 3.1,
+   "last": 15.9
+  }
+ },
+ "A1_lateral_error_m": {
+  "left_5m": {
+   "n": 0,
+   "median": null,
+   "p95": null,
+   "max": null
+  },
+  "left_10m": {
+   "n": 1678,
+   "median": 0.012,
+   "p95": 0.1322,
+   "max": 0.3598
+  },
+  "left_15m": {
+   "n": 2143,
+   "median": 0.0171,
+   "p95": 0.0496,
+   "max": 0.6644
+  },
+  "right_5m": {
+   "n": 0,
+   "median": null,
+   "p95": null,
+   "max": null
+  },
+  "right_10m": {
+   "n": 1667,
+   "median": 0.011,
+   "p95": 0.1585,
+   "max": 0.4839
+  },
+  "right_15m": {
+   "n": 2131,
+   "median": 0.0077,
+   "p95": 0.0431,
+   "max": 0.5014
+  }
+ },
+ "A1_all": {
+  "n": 7619,
+  "median": 0.0121,
+  "p95": 0.0633,
+  "max": 0.6644
+ },
+ "A1_nearest_line_10m": {
+  "n": 3427,
+  "median": 0.0118,
+  "p95": 0.1786,
+  "max": 0.6642
+ },
+ "A1_identity": 0.9977,
+ "A2_observed": {
+  "left": 0.9787,
+  "right": 0.9783
+ },
+ "A2_frames": {
+  "left": 2350,
+  "right": 2350
+ },
+ "A3_style": {
+  "left": {
+   "accuracy": 0.9861,
+   "known": 0.9861,
+   "n": 2300
+  },
+  "right": {
+   "accuracy": 0.9996,
+   "known": 0.9996,
+   "n": 2299
+  }
+ },
+ "A3_colour": {
+  "left": {
+   "accuracy": 1.0,
+   "n": 2300
+  },
+  "right": {
+   "accuracy": 1.0,
+   "n": 2299
+  }
+ },
+ "A4_offset_m": {
+  "n": 2247,
+  "median": 0.007,
+  "p95": 0.0883,
+  "max": 0.3285
+ },
+ "A4_heading_deg": {
+  "n": 2247,
+  "median": 0.195,
+  "p95": 1.6732,
+  "max": 7.3854
+ },
+ "A4_coverage": 0.9898,
+ "A4_offset_estimated_m": {
+  "n": 79,
+  "median": 0.1352,
+  "p95": 0.3113,
+  "max": 0.4553
+ },
+ "A4_at_origin_m": {
+  "n": 2326,
+  "median": 0.1275,
+  "p95": 0.5493,
+  "max": 1.2504
+ },
+ "A5": {
+  "left": {
+   "precision": 1.0,
+   "recall": 0.8711,
+   "opposite_accuracy": 1.0,
+   "crossable_accuracy": 0.9844,
+   "recall_visible": 0.9811,
+   "visible_n": 1954,
+   "tp": 2047,
+   "fp": 0,
+   "fn": 303,
+   "tn": 0
+  },
+  "right": {
+   "precision": 1.0,
+   "recall": 0.6038,
+   "opposite_accuracy": 1.0,
+   "crossable_accuracy": 1.0,
+   "recall_visible": 0.9639,
+   "visible_n": 1358,
+   "tp": 1419,
+   "fp": 0,
+   "fn": 931,
+   "tn": 0
+  }
+ },
+ "B_lane_changes": {
+  "ground_truth": 0,
+  "target_moves": 0,
+  "on_time": 0,
+  "spurious_moves": 0,
+  "gt_times": [],
+  "move_times": []
+ },
+ "B5_return_shown": {
+  "far": 0.979,
+  "far_n": 763,
+  "centre": 0.0358,
+  "centre_n": 893,
+  "painted_frames": 0
+ },
+ "B5_return_shown_gt": {
+  "far": 0.979,
+  "centre": 0.0358
+ },
+ "B3": {
+  "over_line_frames": 0,
+  "return_shown": null,
+  "opposite_target_frames": 0
+ },
+ "C": {
+  "C4_stop_waypoint": {
+   "error_m": {
+    "n": 0,
+    "median": null,
+    "p95": null,
+    "max": null
+   },
+   "detected": null,
+   "n": 0,
+   "false": 0.0,
+   "false_n": 2350,
+   "note": "against CARLA stop waypoints (stop_line_ahead_m), about 7.6 m before the painted line: not the scored C4"
+  },
+  "C4_stop_position": {
+   "detected": null,
+   "n": 0,
+   "error_m": {
+    "n": 0,
+    "median": null,
+    "p95": null,
+    "max": null
+   },
+   "note": "stop line, else the crossing border (truth) / crosswalk marking (detector)"
+  },
+  "C6_crosswalk": {
+   "detected": null,
+   "n": 0,
+   "near_edge_error_m": {
+    "n": 0,
+    "median": null,
+    "p95": null,
+    "max": null
+   },
+   "note": "reference only: the border nearest the car against the crosswalk marking nearest to it"
+  },
+  "C4_stop_line": {
+   "error_m": {
+    "n": 0,
+    "median": null,
+    "p95": null,
+    "max": null
+   },
+   "detected": null,
+   "n": 0,
+   "false": 0.0,
+   "false_n": 2350,
+   "paint_minus_waypoint_m": {
+    "n": 0,
+    "median": null,
+    "p95": null,
+    "max": null
+   },
+   "truth": "semantic camera RoadLine bars across the own lane"
+  },
+  "C1_light": {
+   "frames": 0,
+   "confirmed": null,
+   "wrong_colour": null,
+   "state_changes": 0
+  },
+  "C2_no_light_shown": {
+   "frames": 2350,
+   "shown": 0.0,
+   "raw_frames": 2350,
+   "raw_shown": 0.0
+  },
+  "C3_speed_signs": {
+   "signs": 0,
+   "confirmed_before": null,
+   "wrong_frames": 0,
+   "not_in_model": [],
+   "not_in_model_n": 0
+  },
+  "C5_advice": {
+   "over_line_frames": 0,
+   "hold": null,
+   "hold_n": 0
+  }
+ }
+}

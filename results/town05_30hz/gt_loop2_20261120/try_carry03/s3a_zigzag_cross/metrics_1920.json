@@ -1,0 +1,304 @@
+{
+ "scene": "s3a_zigzag_cross",
+ "frames": 2613,
+ "used_frames": 2613,
+ "A1_switched_frames": 152,
+ "A1_on_line_frames": 399,
+ "A4_gt_excluded": 0,
+ "A1_gt_excluded": {
+  "left": {
+   "frames": 285,
+   "first": 3.77,
+   "last": 87.87
+  },
+  "right": {
+   "frames": 288,
+   "first": 3.1,
+   "last": 87.94
+  }
+ },
+ "A1_lateral_error_m": {
+  "left_5m": {
+   "n": 0,
+   "median": null,
+   "p95": null,
+   "max": null
+  },
+  "left_10m": {
+   "n": 1600,
+   "median": 0.0154,
+   "p95": 0.2958,
+   "max": 3.6107
+  },
+  "left_15m": {
+   "n": 1690,
+   "median": 0.0178,
+   "p95": 0.1743,
+   "max": 3.6378
+  },
+  "right_5m": {
+   "n": 0,
+   "median": null,
+   "p95": null,
+   "max": null
+  },
+  "right_10m": {
+   "n": 1641,
+   "median": 0.0108,
+   "p95": 0.3393,
+   "max": 3.6301
+  },
+  "right_15m": {
+   "n": 1633,
+   "median": 0.0078,
+   "p95": 0.1646,
+   "max": 3.6351
+  }
+ },
+ "A1_all": {
+  "n": 6564,
+  "median": 0.0134,
+  "p95": 0.2354,
+  "max": 3.6378
+ },
+ "A1_nearest_line_10m": {
+  "n": 3388,
+  "median": 0.0136,
+  "p95": 0.2241,
+  "max": 0.6596
+ },
+ "A1_identity": 0.9593,
+ "A2_observed": {
+  "left": 0.9227,
+  "right": 0.9205
+ },
+ "A2_frames": {
+  "left": 2213,
+  "right": 2214
+ },
+ "A3_style": {
+  "left": {
+   "accuracy": 0.9696,
+   "known": 0.9848,
+   "n": 2042
+  },
+  "right": {
+   "accuracy": 0.8965,
+   "known": 0.9514,
+   "n": 2038
+  }
+ },
+ "A3_colour": {
+  "left": {
+   "accuracy": 0.9824,
+   "n": 2042
+  },
+  "right": {
+   "accuracy": 0.9975,
+   "n": 2038
+  }
+ },
+ "A4_offset_m": {
+  "n": 1878,
+  "median": 0.0091,
+  "p95": 0.2152,
+  "max": 3.6165
+ },
+ "A4_heading_deg": {
+  "n": 1878,
+  "median": 0.1689,
+  "p95": 1.6029,
+  "max": 7.4828
+ },
+ "A4_coverage": 0.8132,
+ "A4_offset_estimated_m": {
+  "n": 247,
+  "median": 0.1066,
+  "p95": 3.617,
+  "max": 3.6291
+ },
+ "A4_at_origin_m": {
+  "n": 2125,
+  "median": 0.1093,
+  "p95": 3.0292,
+  "max": 3.816
+ },
+ "A5": {
+  "left": {
+   "precision": 1.0,
+   "recall": 0.6908,
+   "opposite_accuracy": 0.9953,
+   "crossable_accuracy": 0.9689,
+   "recall_visible": 0.8974,
+   "visible_n": 1286,
+   "tp": 1287,
+   "fp": 0,
+   "fn": 576,
+   "tn": 351
+  },
+  "right": {
+   "precision": 0.8722,
+   "recall": 0.4543,
+   "opposite_accuracy": 1.0,
+   "crossable_accuracy": 0.9663,
+   "recall_visible": 0.7473,
+   "visible_n": 922,
+   "tp": 771,
+   "fp": 113,
+   "fn": 926,
+   "tn": 404
+  }
+ },
+ "B_lane_changes": {
+  "ground_truth": 24,
+  "target_moves": 20,
+  "on_time": 18,
+  "spurious_moves": 1,
+  "gt_times": [
+   8.87,
+   10.07,
+   14.23,
+   18.2,
+   22.27,
+   26.24,
+   31.14,
+   34.47,
+   36.1,
+   39.4,
+   41.1,
+   44.37,
+   46.04,
+   49.44,
+   53.4,
+   57.27,
+   60.24,
+   63.27,
+   66.4,
+   67.37,
+   72.34,
+   74.67,
+   77.3,
+   79.84
+  ],
+  "move_times": [
+   17.87,
+   21.87,
+   23.27,
+   26.74,
+   34.17,
+   39.07,
+   44.1,
+   49.1,
+   52.7,
+   56.97,
+   63.0,
+   67.0,
+   69.7,
+   71.07,
+   72.1,
+   75.97,
+   77.57,
+   79.5,
+   80.4,
+   81.97
+  ]
+ },
+ "B5_return_shown": {
+  "far": 0.6271,
+  "far_n": 1700,
+  "centre": 0.1534,
+  "centre_n": 691,
+  "painted_frames": 2
+ },
+ "B5_return_shown_gt": {
+  "far": 0.6271,
+  "centre": 0.1534
+ },
+ "B3": {
+  "over_line_frames": 0,
+  "return_shown": null,
+  "opposite_target_frames": 0
+ },
+ "C": {
+  "C4_stop_waypoint": {
+   "error_m": {
+    "n": 0,
+    "median": null,
+    "p95": null,
+    "max": null
+   },
+   "detected": null,
+   "n": 0,
+   "false": 0.0,
+   "false_n": 2613,
+   "note": "against CARLA stop waypoints (stop_line_ahead_m), about 7.6 m before the painted line: not the scored C4"
+  },
+  "C4_stop_position": {
+   "detected": null,
+   "n": 0,
+   "error_m": {
+    "n": 0,
+    "median": null,
+    "p95": null,
+    "max": null
+   },
+   "note": "stop line, else the crossing border (truth) / crosswalk marking (detector)"
+  },
+  "C6_crosswalk": {
+   "detected": null,
+   "n": 0,
+   "near_edge_error_m": {
+    "n": 0,
+    "median": null,
+    "p95": null,
+    "max": null
+   },
+   "note": "reference only: the border nearest the car against the crosswalk marking nearest to it"
+  },
+  "C4_stop_line": {
+   "error_m": {
+    "n": 0,
+    "median": null,
+    "p95": null,
+    "max": null
+   },
+   "detected": null,
+   "n": 0,
+   "false": 0.0,
+   "false_n": 2613,
+   "paint_minus_waypoint_m": {
+    "n": 0,
+    "median": null,
+    "p95": null,
+    "max": null
+   },
+   "truth": "semantic camera RoadLine bars across the own lane"
+  },
+  "C1_light": {
+   "frames": 0,
+   "confirmed": null,
+   "wrong_colour": null,
+   "state_changes": 0
+  },
+  "C2_no_light_shown": {
+   "frames": 2613,
+   "shown": 0.0,
+   "raw_frames": 2613,
+   "raw_shown": 0.0
+  },
+  "C3_speed_signs": {
+   "signs": 1,
+   "confirmed_before": 0.0,
+   "wrong_frames": 0,
+   "not_in_model": [
+    "traffic.speed_limit.40"
+   ],
+   "not_in_model_n": 1
+  },
+  "C5_advice": {
+   "over_line_frames": 0,
+   "hold": null,
+   "hold_n": 0
+  }
+ }
+}

@@ -56,6 +56,8 @@ class Settings:
     carla_path_filter_enabled: bool = True
     carla_chain_filter_enabled: bool = True
     carla_chain_confirm_frames: int = 3
+    carla_carry_sec: float = 0.0  # >0: a confirmed own line unseen is carried (moved with the car) this long; 0: min(0.15, temporal_max_age_sec)
+    carla_outer_carry_sec: float = 0.0  # the same for the neighbouring lanes' outer lines
     carla_chain_band_m: float = 0.25
     carla_spine_cubic_m: float = 0.0  # >0: a long, densely painted chain gets a cubic (straight-then-curving), held to 0 unless its quadratic misses the paint by about this (p90)
     carla_spine_cubic_span_m: float = 12.0  # ... chain at least this long

@@ -83,7 +83,9 @@ def generate_launch_description():
                           'guidance.offset_at_m':1.4096,'guidance.change_without_neighbour':True,'guidance.trust_single_line':True,
                           # ... and shown from 0.25 m, hidden below 0.20 m (inside the 0.30 / 0.15 m judged by the GT
                           # loop, so the offset's few centimetres of noise neither delay nor prolong it).
-                          'guidance.on_m':.25,'guidance.off_m':.20}]),
+                          'guidance.on_m':.25,'guidance.off_m':.20,
+                          # Plan 31: a target found by position is kept while nothing is measured near (crossing, dropout).
+                          'guidance.keep_target_far':True}]),
         # YOLO detections -> /hero/traffic_light and /hero/sign (the coach's topics), with signs:=true (plan 29).
         Node(package='hero_coach',executable='traffic_sign_bridge',name='traffic_sign_bridge',output='screen',
              condition=IfCondition(LaunchConfiguration('signs')),parameters=[{'use_sim_time':LaunchConfiguration('use_sim_time'),

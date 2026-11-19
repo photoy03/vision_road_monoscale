@@ -428,9 +428,11 @@ def metrics(a):
     # B: guidance
     changes = lane_changes(gt);pg = [pred[k] for k in sorted(pred)]
     moves = [(b['stamp'], b['guidance']['target']) for a_, b in zip(pg, pg[1:]) if b['guidance']['changes'] != a_['guidance']['changes']]
-    on_time = 0
+    on_time = 0;used_moves = set()
     for t, _, _ in changes:
-        if any(t-3. <= m <= t+.05 for m, _ in moves):on_time += 1  # the target moved within 3 s before, not after, the crossing
+        # The target moved within 3 s before, not after, the crossing; each move answers one crossing only.
+        hit = next((i for i, (m, _) in enumerate(moves) if i not in used_moves and t-3. <= m <= t+.05), None)
+        if hit is not None:on_time += 1;used_moves.add(hit)
     # B1: a move with no GT lane change from 3 s before it to 1 s after it is a wrong move.
     spurious = sum(1 for m, _ in moves if not any(m-1. <= t <= m+3. for t, _, _ in changes))
     res['B_lane_changes'] = dict(ground_truth=len(changes), target_moves=len(moves), on_time=on_time, spurious_moves=spurious, gt_times=[round(c[0], 2) for c in changes],

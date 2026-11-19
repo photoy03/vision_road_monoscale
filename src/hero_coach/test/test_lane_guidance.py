@@ -170,3 +170,21 @@ def test_on_off_settings_move_the_hysteresis():
     assert outs[-1][2].shown  # 0.27 m: shown from 0.25 m
     outs = drive_with(s, road, lambda t: ramp(t, 1., 1.5, 0., .4) if t < 3. else ramp(t, 3., 3.5, .4, .18), 5.)
     assert not outs[-1][2].shown  # 0.18 m: hidden below 0.20 m
+
+
+def test_keep_target_far_keeps_the_matched_lane_while_nothing_is_measured_near():
+    # Straight road, the car 0.6 m right of the home lane; from 2 s on the detector measures nothing within near_m
+    # and calls the lane to the right "ego".  Without the setting the guidance takes that lane afresh.
+    def far(delta, t):
+        lanes = road(delta)
+        if t >= 2.:
+            for l in lanes:l.measured_from = 20.
+            names = {'ego': 'left', 'right': 'ego', 'left': 'far'}
+            for l in lanes:l.name = names.get(l.name, l.name)
+        return [l for l in lanes if l.name != 'far']
+    for keep, want in ((False, 'right lane'), (True, 'home')):
+        g = LaneGuidance(GuidanceSettings(keep_target_far=keep));kinds = []
+        for i in range(120):
+            t = i/30.;lanes = far(-.6, t);o = g.update(t, (10.*t, -.6, 0.), lanes)
+            kinds.append(next((l.kind for l in lanes if l.name == o.target), o.target))
+        assert kinds[-1] == want
