@@ -2,7 +2,7 @@
 
 이 파일만 읽고 바로 이어서 작업할 수 있게 쓴다. **작업 하나가 끝날 때마다 "지금 상태"와 "다음에 할 일"을 고치고, `docs/WORKLOG_KO.md` 에 한 줄을 더한다.**
 
-마지막 갱신: 2026-11-19 (계획 30 시작 직후, 기준선 측정 전)
+마지막 갱신: 2026-11-19 22:35 (계획 30 기준선 측정 중 + 1회차 후보 시험, 개선 세션)
 
 ---
 
@@ -71,7 +71,9 @@ vision-road/
 - `rosbag/town05_s*_20261119` 12개 (5절)
 - `vision-road-cache/` 재생용 캐시 (만들어도 됨). 로스백 원본은 읽기만.
 
-git 에 없는 것(다른 컴퓨터로 옮길 때 따로 복사): `results/`, `data/`, `build/`, `install/`, `best.pt`, `data/models/yolopv2/yolopv2.pt`.
+이어받는 작업은 **이 노트북에서 그대로** 한다(사용자 2026-11-19). 그래서 아래 파일들도 그 자리에 있고 push 는 필요 없다.
+
+git 에 없는 것: `results/`, `data/`, `build/`, `install/`, `best.pt`, `data/models/yolopv2/yolopv2.pt`.
 
 ## 4. 빌드, 시험, 실행
 
@@ -83,7 +85,16 @@ source install/setup.bash
 ```
 
 - C++ 빠른 경로(`_native*.so`)는 빌드가 만든다. 없으면 조용히 파이썬으로 돌아 느려진다.
-- 시험 (2026-11-19 계획 29 기준 통과 수): `hero_coach` 96, `vision_road` 156, `hero_hud` 33. vision_road 는 `/usr/bin/python3 -m pytest -q tests`, hero_coach 는 `/usr/bin/python3 -m pytest -q src/hero_coach/test`. 정확한 명령은 최근 `results/town05_30hz/*/REPORT_KO.md` 와 그 폴더의 `scripts/` 를 본다.
+- 시험 (2026-11-19 계획 29 기준 통과 수): `hero_coach` 96, `vision_road` 156, `hero_hud` 33. 실제로 쓰는 명령(ROS 와 `install/setup.bash` 를 source 한 뒤):
+
+```bash
+python3 -m pytest -q tests                      # vision_road
+python3 -m pytest -q src/hero_coach/test        # hero_coach
+colcon test --base-paths src --packages-select hero_hud && colcon test-result --test-result-base build/hero_hud
+```
+
+- 커밋본(스냅숏)으로 시험할 때는 C++ 부분을 다시 빌드한다: `cd src/vision_road && python3 setup.py build_ext --inplace`.
+- `colcon build` 는 반드시 `--base-paths src` 를 붙인다(`results/` 아래의 옛 사본과 이름이 겹친다).
 - 이 노트북에는 `autoware_planning_msgs` 가 없어 `coach_node`, `parking_planner` 는 뜨지 않는다.
 
 실행:
@@ -139,14 +150,23 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 
 - 전문: `docs/lane_improvement_research.md` 의 "본체에서 온 새 로스백 12개와 정답 기반 반복 계획" 절 (목표표 포함).
 - 결과 폴더: `results/town05_30hz/gt_loop_20261119/` (`SUMMARY_KO.md` 누적 표, `round_NN/REPORT_KO.md`).
-- 진행 정도: 재생 캐시 만들기 단계 (`scripts/build_caches.sh`, `logs/`). **기준선 측정 결과 아직 없음.**
+- 진행 정도 (2026-11-19 22:30): 1단계(평가 도구) 끝, **2단계 기준선 측정 중**.
+  - 평가 도구: `tools/gt_eval.py` (`predict` 차선·정지선·안내 오프라인 / `yolo` 신호·표지판, `~/yolo_env/bin/python` 으로 / `paint_stops` 칠한 정지선 정답을 semantic 영상에서 / `metrics` 정답 비교 → `metrics.json`). 사용법은 파일 맨 위 설명.
+  - 캐시: `results/town05_30hz/gt_loop_20261119/scripts/build_caches.sh` 가 SSD `vision-road-cache/town05_<장면>_20261119_native.cdrz`(재생용)와 `_offline/`(BEV, 평가용)을 만든다. 장면당 약 4분. 로그 `logs/build_caches.log`.
+  - 기준선: `scripts/eval_round.sh results/town05_30hz/gt_loop_20261119/round_00` 을 백그라운드로 돌리는 중(캐시가 생기는 대로 장면마다 predict → yolo → metrics). 결과 `round_00/<장면>/metrics.json`, 로그 `logs/round_00.log`. 끊기면 같은 명령을 다시 돌리면 된다(이미 있는 yolo 결과는 건너뜀).
+  - 알아낸 것(s1 시험): ① 정답 `stop_line_ahead_m` 은 CARLA 신호 정지 지점이라 칠한 정지선보다 약 7.6 m 앞이다 → C4 는 semantic 영상(RoadLine)에서 만든 칠한 정지선(`paint_stops`)과 비교한다(우리 검출과 몇 cm 차이). ② A4 의 `lateral_offset_m` 은 차 원점(시야 밖)이라 우리 중앙선 기준점(5 m)에서 정답 중앙선과 비교한다(차 원점 비교는 따로 기록). ③ YOLO 전체 영상(1280)은 먼 신호등을 거의 못 본다(20–40 m: 23/169 프레임), 위 가운데 타일은 121/169 → D4 비교 필요. ④ 정답에 제한 속도 40 표지판이 있는데 모델은 30/60/90 만 안다(모델 한계, 따로 셈).
+  - 칠한 정지선: `paint_stops/<장면>/paint_stops.jsonl.gz` 를 장면마다 한 번 만들어 모든 회차가 같이 쓴다(장면당 약 3분). 정답 경계선이 칠한 선 위에 있는지(`gt_boundary_to_paint_m`)도 같이 적는다. 0.15 m 넘게 어긋난 쪽은 정답 오류로 보고 A1–A3 에서 빼며, 뺀 수는 `A1_gt_excluded` 에 남긴다. s2 의 3–16 초가 그렇다(칠한 선이 정답 경계보다 0.3–0.5 m 바깥). 빼면 s2 A1 p95 가 17 → 5.0 cm 가 된다.
+  - 안내만 다시 재기: `scripts/reguide_round.sh 원본회차 새회차 "장면들" 설정=값 ...`. 저장된 중앙선으로 LaneGuidance 만 다시 돌린다(장면당 몇 초). 설정 없이 돌리면 원본과 2350/2350 같다.
+  - 1회차 후보(시험 중): 안내 설정 `offset_at_m`(새 설정, 코드 기본 0 = 뒤축). 1.4096 이면 차 원점에서 오프셋을 잰다. s2 B5 멀 때 78 → 91 %, 중앙 오표시 16 → 6 %. s5 차로 변경 정시 0/4 → 3/4, s3a 12 → 17/24.
+  - 2회차 후보: `trust_single_line`(새 설정, 기본 꺼짐). 선에 걸친 차가 한쪽 선만 보는 추정 차로를 믿는다. 이게 없으면 안내가 근처 측정 없음으로 보고 매 프레임 다시 잡아 꺼진다(s3a 의 'none' 641 프레임). B5 멀 때는 s3a 48 → 60 %, s4 42 → 55 % 로 오르지만, 중앙 오표시가 s3a 14.8 → 18.2 % 로 올라 판단을 보류했다.
+  - 백업: `backups/before-gt-loop-20261119/` (lane_guidance.py, lane_guidance_node.py, maploop.launch.py, gt_eval.py).
 - 새 로스백 12개: `town05_s1_lanefollow`, `s2_wobble`, `s3a_zigzag_cross`, `s3b_zigzag_inlane`, `s4_straddle`, `s5_lanechange`, `s6_yellow`, `s7_lights`, `s8a_lanefollow_20kmh`, `s8b_lanefollow_50kmh`, `s8c_lanechange_20kmh`, `s8d_lanechange_50kmh` (모두 `_20261119`). 각 폴더에 `README.md`(대본, 토픽, 좌표 약속)와 `sidecar/`(정답 `gt_frames.jsonl`·`.csv`, `lights.csv`, `target.csv`, `ticks.csv`, `static.json`, 지도 `.xodr`).
 - 새 로스백에는 실제 `/hero/vehicle_state` 가 있어 `--fake-vehicle-state` 가 필요 없다. 정답의 "_vehicle" 점열 원점이 차 원점인지 base_link 인지는 README·`static.json` 에서 확인해 쓴다. 교차로(`is_junction`)는 평가에서 뺀다.
 
 ## 7. 다음에 할 일 (순서대로)
 
-1. 정답 대비 평가 스크립트를 `tools/` 에 만든다 (영상 하나 → metrics JSON).
-2. 14개 영상(새 12개 + `town05_30hz` + `town05_signs`) 기준선 측정: AI 필터 끔, 전체 영상, 정지선·횡단보도 켬, `--signs` 켬.
+1. (끝) 정답 대비 평가 스크립트 `tools/gt_eval.py`.
+2. (진행 중) 기준선: 정답이 있는 새 12개는 `round_00`. `town05_30hz`·`town05_signs` 는 정답이 없어 실시간(D)과 눈으로 본 캡처에만 쓴다. 기준선 뒤 `paint_stops` 를 12개에 돌려 C4 를 다시 계산하고, YOLO 타일/전체/전체 1920 을 비교한다.
 3. 목표표와 비교해 가장 못 미치는 항목 하나를 고치고 14개 전체를 다시 잰다. 다른 곳이 나빠지면 되돌린다. 반복.
 4. 끝내는 조건: 모든 목표 충족, 또는 같은 항목에 서로 다른 시도 3번이 실패(원인·수치를 적고 넘어감).
 5. 끝나면 장면별 HUD 영상(s3a, s5, s6, s7)을 만든다.
