@@ -2,7 +2,7 @@
 
 이 파일만 읽고 바로 이어서 작업할 수 있게 쓴다. **작업 하나가 끝날 때마다 "지금 상태"와 "다음에 할 일"을 고치고, `docs/WORKLOG_KO.md` 에 한 줄을 더한다.**
 
-마지막 갱신: 2026-11-20 01:50 (계획 30 3회차 끝, HUD 영상 남음, 개선 세션)
+마지막 갱신: 2026-11-20 02:00 (계획 30 끝, 개선 세션)
 
 ---
 
@@ -85,7 +85,7 @@ source install/setup.bash
 ```
 
 - C++ 빠른 경로(`_native*.so`)는 빌드가 만든다. 없으면 조용히 파이썬으로 돌아 느려진다.
-- 시험 (2026-11-20 계획 30 2회차 기준 통과 수): `hero_coach` 101, `vision_road` 157, `hero_hud` 33(계획 29 기준, HUD 는 그 뒤 안 바뀜). 실제로 쓰는 명령(ROS 와 `install/setup.bash` 를 source 한 뒤; source 하지 않으면 hero_coach 시험이 모으는 단계에서 오류가 난다):
+- 시험 (2026-11-20 계획 30 3회차 기준 통과 수): `hero_coach` 102, `vision_road` 157, `hero_hud` 33(계획 29 기준, HUD 는 그 뒤 안 바뀜). 실제로 쓰는 명령(ROS 와 `install/setup.bash` 를 source 한 뒤; source 하지 않으면 hero_coach 시험이 모으는 단계에서 오류가 난다):
 
 ```bash
 python3 -m pytest -q tests                      # vision_road
@@ -93,6 +93,7 @@ python3 -m pytest -q src/hero_coach/test        # hero_coach
 colcon test --base-paths src --packages-select hero_hud && colcon test-result --test-result-base build/hero_hud
 ```
 
+- 실시간 노드(road_node, HUD, lane_guidance 등)가 떠 있으면 ROS 시험이 서로 끼어든다. 그럴 때는 `ROS_DOMAIN_ID=77` 처럼 도메인을 나눠 시험한다.
 - 커밋본(스냅숏)으로 시험할 때는 C++ 부분을 다시 빌드한다: `cd src/vision_road && python3 setup.py build_ext --inplace`.
 - `colcon build` 는 반드시 `--base-paths src` 를 붙인다(`results/` 아래의 옛 사본과 이름이 겹친다).
 - 이 노트북에는 `autoware_planning_msgs` 가 없어 `coach_node`, `parking_planner` 는 뜨지 않는다.
@@ -156,8 +157,9 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
   - `SUMMARY_KO.md`: 회차 비교. `scripts/summary_rounds.py round_00: round_01:_1920 round_02:_1920` 로 만든다.
   - `round_NN/REPORT_KO.md`, `round_NN/table.md`: 회차별 보고서와 목표 대비 표. 표는 `scripts/summary.py round_NN --tag _1920` 으로 만든다.
 - 진행 정도 (2026-11-20 01:50):
-  - 기준선, 1·2·3회차가 끝났다(1·2회차 커밋 8aa7de4).
-  - 남은 일은 마지막 HUD 영상(s3a, s5, s6, s7)과 최종 정리다.
+  - 기준선, 1·2·3회차가 끝났다(커밋 8aa7de4, 985f79f).
+  - 마지막 HUD 영상(s3a, s5, s6, s7)도 만들었다: `results/town05_30hz/gt_loop_20261119/final_hud/<장면>/road_and_hud.mp4`(커밋 안 함).
+  - 계획 30 은 여기서 끝났다. 남은 미달 항목은 7절에 있다.
   - 3회차:
     - 정지선 정답 정의를 고쳐 C4 를 충족했다.
     - 정지 위치 대체(`stop_line.crosswalk_fallback`)를 넣었다.
@@ -253,8 +255,8 @@ YOLO 환경: `/home/jaehun/yolo_env` (ultralytics 8.4.48, torch 2.11, numpy 2.2)
 ## 7. 다음에 할 일 (순서대로)
 
 1. (끝) 계획 30 기준선, 1–3회차. 표는 `results/town05_30hz/gt_loop_20261119/SUMMARY_KO.md` 에 있다.
-2. (다음) 마지막 HUD 영상 s3a, s5, s6, s7. mp4 는 커밋하지 않는다.
-   - 명령: `tools/realtime_eval.py --video town05_<장면> --output <폴더> --record --signs --signs-arg full_frame:=true imgsz:=1920 image_shm:=vision_road_dashcam --launch-arg display_filter_inline:=true lane_guidance:=true fake_vehicle_state:=true image_shm:=vision_road_dashcam`
+2. (끝) 마지막 HUD 영상 s3a, s5, s6, s7(`final_hud/`). 다시 만들 때 쓰는 명령:
+   - `tools/realtime_eval.py --video town05_<장면> --output <폴더> --record --signs --signs-arg full_frame:=true imgsz:=1920 image_shm:=vision_road_dashcam --launch-arg display_filter_inline:=true lane_guidance:=true fake_vehicle_state:=true image_shm:=vision_road_dashcam`
 3. 남은 미달(검출기 쪽, 다음 계획 후보):
    - A5 오른쪽 옆 차로 재현율: s3a 73, s8c 78 %. 바깥 선이 짧게 보이거나 차가 비스듬할 때 놓친다.
    - B2 빠른 차로 변경(s8c 2/4, s3a 19/24): 선을 넘는 동안 검출이 끊긴다.

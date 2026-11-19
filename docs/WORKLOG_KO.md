@@ -44,6 +44,7 @@
 | 11-19 | 계획 30 1회차 `round_01` | `offset_at_m` 1.41, `change_without_neighbour`, `trust_single_line`, `style_hold_m` 2, YOLO 1920 + `sign_min_height_px` 50 + `light_max_offcentre` 0.3. 차로 변경 정시 s3a 19/24·s5 3/4·s8d 4/4, s7 선 모양 98 %, s7 신호 확정 80 %, 표지판 오류 0 | 8aa7de4 | `round_01/REPORT_KO.md` |
 | 11-20 | 계획 30 2회차 `round_02` | `carla_centre_heading_m` 8, 안내 0.25/0.20 m. 방향 p95 s1 2.6 → 1.8°, s8b 3.2 → 2.0°, B5 멀 때 s2 98 %·중앙 3.6 %. s3a 엉뚱한 이동 1 생김 | 8aa7de4 | `round_02/REPORT_KO.md` |
 | 11-20 | 계획 30 실시간 D (2회차) | 모두 켬: 차선 지연 p95 town05 27.7–28.2·s3a 24.8–25.2·s7 26.5–26.8 ms(목표 25 미달), 신호 끔 23.1–24.1. YOLO 1920 11 FPS, 수신 → 검출 p95 113 ms, 빠짐 0. FPS 5·1280 으로 내려도 26.6–27.1(고정 비용). YOLO `raw_cdr` 추가(−0.5 ms) | 8aa7de4 | `round_02/realtime*/`, NoMachine 세션 켜진 채 측정 |
-| 11-20 | 계획 30 3회차 `round_03` | 정지선 정답 정의(횡단보도 테두리 분리·보이는 부분 기준) → C4 검출 92–99.5 %·오검출 ≤0.4 % 충족. `stop_line.crosswalk_fallback`(stop_source). D1 공유 메모리(`image_shm`): town05 p95 27.7–28.2 → 24.8–25.6 ms, 코어 묶기·3프레임 주기는 효과 없음 → D1 닫음(약 25 ms, 본체 재측정). B5·B3 세 번 실패로 닫음(settle_sec 0.3/0.2/0 은 s8b 중앙 오표시 >2 %) | (이번 커밋) | `round_03/REPORT_KO.md`, `exclusions.md`, NoMachine 켜진 채 측정 |
+| 11-20 | 계획 30 3회차 `round_03` | 정지선 정답 정의(횡단보도 테두리 분리·보이는 부분 기준) → C4 검출 92–99.5 %·오검출 ≤0.4 % 충족. `stop_line.crosswalk_fallback`(stop_source). D1 공유 메모리(`image_shm`): town05 p95 27.7–28.2 → 24.8–25.6 ms, 코어 묶기·3프레임 주기는 효과 없음 → D1 닫음(약 25 ms, 본체 재측정). B5·B3 세 번 실패로 닫음(settle_sec 0.3/0.2/0 은 s8b 중앙 오표시 >2 %) | 985f79f | `round_03/REPORT_KO.md`, `exclusions.md`, NoMachine 켜진 채 측정 |
+| 11-20 | 계획 30 마지막 HUD 영상 | s3a, s5, s6, s7 `road_and_hud.mp4`(모두 켬: 차선·안내·신호 1920·공유 메모리). s6 노란 선·안내 띠, s7 빨간불·정지선 띠 확인 | (이번 커밋, mp4 제외) | `gt_loop_20261119/final_hud/` |
 
 다음 문서 단계 번호: 85
