@@ -74,6 +74,8 @@ class FilterSettings:
     max_step_m:float=0.         # >0: the kept line moves at most this much per frame at each station (plan 32)
     max_accel_m:float=0.        # >0: the drawn line's per-frame move changes by at most this from frame to frame (plan 32)
     max_accel_leash_m:float=.3  # ... but it stays within this of the kept line at each station
+    max_accel_same_m:float=0.   # >0: a sustained change within this of the kept line at 10 m (the same line, its far
+                                # end re-shaped) is drawn with the limit too instead of at once
     near_quadratic_m:float=0.   # >0: below this x the line continues its slope and curvature there (the cubic
                                 # through the 5-20 m stations swings most at 0 m, where it amplifies their noise)
 
@@ -266,7 +268,9 @@ class SideTrack:
         recent=[p[1] for p in self.pending]
         if len(recent)>=self.s.gate_frames and max(recent)-min(recent)<=self.s.gate_m:
             # A sustained change (new line, lane change): jump to it rather than slide, and forget the old line.
-            self.filter.reset(stations if alone is None else alone,t);self.pending=[];self.memory=np.empty((0,3));self.drawn=None;return True
+            new=stations if alone is None else alone
+            if not (self.s.max_accel_same_m>0 and abs(new[1]-self.value[1])<=self.s.max_accel_same_m):self.drawn=None
+            self.filter.reset(new,t);self.pending=[];self.memory=np.empty((0,3));return True
         return False
 
     def trimmed(self,observed):

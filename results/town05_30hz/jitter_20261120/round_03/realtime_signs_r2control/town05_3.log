@@ -1,0 +1,73 @@
+[WARN] [1795124299.630206623] [rcl]: Found remap rule 'full_frame:=true'. This syntax is deprecated. Use '--ros-args --remap full_frame:=true' instead.
+[WARN] [1795124299.630246712] [rcl]: Found remap rule 'image_shm:=vision_road_dashcam'. This syntax is deprecated. Use '--ros-args --remap image_shm:=vision_road_dashcam' instead.
+[WARN] [1795124299.630252509] [rcl]: Found remap rule 'display_filter_inline:=true'. This syntax is deprecated. Use '--ros-args --remap display_filter_inline:=true' instead.
+[WARN] [1795124299.630257258] [rcl]: Found remap rule 'lane_guidance:=true'. This syntax is deprecated. Use '--ros-args --remap lane_guidance:=true' instead.
+[WARN] [1795124299.630261588] [rcl]: Found remap rule 'fake_vehicle_state:=true'. This syntax is deprecated. Use '--ros-args --remap fake_vehicle_state:=true' instead.
+[WARN] [1795124299.630265779] [rcl]: Found remap rule 'image_shm:=vision_road_dashcam'. This syntax is deprecated. Use '--ros-args --remap image_shm:=vision_road_dashcam' instead.
+{"video": "town05", "frames": 1808, "processed_ratio": 0.9989, "display_received": 1806, "latency_drift_ms_last_vs_first_tenth": -1.05, "display_gaps_over_100ms": 0}
+{
+ "publish_to_display": {
+  "n": 1806,
+  "mean": 21.55,
+  "median": 22.03,
+  "p95": 26.44,
+  "p99": 33.56,
+  "max": 65.11
+ },
+ "publish_to_receive": {
+  "n": 1806,
+  "mean": 6.95,
+  "median": 6.48,
+  "p95": 8.59,
+  "p99": 15.57,
+  "max": 41.47
+ },
+ "receive_to_start": {
+  "n": 1806,
+  "mean": 0.02,
+  "median": 0.01,
+  "p95": 0.02,
+  "p99": 0.02,
+  "max": 7.37
+ },
+ "start_to_finish": {
+  "n": 1806,
+  "mean": 20.14,
+  "median": 20.98,
+  "p95": 26.72,
+  "p99": 33.29,
+  "max": 59.62
+ },
+ "start_to_computed": {
+  "n": 1806,
+  "mean": 15.3,
+  "median": 16.02,
+  "p95": 19.18,
+  "p99": 21.66,
+  "max": 38.04
+ },
+ "computed_to_output_start": {
+  "n": 1806,
+  "mean": 0.97,
+  "median": 0.82,
+  "p95": 2.08,
+  "p99": 2.65,
+  "max": 9.85
+ },
+ "finish_to_boundary": {
+  "n": 1806,
+  "mean": 2.18,
+  "median": 1.93,
+  "p95": 4.71,
+  "p99": 6.05,
+  "max": 33.48
+ },
+ "boundary_to_display": {
+  "n": 1806,
+  "mean": -7.73,
+  "median": -7.41,
+  "p95": -2.46,
+  "p99": -2.09,
+  "max": -1.77
+ }
+}

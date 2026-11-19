@@ -349,3 +349,20 @@ def test_max_accel_draws_a_step_smoothly_but_gates_on_the_kept_line():
     g=DisplayFilter(FilterSettings(min_cutoff_hz=100.,beta=0.))
     for i in range(10):feed(g,i*DT,1.75)
     assert abs(at10(feed(g,10*DT,1.95))-1.95)<.02
+
+
+def test_max_accel_same_draws_a_reshaped_far_end_smoothly():
+    # Plan 32 round 3 (max_accel_same_m): the same line taken again with its far end bent (the far-end gate rejects it
+    # until the change is sustained) is drawn with the limit; without the option it is drawn at once.
+    def run(same):
+        f=DisplayFilter(FilterSettings(max_accel_m=.005,max_accel_leash_m=.45,max_accel_same_m=same,gate_span=True,
+                                       min_cutoff_hz=100.,beta=0.))
+        for i in range(10):feed(f,i*DT,1.75)
+        ys=[]
+        for i in range(10,60):
+            out=feed(f,i*DT,1.75,c=.001)
+            ys.append(float(np.interp(18.,out['left'][0][:,0],out['left'][0][:,1])))
+        return np.abs(np.diff(ys,2)).max(),ys[-1]
+    smooth,end=run(.3);jump,_=run(0.)
+    # (Each station's move changes by at most 0.005; 18 m lies between stations, whose weights there add up to more.)
+    assert smooth<=.02 and jump>3*smooth and abs(end-(1.75+.001*18*18))<.03
