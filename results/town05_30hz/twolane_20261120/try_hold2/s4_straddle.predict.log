@@ -1,0 +1,5 @@
+s4_straddle 0 1856
+s4_straddle 500 1856
+s4_straddle 1000 1856
+s4_straddle 1500 1856
+s4_straddle process mean 8.78 p95 10.06 ms

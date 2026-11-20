@@ -1,73 +1,73 @@
-[WARN] [1795131849.650716990] [rcl]: Found remap rule 'full_frame:=true'. This syntax is deprecated. Use '--ros-args --remap full_frame:=true' instead.
-[WARN] [1795131849.650769998] [rcl]: Found remap rule 'image_shm:=vision_road_dashcam'. This syntax is deprecated. Use '--ros-args --remap image_shm:=vision_road_dashcam' instead.
-[WARN] [1795131849.650777960] [rcl]: Found remap rule 'display_filter_inline:=true'. This syntax is deprecated. Use '--ros-args --remap display_filter_inline:=true' instead.
-[WARN] [1795131849.650783687] [rcl]: Found remap rule 'lane_guidance:=true'. This syntax is deprecated. Use '--ros-args --remap lane_guidance:=true' instead.
-[WARN] [1795131849.650789413] [rcl]: Found remap rule 'fake_vehicle_state:=true'. This syntax is deprecated. Use '--ros-args --remap fake_vehicle_state:=true' instead.
-[WARN] [1795131849.650795210] [rcl]: Found remap rule 'image_shm:=vision_road_dashcam'. This syntax is deprecated. Use '--ros-args --remap image_shm:=vision_road_dashcam' instead.
-{"video": "town05_s8c_lanechange_20kmh", "frames": 1564, "processed_ratio": 1.0, "display_received": 1564, "latency_drift_ms_last_vs_first_tenth": 0.02, "display_gaps_over_100ms": 0}
+[WARN] [1795135718.651476974] [rcl]: Found remap rule 'full_frame:=true'. This syntax is deprecated. Use '--ros-args --remap full_frame:=true' instead.
+[WARN] [1795135718.651500931] [rcl]: Found remap rule 'image_shm:=vision_road_dashcam'. This syntax is deprecated. Use '--ros-args --remap image_shm:=vision_road_dashcam' instead.
+[WARN] [1795135718.651506588] [rcl]: Found remap rule 'display_filter_inline:=true'. This syntax is deprecated. Use '--ros-args --remap display_filter_inline:=true' instead.
+[WARN] [1795135718.651511338] [rcl]: Found remap rule 'lane_guidance:=true'. This syntax is deprecated. Use '--ros-args --remap lane_guidance:=true' instead.
+[WARN] [1795135718.651515598] [rcl]: Found remap rule 'fake_vehicle_state:=true'. This syntax is deprecated. Use '--ros-args --remap fake_vehicle_state:=true' instead.
+[WARN] [1795135718.651519370] [rcl]: Found remap rule 'image_shm:=vision_road_dashcam'. This syntax is deprecated. Use '--ros-args --remap image_shm:=vision_road_dashcam' instead.
+{"video": "town05_s8c_lanechange_20kmh", "frames": 1564, "processed_ratio": 1.0, "display_received": 1564, "latency_drift_ms_last_vs_first_tenth": 1.09, "display_gaps_over_100ms": 0}
 {
  "publish_to_display": {
   "n": 1564,
-  "mean": 20.56,
-  "median": 20.42,
-  "p95": 23.77,
-  "p99": 28.72,
-  "max": 49.52
+  "mean": 20.46,
+  "median": 20.26,
+  "p95": 24.45,
+  "p99": 29.27,
+  "max": 46.42
  },
  "publish_to_receive": {
   "n": 1564,
-  "mean": 6.45,
-  "median": 6.12,
-  "p95": 8.04,
-  "p99": 14.82,
-  "max": 32.68
+  "mean": 6.3,
+  "median": 5.84,
+  "p95": 8.43,
+  "p99": 14.57,
+  "max": 29.86
  },
  "receive_to_start": {
   "n": 1564,
-  "mean": 0.02,
+  "mean": 0.01,
   "median": 0.01,
   "p95": 0.02,
   "p99": 0.02,
-  "max": 5.46
+  "max": 3.95
  },
  "start_to_finish": {
   "n": 1564,
-  "mean": 17.79,
-  "median": 17.91,
-  "p95": 21.5,
-  "p99": 23.56,
-  "max": 42.27
+  "mean": 17.89,
+  "median": 18.16,
+  "p95": 21.45,
+  "p99": 23.01,
+  "max": 41.15
  },
  "start_to_computed": {
   "n": 1564,
-  "mean": 14.7,
-  "median": 14.81,
-  "p95": 17.35,
-  "p99": 18.64,
+  "mean": 14.79,
+  "median": 14.98,
+  "p95": 17.48,
+  "p99": 18.72,
   "max": 35.77
  },
  "computed_to_output_start": {
   "n": 1564,
-  "mean": 0.8,
-  "median": 0.55,
-  "p95": 2.09,
-  "p99": 2.66,
-  "max": 5.06
+  "mean": 0.81,
+  "median": 0.6,
+  "p95": 1.96,
+  "p99": 2.38,
+  "max": 3.61
  },
  "finish_to_boundary": {
   "n": 1564,
-  "mean": 1.18,
+  "mean": 1.21,
   "median": 1.11,
-  "p95": 2.22,
-  "p99": 2.93,
-  "max": 26.15
+  "p95": 2.36,
+  "p99": 3.14,
+  "max": 26.31
  },
  "boundary_to_display": {
   "n": 1564,
-  "mean": -4.87,
-  "median": -4.64,
-  "p95": -2.74,
-  "p99": -1.8,
-  "max": -1.4
+  "mean": -4.96,
+  "median": -4.82,
+  "p95": -2.69,
+  "p99": -1.95,
+  "max": -1.55
  }
 }

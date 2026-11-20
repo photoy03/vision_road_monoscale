@@ -1,0 +1,5 @@
+s5_lanechange 0 1559
+s5_lanechange 500 1559
+s5_lanechange 1000 1559
+s5_lanechange 1500 1559
+s5_lanechange process mean 9.01 p95 11.28 ms

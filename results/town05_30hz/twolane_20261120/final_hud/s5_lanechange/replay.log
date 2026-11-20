@@ -1,6 +1,6 @@
-[INFO] [1795131178.251609622] [maploop_header_replay]: 300 frames / 9.97 simulation seconds
-[INFO] [1795131188.236119156] [maploop_header_replay]: 600 frames / 19.97 simulation seconds
-[INFO] [1795131198.235629141] [maploop_header_replay]: 900 frames / 29.97 simulation seconds
-[INFO] [1795131208.235675305] [maploop_header_replay]: 1200 frames / 39.97 simulation seconds
-[INFO] [1795131218.235844660] [maploop_header_replay]: 1500 frames / 49.97 simulation seconds
-[INFO] [1795131220.713866014] [maploop_header_replay]: Done: 1559 recorded images; header-paced, bag unchanged
+[INFO] [1795135656.099173077] [maploop_header_replay]: 300 frames / 9.97 simulation seconds
+[INFO] [1795135666.082895847] [maploop_header_replay]: 600 frames / 19.97 simulation seconds
+[INFO] [1795135676.082450138] [maploop_header_replay]: 900 frames / 29.97 simulation seconds
+[INFO] [1795135686.082262584] [maploop_header_replay]: 1200 frames / 39.97 simulation seconds
+[INFO] [1795135696.083733692] [maploop_header_replay]: 1500 frames / 49.97 simulation seconds
+[INFO] [1795135698.555889435] [maploop_header_replay]: Done: 1559 recorded images; header-paced, bag unchanged

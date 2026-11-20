@@ -1,0 +1,25 @@
+[INFO] [1795135354.800936913] [town05_yolo26m_detector]: Loading model: /home/jaehun/Desktop/town05_yolo26m_detector/best.pt
+[INFO] [1795135354.911516825] [town05_yolo26m_detector]: Listening on /sensing/camera/dashcam/image_raw; publishing detections only on /yolo/detections
+[WARN] [1795135360.311864223] [town05_yolo26m_detector]: predict(quantize=...) not supported here ('[31m[1mquantize[0m' is not a valid YOLO argument. ); using half=True
+[INFO] [1795135366.897487486] [town05_yolo26m_detector]: frames=30, average=12.7 FPS, preprocess=7.5 ms, inference=71.9 ms, postprocess=0.6 ms, detections=0
+[INFO] [1795135369.326972876] [town05_yolo26m_detector]: frames=60, average=12.5 FPS, preprocess=6.6 ms, inference=72.5 ms, postprocess=1.4 ms, detections=2
+[INFO] [1795135371.757960379] [town05_yolo26m_detector]: frames=90, average=12.5 FPS, preprocess=5.9 ms, inference=71.9 ms, postprocess=1.2 ms, detections=1
+[INFO] [1795135374.172298489] [town05_yolo26m_detector]: frames=120, average=12.5 FPS, preprocess=6.0 ms, inference=72.9 ms, postprocess=0.6 ms, detections=0
+[INFO] [1795135376.586736852] [town05_yolo26m_detector]: frames=150, average=12.5 FPS, preprocess=5.8 ms, inference=72.7 ms, postprocess=1.3 ms, detections=0
+[INFO] [1795135379.014992112] [town05_yolo26m_detector]: frames=180, average=12.4 FPS, preprocess=5.1 ms, inference=73.1 ms, postprocess=0.7 ms, detections=0
+[INFO] [1795135381.441589548] [town05_yolo26m_detector]: frames=210, average=12.4 FPS, preprocess=6.6 ms, inference=72.6 ms, postprocess=0.7 ms, detections=0
+[INFO] [1795135383.893211672] [town05_yolo26m_detector]: frames=240, average=12.4 FPS, preprocess=6.6 ms, inference=73.3 ms, postprocess=0.8 ms, detections=0
+[INFO] [1795135386.328017829] [town05_yolo26m_detector]: frames=270, average=12.4 FPS, preprocess=6.1 ms, inference=73.7 ms, postprocess=0.9 ms, detections=0
+[INFO] [1795135388.761478744] [town05_yolo26m_detector]: frames=300, average=12.4 FPS, preprocess=6.9 ms, inference=73.4 ms, postprocess=0.9 ms, detections=0
+[INFO] [1795135391.205931802] [town05_yolo26m_detector]: frames=330, average=12.4 FPS, preprocess=5.7 ms, inference=73.9 ms, postprocess=0.6 ms, detections=0
+[INFO] [1795135393.649569662] [town05_yolo26m_detector]: frames=360, average=12.4 FPS, preprocess=5.1 ms, inference=74.1 ms, postprocess=1.2 ms, detections=0
+[INFO] [1795135396.093465502] [town05_yolo26m_detector]: frames=390, average=12.4 FPS, preprocess=6.3 ms, inference=73.1 ms, postprocess=0.7 ms, detections=0
+[INFO] [1795135398.534102203] [town05_yolo26m_detector]: frames=420, average=12.4 FPS, preprocess=7.0 ms, inference=73.2 ms, postprocess=1.4 ms, detections=1
+[INFO] [1795135400.982470704] [town05_yolo26m_detector]: frames=450, average=12.3 FPS, preprocess=5.2 ms, inference=73.6 ms, postprocess=1.0 ms, detections=0
+[INFO] [1795135403.433630996] [town05_yolo26m_detector]: frames=480, average=12.3 FPS, preprocess=5.0 ms, inference=73.3 ms, postprocess=0.6 ms, detections=0
+[INFO] [1795135405.897518801] [town05_yolo26m_detector]: frames=510, average=12.3 FPS, preprocess=8.5 ms, inference=72.8 ms, postprocess=1.3 ms, detections=1
+[INFO] [1795135408.353786993] [town05_yolo26m_detector]: frames=540, average=12.3 FPS, preprocess=4.6 ms, inference=73.3 ms, postprocess=1.9 ms, detections=3
+[INFO] [1795135410.812820668] [town05_yolo26m_detector]: frames=570, average=12.3 FPS, preprocess=5.5 ms, inference=73.7 ms, postprocess=0.6 ms, detections=0
+[INFO] [1795135413.269521570] [town05_yolo26m_detector]: frames=600, average=12.3 FPS, preprocess=5.7 ms, inference=73.5 ms, postprocess=0.6 ms, detections=0
+[INFO] [1795135415.728351246] [town05_yolo26m_detector]: frames=630, average=12.3 FPS, preprocess=6.8 ms, inference=73.6 ms, postprocess=0.8 ms, detections=0
+[INFO] [1795135418.187595710] [town05_yolo26m_detector]: frames=660, average=12.3 FPS, preprocess=5.3 ms, inference=73.5 ms, postprocess=0.8 ms, detections=0

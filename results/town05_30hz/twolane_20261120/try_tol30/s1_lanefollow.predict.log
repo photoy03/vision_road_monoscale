@@ -1,0 +1,6 @@
+s1_lanefollow 0 2349
+s1_lanefollow 500 2349
+s1_lanefollow 1000 2349
+s1_lanefollow 1500 2349
+s1_lanefollow 2000 2349
+s1_lanefollow process mean 9.36 p95 11.70 ms

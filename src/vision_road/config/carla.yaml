@@ -153,3 +153,8 @@ lane_display_filter:
     # neighbouring lane's outer line beside the line being crossed, filtered here too, on /road/lane_display_outer
     # (published by the perception worker after the outer lines; the HUD copy draws it as a third line).
     two_lane_hold_s: 1.0
+    # Plan 33 round 2: own display lines of the last 1 s, moved with the car, stand in for a missing outer line when one
+    # lies a lane beyond the own line now (the lane just left, after the name change while crossing); the outer line is
+    # drawn only within 0.4 m of the own lane's width (s5 21 -> 44 %, s8c 8 -> 33 % of lane change frames with 3 lines).
+    two_lane_memory_s: 1.0
+    two_lane_width_tol_m: 0.4

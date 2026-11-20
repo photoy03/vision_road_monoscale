@@ -1,0 +1,5 @@
+town05_30hz 0 1808
+town05_30hz 500 1808
+town05_30hz 1000 1808
+town05_30hz 1500 1808
+town05_30hz process mean 9.69 p95 12.28 ms

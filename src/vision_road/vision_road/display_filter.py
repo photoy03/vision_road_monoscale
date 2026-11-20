@@ -77,6 +77,12 @@ class FilterSettings:
     max_accel_leash_m:float=.3  # ... but it stays within this of the kept line at each station
     two_lane_hold_s:float=0.    # >0: TwoLane (plan 33): the neighbouring lane's outer line is shown while the lane guidance
                                 # changes lanes ('change') and this long after; 0: off
+    two_lane_memory_s:float=0.  # >0: own display lines of the last this many s, moved with the car, stand in for a missing
+                                # outer line when one lies a lane beyond the own line now (the lane just left, after the
+                                # own lane's name changed while crossing: a line seen and followed, not made up)
+    two_lane_width_tol_m:float=0.  # >0: the outer line's distance from the own line must be the own lane's width (there)
+                                   # within this, not just 2.5-4.5 m (an outer line off by half a metre is not drawn)
+    two_lane_outer_hold_s:float=0.  # >0: an outer line is held (moved with the car) this long after it was last seen
     two_lane_accel:bool=False   # ... the outer line drawn with max_accel_m too (off: it moves quickly across while changing)
     max_accel_same_m:float=0.   # >0: a sustained change within this of the kept line at 10 m (the same line, its far
                                 # end re-shaped) is drawn with the limit too instead of at once
@@ -477,7 +483,9 @@ class TwoLane:
     def __init__(self,settings):
         from dataclasses import replace
         if not settings.two_lane_accel:settings=replace(settings,max_accel_m=0.)
+        if settings.two_lane_outer_hold_s>0:settings=replace(settings,hold_s=settings.two_lane_outer_hold_s)
         self.core=DisplayCore(settings,self.NAMES);self.hold=settings.two_lane_hold_s;self.last_change=-math.inf
+        self.memory=settings.two_lane_memory_s;self.past=deque();self.last_pose=None;self.tol=settings.two_lane_width_tol_m
 
     def guidance(self,t,state):
         """The lane guidance state at stamp t (its /hero/lane_guidance JSON 'state')."""
@@ -486,7 +494,39 @@ class TwoLane:
         elif state in ('return','forbidden') and t>self.last_change:self.last_change=-math.inf
 
     def reset(self):
-        self.core=DisplayCore(self.core.filter.s,self.NAMES);self.last_change=-math.inf
+        self.core=DisplayCore(self.core.filter.s,self.NAMES);self.last_change=-math.inf;self.past=deque();self.last_pose=None
+
+    @staticmethod
+    def beyond(line,ownp,sign,low=2.5,high=4.5,overlap=2.,other=None,tol=0.):
+        """Whether `line` lies one lane (low..high m) beyond the own line `ownp` on the side sign (+1 left, -1 right)
+        wherever both are given (at least `overlap` m of them); with `other` (the own line of the other side) and tol>0,
+        also within tol of the own lane's width at each place."""
+        x0=max(ownp[0,0],line[0,0]);x1=min(ownp[-1,0],line[-1,0])
+        if other is not None and tol>0:x0=max(x0,other[0,0]);x1=min(x1,other[-1,0])
+        if x1-x0<overlap:return False
+        x=np.linspace(x0,x1,5);yo=np.interp(x,ownp[:,0],ownp[:,1]);gap=sign*(np.interp(x,line[:,0],line[:,1])-yo)
+        ok=(gap>=low)&(gap<=high)
+        if other is not None and tol>0:ok&=np.abs(gap-np.abs(yo-np.interp(x,other[:,0],other[:,1])))<=tol
+        return bool(np.all(ok))
+
+    def remembered(self,t,pose,own,outer):
+        """two_lane_memory_s: the past own lines moved into this base_link; for a side without an observed outer line,
+        the newest past own line one lane beyond the own line there, as that side's outer observation."""
+        if self.last_pose is not None and pose is not None and self.past:
+            dx,dy,dyaw=relative(self.last_pose,pose);c,s=math.cos(dyaw),math.sin(dyaw)
+            for item in self.past:
+                p=item[1];px=p[:,0]-dx;py=p[:,1]-dy;item[1]=np.column_stack([c*px+s*py,-s*px+c*py])
+        self.last_pose=pose
+        while self.past and t-self.past[0][0]>self.memory:self.past.popleft()
+        found=[]
+        seen={side for side,_,predicted in outer if not predicted}
+        mine={side:np.asarray(p,float) for side,p,_,_ in own if side in ('left','right') and len(p)>=2}
+        for side,sign in (('left',1.),('right',-1.)):
+            if side+'_outer' in seen or side not in mine:continue
+            for _,p in reversed(self.past):
+                if self.beyond(p,mine[side],sign,overlap=5.):found.append((side+'_outer',p,False));break
+        for side,p in mine.items():self.past.append([t,p.copy()])
+        return found
 
     def active(self,t):
         return t-self.last_change<=self.hold
@@ -494,22 +534,17 @@ class TwoLane:
     def step(self,t,outer,pose,own):
         """outer: [(side, points, predicted)] outer lines of this frame; own: the own display output
         [(side, points, predicted, style)].  Returns [(side, points, predicted, style)]: the line to draw, or []."""
-        if self.core.filter.restarted(t):self.last_change=-math.inf
+        if self.core.filter.restarted(t):self.last_change=-math.inf;self.past=deque();self.last_pose=None
+        if self.memory>0:outer=list(outer)+self.remembered(t,pose,own,outer)
         shown=self.core.step(t,outer,pose,None)
         if not self.active(t):return []
         near={side:abs(float(np.interp(max(1.4,p[0,0]),p[:,0],p[:,1]))) for side,p,_,_ in own if side in ('left','right') and len(p)>=2}
         if len(near)<2:return []
         side=min(near,key=near.get);ownp=next(p for sd,p,_,_ in own if sd==side);sign=1. if side=='left' else -1.
-        out=[]
-        for o in shown:
-            if o[0]!=side+'_outer':continue
-            # One lane beyond the own line on that side, where both are drawn: a held outer line that is now the own line
-            # (the own lane's name changed while crossing) or one off by a lane is not drawn.
-            x0=max(ownp[0,0],o[1][0,0]);x1=min(ownp[-1,0],o[1][-1,0])
-            if x1-x0<2.:continue
-            x=np.linspace(x0,x1,5);gap=sign*(np.interp(x,o[1][:,0],o[1][:,1])-np.interp(x,ownp[:,0],ownp[:,1]))
-            if np.all((gap>=2.5)&(gap<=4.5)):out.append(o)
-        return out
+        other=next(p for sd,p,_,_ in own if sd==('right' if side=='left' else 'left'))
+        # One lane beyond the own line on that side, where both are drawn: a held outer line that is now the own line
+        # (the own lane's name changed while crossing) or one off by a lane is not drawn.
+        return [o for o in shown if o[0]==side+'_outer' and self.beyond(o[1],ownp,sign,other=other,tol=self.tol)]
 
 
 class DisplayStage:

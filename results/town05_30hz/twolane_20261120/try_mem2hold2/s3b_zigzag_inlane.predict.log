@@ -1,0 +1,6 @@
+s3b_zigzag_inlane 0 2205
+s3b_zigzag_inlane 500 2205
+s3b_zigzag_inlane 1000 2205
+s3b_zigzag_inlane 1500 2205
+s3b_zigzag_inlane 2000 2205
+s3b_zigzag_inlane process mean 7.60 p95 8.72 ms

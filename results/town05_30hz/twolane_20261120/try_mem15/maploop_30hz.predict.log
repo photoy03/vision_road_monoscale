@@ -1,0 +1,5 @@
+maploop_30hz 0 1807
+maploop_30hz 500 1807
+maploop_30hz 1000 1807
+maploop_30hz 1500 1807
+maploop_30hz process mean 10.12 p95 13.22 ms

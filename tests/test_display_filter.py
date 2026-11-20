@@ -404,3 +404,25 @@ def test_two_lane_shows_the_outer_line_beside_the_line_being_crossed_only_while_
     assert two.step(61*DT,outer,(0.,0.,0.),own)==[]
     # Off (0): nothing.
     assert FilterSettings().two_lane_hold_s==0.
+
+
+def test_two_lane_carries_the_line_of_the_lane_just_left():
+    # Plan 33 round 2 (two_lane_memory_s): after the own lane's name changed while crossing to the left, the old right
+    # line (no longer an own line, no outer line seen) is carried with the car and drawn as the right outer line.
+    two=TwoLane(FilterSettings(two_lane_hold_s=1.,two_lane_memory_s=1.,two_lane_width_tol_m=.4))
+    before=[('left',line(.3),False,None),('right',line(-3.2),False,None)]
+    after=[('left',line(3.8),False,None),('right',line(.3),False,None)]  # names changed: the crossed line is now 'right'
+    shown=[]
+    for i in range(30):
+        t=i*DT
+        if i==5:two.guidance(t,'change')
+        own=before if i<15 else after
+        # The car moves left 0.0 m in the world here; the lines jump in name only.
+        shown.append([(o[0],round(float(np.interp(10.,o[1][:,0],o[1][:,1])),1)) for o in two.step(t,[],(0.,0.,0.),own)])
+    assert shown[10]==[]  # before crossing: no outer line seen, none remembered beyond the left line
+    assert ('right_outer',-3.2) in shown[20]  # after: the old right line, a lane beyond the crossed line
+    # Without the memory nothing is drawn after the crossing either.
+    two=TwoLane(FilterSettings(two_lane_hold_s=1.))
+    two.guidance(0.,'change')
+    for i in range(20):out=two.step(i*DT,[],(0.,0.,0.),before if i<10 else after)
+    assert out==[]
