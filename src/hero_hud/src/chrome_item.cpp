@@ -277,11 +277,20 @@ QImage ChromeItem::render(int w, int h, HudMode mode, const VehicleState& v,
     // 써놓고 정작 이 요소를 예산으로 검사하지 않았다.
     //
     // 팔각형 폭 = 2 r cos(pi/8) 이므로 그 폭이 심볼 최소가 되도록 r 을 잡는다.
-    const double r = budget.symbol_px * 0.5 / 0.9239;
-    const double cx = w * 0.5;
+    double r = budget.symbol_px * 0.5 / 0.9239;
+    double cx = w * 0.5;
     // 커진 만큼 위로 잘리지 않게 내린다. 상단 띠를 조금 넘으면 코리도 위에
     // 얹히는데, 신호는 그 순간 화면에서 가장 급한 정보이므로 그래도 된다.
-    const double cy = std::max(top_h * 0.52, r + 6.0);
+    double cy = std::max(top_h * 0.52, r + 6.0);
+    if (lane_signs) {
+      // 차선 전용 모드는 24 m 앞까지 담아 차로가 화면 위 끝(top_margin)까지 올라온다. 가운데 위에
+      // 두면 신호가 먼 차선·정지선을 덮으므로, 우측 표지판과 짝을 이루게 좌측 컬럼 같은 높이에,
+      // 표지판과 같은 크기로 둔다.
+      const double side = std::min(right_w * 0.72, h * 0.21);
+      r = std::min(r, side * 0.5);
+      cx = col_w * 0.5;
+      cy = h * 0.30;
+    }
 
     const QColor c =
         (scene->signal.state == SignalState::Red) ? kRed
@@ -368,13 +377,14 @@ QImage ChromeItem::render(int w, int h, HudMode mode, const VehicleState& v,
                    QString::number(static_cast<int>(scene->sign.value)));
       }
     } else if (lane_signs && scene->sign.kind == 2) {
-      // SVG 자산 없이(Qt5Svg 없는 빌드) 차선 전용 모드: 제한속도 표지의 붉은 테두리와 숫자.
+      // SVG 자산 없이(Qt5Svg 없는 빌드) 차선 전용 모드: 제한속도 표지의 테두리와 숫자.
       // 흰 바탕은 가산광에서 빛 덩어리라 그리지 않는다(검정 = 투명).
-      p.setPen(QPen(A(kRed), std::max<double>(budget.stroke_px, side * 0.10)));
+      // signs/speed.svg 와 같은 모양(반지름 0.44, 획 0.09, 맥락 회색) — SVG 가 있는 빌드와 똑같이 보인다.
+      p.setPen(QPen(A(kContext), side * 0.09));
       p.setBrush(Qt::NoBrush);
       p.drawEllipse(QPointF(cx, cy), side * 0.44, side * 0.44);
       QFont f;
-      f.setPixelSize(static_cast<int>(side * 0.42));
+      f.setPixelSize(static_cast<int>(side * 0.44));
       f.setBold(true);
       p.setFont(f);
       p.setPen(A(kContext));

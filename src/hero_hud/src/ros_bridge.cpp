@@ -128,6 +128,16 @@ void RosBridge::declareParameters() {
       "road.current_path.half_width_m", config_.road_current_path_half_m));
   config_.road_current_path_min_detail = static_cast<float>(node_->declare_parameter<double>(
       "road.current_path.min_detail_multiple", config_.road_current_path_min_detail));
+  const auto road_f = [this](const char* name, float value) {
+    return static_cast<float>(node_->declare_parameter<double>(name, value));
+  };
+  config_.road_view_range_m = road_f("road.view.range_m", config_.road_view_range_m);
+  config_.road_view_lateral_m = road_f("road.view.lateral_m", config_.road_view_lateral_m);
+  config_.road_view_wide_range_m = road_f("road.view.wide_range_m", config_.road_view_wide_range_m);
+  config_.road_view_wide_lateral_m =
+      road_f("road.view.wide_lateral_m", config_.road_view_wide_lateral_m);
+  config_.road_view_hold_sec = road_f("road.view.hold_sec", config_.road_view_hold_sec);
+  config_.road_view_smooth_sec = road_f("road.view.smooth_sec", config_.road_view_smooth_sec);
 
   d.width_px  = node_->declare_parameter<int>("display.width_px", d.width_px);
   d.height_px = node_->declare_parameter<int>("display.height_px", d.height_px);

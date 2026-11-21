@@ -54,6 +54,49 @@ bool hasVisibleContent(const std::vector<QSGGeometry::ColoredPoint2D>& v, float 
   return false;
 }
 
+// 차선 전용 모드의 지면 선 색 — 원본 HUD 의 어법을 따른다(코리도·목표선과 같다).
+// 가까울수록 밝고 멀수록 어둡다(예측 신뢰도 = 거리). 먼 끝 tail 구간은 알파로 빠져 "그리다
+// 말았다"가 아니라 "멀어진다"로 읽힌다. near/far 는 이미 adapt 를 거친 색이다.
+std::vector<Rgba> fadeAlong(const std::vector<Vec2>& pts, Rgba near_c, Rgba far_c,
+                            float reach, float tail) {
+  std::vector<Rgba> out;
+  out.reserve(pts.size());
+  for (const Vec2& p : pts) {
+    const float t = std::clamp(p.x / std::max(reach, 1e-3f), 0.0f, 1.0f);
+    Rgba c = mix(near_c, far_c, t);
+    if (tail > 0.0f && t > 1.0f - tail) c = scaleAlpha(c, (1.0f - t) / tail);
+    out.push_back(c);
+  }
+  return out;
+}
+
+// 꺾인 선(화살촉·횡단보도 테두리)을 촘촘히 한다. 투영 뒤에도 지면을 따라가게.
+std::vector<Vec2> densifyPath(const std::vector<Vec2>& pts, float step) {
+  std::vector<Vec2> path;
+  if (pts.empty()) return path;
+  for (size_t i = 0; i + 1 < pts.size(); ++i) {
+    const Vec2 a = pts[i], b = pts[i + 1];
+    const float len = std::hypot(b.x - a.x, b.y - a.y);
+    const int steps = std::max(1, static_cast<int>(std::ceil(len / step)));
+    for (int k = 0; k < steps; ++k) {
+      const float t = static_cast<float>(k) / steps;
+      path.push_back(Vec2{a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)});
+    }
+  }
+  path.push_back(pts.back());
+  return path;
+}
+
+// 차선 전용 모드의 표시 치수. 화면이 24 m x ±4.5 m 를 담아 원본(±1.8 m)보다 2.5 배 멀리
+// 보므로, 원본과 같은 화면 굵기가 나오도록 월드 반폭을 키우고 화면 하한(분해 한계)을 건다.
+constexpr float kLaneHalfM = 0.085f;      // 차선: 근단 약 24 px, 원단은 분해 한계(17 px)에서 멈춘다
+constexpr float kLaneNear = 0.92f;        // 원본 코리도 테두리(코리도 0.46 x 2)와 같은 밝기
+constexpr float kLaneFar = 0.40f;
+constexpr float kLaneTail = 0.18f;
+constexpr float kGuideHalfM = 0.08f;      // 원본 목표선 반폭
+constexpr float kGuideWarnHalfM = 0.10f;
+constexpr float kStopHalfM = 0.11f;       // 원본 정지선 깊이 0.22 m
+
 }  // namespace
 
 WorldItem::WorldItem(QQuickItem* parent) : QQuickItem(parent) {
@@ -877,6 +920,14 @@ void WorldItem::drawRoadPaint(VertexBuffer& out, const RoadPaint& paint,
                               double now) const {
   const bool lane_only = config_.road_lane_only;
   const Rgba color = dim(kWhite, adapt(lane_only ? 0.95f : 0.55f));
+  // 차선 전용 모드의 차선 색(원본 어법: 거리 페이드 + 먼 끝 알파). 예측(이번 프레임 미관측)은 절반 밝기.
+  const float reach = projector_->range();
+  const auto lane_near = [this](bool predicted) {
+    return dim(kWhite, adapt(kLaneNear * (predicted ? 0.5f : 1.0f)));
+  };
+  const auto lane_far = [this](bool predicted) {
+    return dim(kWhite, adapt(kLaneFar * (predicted ? 0.5f : 1.0f)));
+  };
   const bool paint_fresh = now - paint.stamp >= 0.0 &&
                            now - paint.stamp < 0.35;
   const bool boundary_fresh = now - paint.boundary_stamp >= 0.0 &&
@@ -890,9 +941,9 @@ void WorldItem::drawRoadPaint(VertexBuffer& out, const RoadPaint& paint,
       const bool dashed = (boundary.left ? paint.dashed_left : paint.dashed_right) &&
                           now - style_stamp >= 0.0 && now - style_stamp < 0.7;
       if (lane_only && !dashed) {
-        const Rgba fitted = dim(kWhite, adapt(boundary.predicted ? 0.38f : 0.65f));
-        addWorldRibbon(out, boundary.points, 0.045f,
-                       std::vector<Rgba>(boundary.points.size(), fitted));
+        addWorldLine(out, boundary.points, kLaneHalfM, budget_.detail_px,
+                     fadeAlong(boundary.points, lane_near(boundary.predicted),
+                               lane_far(boundary.predicted), reach, kLaneTail));
       }
       if (!dashed) continue;
       auto points = boundary.points;
@@ -917,10 +968,17 @@ void WorldItem::drawRoadPaint(VertexBuffer& out, const RoadPaint& paint,
           const float t = (x - a.x) / std::max(b.x - a.x, 1e-4f);
           dash.push_back(Vec2{x, a.y + t * (b.y - a.y)});
         }
-        if (dash.size() >= 2)
+        if (dash.size() < 2) continue;
+        if (lane_only) {
+          // 점선 칸도 실선과 같은 굵기·같은 밝기 곡선. 칸마다 밝기가 다르면 다른 종류의 선으로 읽힌다.
+          addWorldLine(out, dash, kLaneHalfM, budget_.detail_px,
+                       fadeAlong(dash, lane_near(boundary.predicted),
+                                 lane_far(boundary.predicted), reach, kLaneTail));
+        } else {
           addWorldRibbon(out, dash, 0.035f,
                          std::vector<Rgba>(dash.size(),
                              boundary.predicted ? dim(kWhite, adapt(0.42f)) : color));
+        }
       }
       if (boundary.left) fitted_left = true; else fitted_right = true;
     }
@@ -930,9 +988,17 @@ void WorldItem::drawRoadPaint(VertexBuffer& out, const RoadPaint& paint,
   if (outer_fresh) {
     for (const auto& line : paint.outer_lines) {
       if (line.points.size() < 2) continue;
-      const Rgba outer_color = dim(kWhite, adapt(line.predicted ? 0.32f : 0.5f));
-      addWorldRibbon(out, line.points, 0.045f,
-                     std::vector<Rgba>(line.points.size(), outer_color));
+      if (lane_only) {
+        // 옆 차로 바깥 선: 같은 굵기, 내 차로 선의 0.6 배 밝기.
+        const float k = line.predicted ? 0.35f : 0.6f;
+        addWorldLine(out, line.points, kLaneHalfM, budget_.detail_px,
+                     fadeAlong(line.points, dim(kWhite, adapt(kLaneNear * k)),
+                               dim(kWhite, adapt(kLaneFar * k)), reach, kLaneTail));
+      } else {
+        const Rgba outer_color = dim(kWhite, adapt(line.predicted ? 0.32f : 0.5f));
+        addWorldRibbon(out, line.points, 0.045f,
+                       std::vector<Rgba>(line.points.size(), outer_color));
+      }
     }
   }
   // 차선 전용 모드는 필터된 경계(/road/lane_display_markers)만 그린다. 원본 도색
@@ -980,6 +1046,22 @@ void WorldItem::drawRoadMarkings(VertexBuffer& out, const RoadPaint& paint,
       c = dim(kAmber, adapt(lane_only ? 0.55f : 0.9f));
     }
     if (mark.predicted) c = withAlpha(c, 0.45f);
+    if (lane_only) {
+      // 원본 HUD 의 정지선 어법: 깊이 0.22 m 의 가로 막대, 화면 두께 하한은 획 예산(분해 한계 x2).
+      // 횡단보도는 맥락이므로 흰색을 어둡게 — 호박색은 안내(목표선)의 색이라 쓰지 않는다.
+      if (mark.kind == RoadMarkingKind::StopLine) {
+        Rgba sc = dim(kRed, adapt(1.0f));
+        if (mark.predicted) sc = withAlpha(sc, 0.45f);
+        addWorldLine(out, path, kStopHalfM, budget_.stroke_px,
+                     std::vector<Rgba>(path.size(), sc));
+      } else {
+        const float k = mark.predicted ? 0.45f : 1.0f;
+        addWorldLine(out, path, 0.055f, budget_.detail_px * 0.8f,
+                     fadeAlong(path, dim(kWhite, adapt(0.50f * k)),
+                               dim(kWhite, adapt(0.35f * k)), projector_->range(), 0.0f));
+      }
+      continue;
+    }
     addWorldRibbon(out, path, half, std::vector<Rgba>(path.size(), c));
   }
 }
@@ -1006,14 +1088,23 @@ void WorldItem::drawLaneGuidance(VertexBuffer& out, const SceneModel& scene, dou
   }
   if (path.size() < 3) return;
   const float half = std::max(scene.ideal.width_m, 1.0f) * 0.5f;
-  const float thick = warn ? 0.10f : 0.07f;
-  const float level = warn ? (blinkOn(now, 0.55, 0.5) ? 1.0f : 0.45f) : 0.90f;
-  const Rgba base = dim(warn ? kRed : kAmber, adapt(level));
+  // 원본 목표선과 같은 모양: 반폭 0.08 m, 호박색, 가까이 밝고(0.95) 멀리 어둡다(0.60).
+  // 경고는 **밝기가 아니라 색으로** 점멸한다(적 <-> 호박, 원본 임계 코리도와 같은 규칙) —
+  // 밝기를 떨궈 점멸하면 가산광에서 경고가 가장 급할 때 가장 안 보인다. 굵기도 함께 키운다.
+  const float thick = warn ? kGuideWarnHalfM : kGuideHalfM;
+  const Rgba hue = warn ? (blinkOn(now, 0.55, 0.5) ? kRed : kAmber) : kAmber;
+  std::vector<Rgba> cols;
+  cols.reserve(path.size());
+  for (size_t i = 0; i < path.size(); ++i) {
+    const float t = static_cast<float>(i) / static_cast<float>(path.size() - 1);
+    cols.push_back(dim(hue, adapt(0.95f - 0.35f * t)));
+  }
+  const Rgba base = cols.back();
   std::vector<Vec2> left, right;
   offsetPath(path, half, left, right);
   for (const std::vector<Vec2>* edge : {&left, &right}) {
     if (edge->size() < 2) continue;
-    addWorldRibbon(out, *edge, thick, std::vector<Rgba>(edge->size(), base));
+    addWorldLine(out, *edge, thick, budget_.detail_px, cols);
   }
   // 화살촉: 경로 끝에서 진행 방향을 가리키는 꺾쇠 하나.
   const Vec2 tip = path.back();
@@ -1026,7 +1117,8 @@ void WorldItem::drawLaneGuidance(VertexBuffer& out, const SceneModel& scene, dou
   std::vector<Vec2> chevron{{tip.x - dx * L - dy * W, tip.y - dy * L + dx * W},
                             {tip.x + dx * 0.6f, tip.y + dy * 0.6f},
                             {tip.x - dx * L + dy * W, tip.y - dy * L - dx * W}};
-  addWorldRibbon(out, chevron, thick * 1.2f, std::vector<Rgba>(chevron.size(), base));
+  const std::vector<Vec2> chev = densifyPath(chevron, 0.2f);
+  addWorldLine(out, chev, thick, budget_.detail_px, std::vector<Rgba>(chev.size(), base));
 }
 
 // 차선 전용 모드의 현재 진행 호 — **차선을 덮지 않는 얇은 선.**
@@ -1135,12 +1227,43 @@ void WorldItem::buildFrame(VertexBuffer& out, double now) {
 
   VertexBuffer world;
   if (config_.road_lane_only) {
-    // A fixed view keeps lanes from zooming and fading with unavailable CAN.
-    projector_->setRange(24.0f);
-    projector_->setLateralHalf(4.5f);
-    if (road_fresh || boundary_fresh) drawRoadPaint(world, *road, now);
-    // Stop lines and crosswalks only, and only with road.lane_only_markings (other markings had false hits).
-    if (road && config_.road_lane_only_markings) drawRoadMarkings(world, *road, now);
+    // 화면 범위. 평소에는 내 차로만 담는 좁은 창, 차로를 옮기는 동안만 넓은 창(road.view).
+    // 속도·조향(CAN)에 따라 움직이지 않는다 — CAN 이 없어도 차선이 확대·축소되지 않게.
+    {
+      bool moving_lane = road && now - road->outer_stamp >= 0.0 &&
+                         now - road->outer_stamp < 0.35 && !road->outer_lines.empty();
+      if (!moving_lane && scene && scene->has_ideal && now - scene->stamp >= 0.0 &&
+          now - scene->stamp < 0.35) {
+        // 안내 경로(차폭 두 줄)가 좁은 창 밖으로 나가면 옆 차로로 가는 안내다.
+        const float half = std::max(scene->ideal.width_m, 1.0f) * 0.5f;
+        for (const auto& p : scene->ideal.points) {
+          if (p.x > config_.road_view_range_m) break;
+          if (std::fabs(p.y) + half > config_.road_view_lateral_m - 0.2f) {
+            moving_lane = true;
+            break;
+          }
+        }
+      }
+      if (moving_lane) road_wide_until_ = now + config_.road_view_hold_sec;
+      const bool wide = now < road_wide_until_;
+      const float range_target = wide ? config_.road_view_wide_range_m : config_.road_view_range_m;
+      const float lateral_target = wide ? config_.road_view_wide_lateral_m : config_.road_view_lateral_m;
+      const double dt_raw = now - last_frame_sec_;
+      const float dt = (last_frame_sec_ > 0.0)
+                           ? static_cast<float>(std::clamp(dt_raw, 0.0, 0.25)) : 0.0f;
+      last_frame_sec_ = now;
+      if (range_smooth_ <= 0.0f || dt <= 0.0f) {
+        range_smooth_ = range_target;
+        lateral_smooth_ = lateral_target;
+      } else {
+        const float a = 1.0f - std::exp(-dt / std::max(config_.road_view_smooth_sec, 0.01f));
+        range_smooth_ += (range_target - range_smooth_) * a;
+        lateral_smooth_ += (lateral_target - lateral_smooth_) * a;
+      }
+      projector_->setRange(range_smooth_);
+      projector_->setLateralHalf(lateral_smooth_);
+    }
+    // The current path is drawn first (under the lanes), as the original corridor sits under its marks.
     // The current path (where the present steering takes the car), as in the normal mode's corridor,
     // only while a vehicle state is fresh; without one the lane-only view is as before.  Under the guidance
     // path: grey "where it goes" against amber/red "where to go".
@@ -1155,6 +1278,9 @@ void WorldItem::buildFrame(VertexBuffer& out, double now) {
           drawCurrentPathLine(world, vs);
       }
     }
+    if (road_fresh || boundary_fresh) drawRoadPaint(world, *road, now);
+    // Stop lines and crosswalks only, and only with road.lane_only_markings (other markings had false hits).
+    if (road && config_.road_lane_only_markings) drawRoadMarkings(world, *road, now);
     // The lane guidance, over the lanes; only while it is fresh (the node sends it every frame).
     if (scene && now - scene->stamp >= 0.0 && now - scene->stamp < 0.35) drawLaneGuidance(world, *scene, now);
     out.insert(out.end(), world.begin(), world.end());

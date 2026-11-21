@@ -169,6 +169,8 @@ class WorldItem : public QQuickItem {
   float lateral_smooth_{0.0f};
   double last_frame_sec_{0.0};
   bool last_rear_{false};
+  // 차선 전용 모드: 넓은 창을 이 시각까지 유지한다(차로 이동 중).
+  double road_wide_until_{0.0};
 
   // 막힘의 유지. 코리도가 장애물을 스치며 지나가면 막힘이 붙었다 떨어졌다 하고,
   // 그때마다 붉음과 정지선이 통째로 깜빡여 화면이 정신 사납다. 사라진 뒤에도

@@ -92,6 +92,16 @@ struct HudConfig {
   // 얇은 선의 월드 반폭(m)과 화면 두께 하한(분해 한계의 배수).
   float road_current_path_half_m{0.03f};
   float road_current_path_min_detail{1.0f};
+  // 차선 전용 모드의 화면 범위(앞 range_m, 좌우 ±lateral_m). 평소에는 내 차로만 담는 좁은 창
+  // (원본 HUD 와 비슷한 크기)이고, 차로를 옮기는 동안만 넓은 창으로 벌린다 — 옆 차로 바깥 선
+  // (/road/lane_display_outer)이 오거나, 안내 경로가 좁은 창 밖(옆 차로)으로 나갈 때.
+  // 벌린 뒤 hold_sec 동안 유지하고, 두 창 사이는 smooth_sec 시정수로 부드럽게 옮긴다.
+  float road_view_range_m{18.0f};
+  float road_view_lateral_m{2.6f};
+  float road_view_wide_range_m{24.0f};
+  float road_view_wide_lateral_m{4.5f};
+  float road_view_hold_sec{1.5f};
+  float road_view_smooth_sec{0.6f};
 
   // 시각 예산. 모든 표시 크기가 여기서 유도된다. docs/HUD_전략.md 4절.
   AcuityDesign acuity;

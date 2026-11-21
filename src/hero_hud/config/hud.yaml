@@ -96,11 +96,22 @@ hero_hud:
       lane_only_signals: true
       # 녹색도 그린다(작고 어둡게). 시연에서 녹색일 때 아무것도 안 뜨면 검출이 안 되는 것처럼 보인다(연구 세션 결정 2026-11-19).
       lane_only_green: true
-      # 차선 전용 모드에서 /road/road_markings 의 정지선(붉은 가로 띠)과 횡단보도(어두운 호박색 테두리)를 그린다.
+      # 차선 전용 모드에서 /road/road_markings 의 정지선(붉은 가로 막대)과 횡단보도(어두운 흰 테두리)를 그린다.
       # 노면 표시(화살표·글자) 종류는 그리지 않는다. 계획 28.
       lane_only_markings: true
+      # 2026-11-21: 원본 HUD 모양으로 — 지금 핸들로 갈 길은 원본 코리도(fill)로 그리고,
+      # 차선·정지선·안내선이 그 위에 올라간다. 예전 점선 모양은 style: dots 로 되돌릴 수 있다.
       current_path:
-        style: dots
+        style: fill
+      # 화면 범위: 평소 좁은 창(내 차로), 차로 이동 중(옆 차로 바깥 선이 오거나 안내가 옆 차로로
+      # 갈 때)만 넓은 창. hold_sec 동안 유지, smooth_sec 시정수로 부드럽게 바뀐다.
+      view:
+        range_m: 18.0
+        lateral_m: 2.6
+        wide_range_m: 24.0
+        wide_lateral_m: 4.5
+        hold_sec: 1.5
+        smooth_sec: 0.6
         length_m: 8.0
 
     timeout:
